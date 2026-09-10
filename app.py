@@ -63,12 +63,12 @@ MAIL_PASS = os.environ.get("MAIL_PASS", "")
 MAIL_TO = os.environ.get("MAIL_TO", "") or MAIL_USER
 
 # מספרי הבעלים - תמיד בלי הגבלה, לא משנה מה מוגדר באתר הניהול
-OWNER_PHONES = ["0527661756"]
+OWNER_PHONES = ["0527661756", "0527609296"]
 
 # הגדרות שניתן לשנות מאתר הניהול (נשמרות בימות)
 SETTINGS = {
     "daily_limit": int(os.environ.get("DAILY_LIMIT", "40")),   # הודעות ליום לכל משתמש (0 = בלי הגבלה)
-    "unlimited_phones": "0527661756",                          # מספרים ללא הגבלה, מופרדים בפסיק
+    "unlimited_phones": "0527661756,0527609296",                        # מספרים ללא הגבלה, מופרדים בפסיק
     "mail_hour": 21,                                           # שעת שליחת הסיכום היומי (שעון ישראל)
 }
 YEMOT_API = "https://www.call2all.co.il/ym/api/"
