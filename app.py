@@ -8,6 +8,9 @@ import json
 import html
 import threading
 import datetime
+import time
+import smtplib
+from email.mime.text import MIMEText
 import urllib.request
 import urllib.parse
 
@@ -29,10 +32,8 @@ GENERAL_RULES = (
     " אתה מדבר בטלפון, לכן ענה קצר וברור, בלי כוכביות, בלי רשימות, בלי אימוג'ים ובלי סימני עיצוב."
     " ענה בשפה שבה המשתמש דיבר אליך; ברירת המחדל היא עברית."
     " שמור על שפה מכובדת וצנועה, ואל תעסוק בנושאים לא צנועים."
-    " אם שואלים מי יצר את הקו או אותך, ענה שהקו נוצר על ידי וואי בי וואי."
-)
 
-CREDIT = "הקו נוצר על ידי וואי בי וואי"
+)
 
 PERSONAS = {
     "1": "אתה עוזר כללי ידידותי ומועיל." + GENERAL_RULES,
@@ -55,6 +56,21 @@ YEMOT_TOKEN = os.environ.get("YEMOT_TOKEN", "")          # מספר המערכת
 VOICE_EXTS = [e.strip().strip("/") for e in os.environ.get("VOICE_EXTS", "1").split(",") if e.strip()]
 ADMIN_KEY = os.environ.get("ADMIN_KEY", "")                # סיסמה לאתר הניהול
 DATA_EXT = VOICE_EXTS[0]                                   # השלוחה שבה נשמרים קבצי הנתונים
+
+# מייל לסיכום יומי (Gmail עם סיסמת אפליקציה)
+MAIL_USER = os.environ.get("MAIL_USER", "")
+MAIL_PASS = os.environ.get("MAIL_PASS", "")
+MAIL_TO = os.environ.get("MAIL_TO", "") or MAIL_USER
+
+# מספרי הבעלים - תמיד בלי הגבלה, לא משנה מה מוגדר באתר הניהול
+OWNER_PHONES = ["0527661756"]
+
+# הגדרות שניתן לשנות מאתר הניהול (נשמרות בימות)
+SETTINGS = {
+    "daily_limit": int(os.environ.get("DAILY_LIMIT", "40")),   # הודעות ליום לכל משתמש (0 = בלי הגבלה)
+    "unlimited_phones": "0527661756",                          # מספרים ללא הגבלה, מופרדים בפסיק
+    "mail_hour": 21,                                           # שעת שליחת הסיכום היומי (שעון ישראל)
+}
 YEMOT_API = "https://www.call2all.co.il/ym/api/"
 
 MODELS = ["gemini-3.1-flash-lite", "gemini-3-flash", "gemini-2.5-flash-lite", "gemini-2.5-flash"]
@@ -158,8 +174,129 @@ def load_data():
 load_data()
 
 
+def save_settings():
+    data = json.dumps(SETTINGS, ensure_ascii=False)
+    threading.Thread(target=yemot_write_text, args=("ai_settings.txt", data), daemon=True).start()
+
+
+def load_settings():
+    if not YEMOT_TOKEN:
+        return
+    try:
+        t = yemot_read_text("ai_settings.txt")
+        if t:
+            d = json.loads(t)
+            SETTINGS["daily_limit"] = int(d.get("daily_limit", SETTINGS["daily_limit"]))
+            SETTINGS["unlimited_phones"] = str(d.get("unlimited_phones", ""))
+            SETTINGS["mail_hour"] = int(d.get("mail_hour", SETTINGS["mail_hour"]))
+    except Exception as e:
+        print("load settings error:", e)
+
+
+load_settings()
+
+
+def il_now():
+    return datetime.datetime.utcnow() + datetime.timedelta(hours=3)
+
+
 def now_str():
-    return (datetime.datetime.utcnow() + datetime.timedelta(hours=3)).strftime("%d/%m/%Y %H:%M")
+    return il_now().strftime("%d/%m/%Y %H:%M")
+
+
+def today_str():
+    return il_now().strftime("%d/%m/%Y")
+
+
+def messages_today(phone):
+    today = today_str()
+    with _lock:
+        return sum(1 for l in LOG if l["phone"] == phone and l["time"].startswith(today))
+
+
+def over_limit(phone):
+    limit = SETTINGS.get("daily_limit", 0)
+    if limit <= 0:
+        return False
+    unlimited = [x.strip() for x in SETTINGS.get("unlimited_phones", "").split(",") if x.strip()]
+    if phone in unlimited or phone in OWNER_PHONES:
+        return False
+    return messages_today(phone) >= limit
+
+
+def build_summary(day):
+    """סיכום של יום אחד (טקסט HTML)"""
+    h = html.escape
+    with _lock:
+        log = [l for l in LOG if l["time"].startswith(day)]
+        calls = [c for c in CALLS if c["time"].startswith(day)]
+        users = dict(names)
+    phones = sorted(set(c["phone"] for c in calls) | set(l["phone"] for l in log))
+    out = ["<div dir='rtl' style='font-family:Arial'>",
+           "<h2>סיכום הקו ליום %s</h2>" % h(day),
+           "<p>שיחות: <b>%d</b> &nbsp; מתקשרים שונים: <b>%d</b> &nbsp; הודעות ל-AI: <b>%d</b></p>" % (
+               len(calls), len(phones), len(log))]
+    if phones:
+        out.append("<h3>לפי מתקשר</h3><ul>")
+        for ph in phones:
+            nm = users.get(ph, "לא רשום")
+            out.append("<li>%s (%s): %d שיחות, %d הודעות</li>" % (
+                h(nm), h(ph), sum(1 for c in calls if c["phone"] == ph), sum(1 for l in log if l["phone"] == ph)))
+        out.append("</ul>")
+    if log:
+        out.append("<h3>מה שאלו</h3><table border='1' cellpadding='5' style='border-collapse:collapse'>"
+                   "<tr><th>שעה</th><th>מי</th><th>עוזר</th><th>שאלה</th><th>תשובה</th></tr>")
+        for l in log[:150]:
+            out.append("<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>" % (
+                h(l["time"][11:]), h(l["name"]), h(l["persona"]), h(l["q"]), h(l["a"][:200])))
+        out.append("</table>")
+        if len(log) > 150:
+            out.append("<p>...ועוד %d הודעות (באתר הניהול)</p>" % (len(log) - 150))
+    else:
+        out.append("<p>לא היו הודעות היום.</p>")
+    out.append("</div>")
+    return "".join(out)
+
+
+def send_mail(subject, body_html):
+    if not (MAIL_USER and MAIL_PASS and MAIL_TO):
+        return "לא הוגדר מייל (MAIL_USER / MAIL_PASS ב-Render)"
+    try:
+        msg = MIMEText(body_html, "html", "utf-8")
+        msg["Subject"] = subject
+        msg["From"] = MAIL_USER
+        msg["To"] = MAIL_TO
+        with smtplib.SMTP("smtp.gmail.com", 587, timeout=30) as smtp:
+            smtp.starttls()
+            smtp.login(MAIL_USER, MAIL_PASS)
+            smtp.sendmail(MAIL_USER, [MAIL_TO], msg.as_string())
+        return "נשלח"
+    except Exception as e:
+        print("mail error:", e)
+        return "שגיאה בשליחה: %s" % e
+
+
+_last_mail_day = [None]
+
+
+def daily_mail_loop():
+    """שולח סיכום פעם ביום בשעה שנקבעה"""
+    while True:
+        try:
+            now = il_now()
+            day = now.strftime("%d/%m/%Y")
+            if now.hour == SETTINGS.get("mail_hour", 21) and _last_mail_day[0] != day and MAIL_USER:
+                _last_mail_day[0] = day
+                print("daily mail:", send_mail("סיכום הקו ליום " + day, build_summary(day)))
+        except Exception as e:
+            print("daily mail error:", e)
+        time.sleep(60)
+
+
+threading.Thread(target=daily_mail_loop, daemon=True).start()
+
+
+
 
 
 def gemini(system, contents, schema=None):
@@ -345,7 +482,7 @@ def yemot():
     # ---- התחלה: זיהוי או רישום ----
     if state["stage"] == "start":
         if name:
-            resp = menu(state, name, prefix=CREDIT)
+            resp = menu(state, name)
         else:
             state["stage"] = "ask_name"
             resp = record(state, "name", "שלום, זו הפעם הראשונה שלך בקו. אמור את שמך הפרטי, ובסיום הקש סולמית")
@@ -359,7 +496,7 @@ def yemot():
         name = transcribe_name(ext, state["file"]) or "אורח"
         names[phone] = name
         save_names()
-        resp = menu(state, name, prefix="נעים להכיר %s, השם נשמר. %s" % (name, CREDIT))
+        resp = menu(state, name, prefix="נעים להכיר %s, השם נשמר" % name)
         return Response(resp, mimetype="text/plain; charset=utf-8")
 
     name = name or "אורח"
@@ -384,6 +521,11 @@ def yemot():
     if state["stage"] == "chat":
         if not has_value:
             resp = listen(state, prefix="לא שמעתי אותך")
+            return Response(resp, mimetype="text/plain; charset=utf-8")
+
+        if over_limit(phone):
+            yemot_delete(ext, state["file"])
+            resp = menu(state, name, prefix="הגעת למכסת ההודעות היומית שלך. אפשר לנסות שוב מחר")
             return Response(resp, mimetype="text/plain; charset=utf-8")
 
         transcript, answer = ask_ai(state["persona"], state["history"], ext, state["file"])
@@ -547,6 +689,17 @@ def admin():
                    '<td><textarea name="prompt_%s">%s</textarea></td></tr>' % (k, k, h(PERSONA_NAMES[k]), k, h(base)))
     out.append('</table><button>שמור עוזרים</button></form>')
     out.append('<p><small>הכללים הקבועים (עברית, קצר, טלפון, שפה מכובדת) מתווספים אוטומטית לכל עוזר.</small></p>')
+    out.append('<h2>הגדרות</h2><form method="post" action="/admin/settings"><table>'
+               '<tr><th style="width:260px">הגדרה</th><th>ערך</th></tr>'
+               '<tr><td>הודעות ליום לכל משתמש (0 = בלי הגבלה)</td><td><input type="text" name="daily_limit" value="%d"></td></tr>'
+               '<tr><td>מספרים ללא הגבלה (מופרדים בפסיק)</td><td><input type="text" name="unlimited_phones" value="%s" style="width:320px"></td></tr>'
+               '<tr><td>שעת שליחת הסיכום היומי למייל (0-23)</td><td><input type="text" name="mail_hour" value="%d"></td></tr>'
+               '</table><button>שמור הגדרות</button></form>' % (
+                   SETTINGS["daily_limit"], h(SETTINGS["unlimited_phones"]), SETTINGS["mail_hour"]))
+    mail_state = ("מוגדר, נשלח אל " + h(MAIL_TO)) if (MAIL_USER and MAIL_PASS) else "לא מוגדר (צריך MAIL_USER ו-MAIL_PASS ב-Render)"
+    out.append('<p>סיכום יומי למייל: %s &nbsp; '
+               '<form class="inline" method="post" action="/admin/sendmail"><button>שלח סיכום של היום עכשיו</button></form> %s</p>' % (
+                   mail_state, "<b style='color:#1a5fb4'>%s</b>" % h(request.args.get("mail", "")) if request.args.get("mail") else ""))
     out.append('<p><a href="/admin/logout">יציאה</a></p></div>')
     return Response("".join(out), mimetype="text/html; charset=utf-8")
 
@@ -600,6 +753,32 @@ def admin_personas():
     data = json.dumps({"names": PERSONA_NAMES, "prompts": {k: PERSONAS[k].replace(GENERAL_RULES, "") for k in PERSONAS}}, ensure_ascii=False)
     threading.Thread(target=yemot_write_text, args=("ai_personas.txt", data), daemon=True).start()
     return Response("", status=302, headers={"Location": "/admin"})
+
+
+@app.route("/admin/settings", methods=["POST"])
+def admin_settings():
+    if not is_admin():
+        return admin_login_page()
+    try:
+        SETTINGS["daily_limit"] = max(0, int(request.form.get("daily_limit", "0") or 0))
+    except ValueError:
+        pass
+    try:
+        SETTINGS["mail_hour"] = min(23, max(0, int(request.form.get("mail_hour", "21") or 21)))
+    except ValueError:
+        pass
+    SETTINGS["unlimited_phones"] = re.sub(r"[^0-9,]", "", request.form.get("unlimited_phones", ""))
+    save_settings()
+    return Response("", status=302, headers={"Location": "/admin"})
+
+
+@app.route("/admin/sendmail", methods=["POST"])
+def admin_sendmail():
+    if not is_admin():
+        return admin_login_page()
+    day = today_str()
+    result = send_mail("סיכום הקו ליום " + day, build_summary(day))
+    return Response("", status=302, headers={"Location": "/admin?mail=" + urllib.parse.quote(result)})
 
 
 @app.route("/admin/logout")
