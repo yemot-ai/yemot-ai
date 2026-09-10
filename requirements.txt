@@ -1,0 +1,4 @@
+flask
+yemot-flow
+google-genai
+gunicorn
