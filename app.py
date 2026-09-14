@@ -38,33 +38,39 @@ GENERAL_RULES = (
 
 PERSONAS = {
     "1": "אתה עוזר כללי ידידותי ומועיל." + GENERAL_RULES,
+    "2": "אתה עוזר תורני. ענה בסגנון תורני מכובד, וציין מקורות כשאפשר." + GENERAL_RULES,
+    "3": "אתה עוזר חוצפני וסרקסטי עם הומור. ענה בחוצפה משעשעת אבל בלי להעליב באמת." + GENERAL_RULES,
+    "4": "אתה עוזר יצירתי. ספר סיפורים קצרים, כתוב שירים, בדיחות ורעיונות יצירתיים." + GENERAL_RULES,
     "5": "אתה עוזר טכני. הסבר דברים טכניים בפשטות: מחשבים, אינטרנט, טלפונים." + GENERAL_RULES,
+    "6": "אתה ערס - ידיד קרוב וחמוד. תדבר בנימוס קלוקל מאוד. השתמש בביטויים כמו 'אחלה מה אחי', 'ספר לי', 'בואנו', 'כאן בדיוק'. תרגיש כמו ישיבה עם חבר טוב בבר. פתוח, כיפי ותמיד עם חיוך." + GENERAL_RULES,
+    "7": "אתה עוזר מוזיקלי. אתה מומחה למוזיקה, בדגש מיוחד על מוזיקה חסידית וישראלית. ענה על שאלות הקשורות למוזיקה, ספק אקורדים לשירים כשמבקשים, הסבר מושגים במוזיקה ושתף ידע על אמנים, שירים וסגנונות נגינה." + GENERAL_RULES,
 }
 
 PERSONA_NAMES = {
     "1": "העוזר הכללי",
+    "2": "העוזר התורני",
+    "3": "העוזר החוצפן",
+    "4": "העוזר היצירתי",
     "5": "העוזר הטכני",
+    "6": "הערס",
+    "7": "העוזר המוזיקלי",
 }
 
 YEMOT_TOKEN = os.environ.get("YEMOT_TOKEN", "")          # מספר המערכת:סיסמה
-# רשימת השלוחות של הקו, כל אחת עם קול אחר (מוגדר ב-ext.ini של השלוחה בימות). מופרד בפסיקים.
 VOICE_EXTS = [e.strip().strip("/") for e in os.environ.get("VOICE_EXTS", "1").split(",") if e.strip()]
 ADMIN_KEY = os.environ.get("ADMIN_KEY", "")                # סיסמה לאתר הניהול
 DATA_EXT = VOICE_EXTS[0]                                   # השלוחה שבה נשמרים קבצי הנתונים
 
-# מייל לסיכום יומי (Gmail עם סיסמת אפליקציה)
 MAIL_USER = os.environ.get("MAIL_USER", "")
 MAIL_PASS = os.environ.get("MAIL_PASS", "")
 MAIL_TO = os.environ.get("MAIL_TO", "") or MAIL_USER
 
-# מספרי הבעלים - תמיד בלי הגבלה, לא משנה מה מוגדר באתר הניהול
 OWNER_PHONES = ["0527661756", "0527609296"]
 
-# הגדרות שניתן לשנות מאתר הניהול (נשמרות בימות)
 SETTINGS = {
-    "daily_limit": int(os.environ.get("DAILY_LIMIT", "40")),   # הודעות ליום לכל משתמש (0 = בלי הגבלה)
-    "unlimited_phones": "0527661756,0527609296",               # מספרים ללא הגבלה, מופרדים בפסיק
-    "mail_hour": 21,                                           # שעת שליחת הסיכום היומי (שעון ישראל)
+    "daily_limit": int(os.environ.get("DAILY_LIMIT", "40")),
+    "unlimited_phones": "0527661756,0527609296",
+    "mail_hour": 21,
 }
 YEMOT_API = "https://www.call2all.co.il/ym/api/"
 
@@ -81,19 +87,15 @@ def get_client():
 
 
 def clean_for_tts(text):
-    """ניקיון להשמעה - שמור על מספרים"""
     text = re.sub(r"[*_#`>\[\]{}]", "", text)
     text = text.replace("\n", ", ")
     text = re.sub(r"\s+", " ", text).strip()
-    
-    # אם יש מספרים, תן יותר מקום
     if any(c.isdigit() for c in text):
         return text[:900]
     return text[:600]
 
 
 def yemot_download(ext, file_name):
-    """הורדת הקלטה מהמערכת של ימות המשיח"""
     url = YEMOT_API + "DownloadFile?" + urllib.parse.urlencode({
         "token": YEMOT_TOKEN,
         "path": "ivr2:/%s/%s.wav" % (ext, file_name),
@@ -103,7 +105,6 @@ def yemot_download(ext, file_name):
 
 
 def yemot_delete(ext, file_name):
-    """מחיקת ההקלטה אחרי השימוש (לא קריטי אם נכשל)"""
     try:
         url = YEMOT_API + "FileAction?" + urllib.parse.urlencode({
             "token": YEMOT_TOKEN,
@@ -116,7 +117,6 @@ def yemot_delete(ext, file_name):
 
 
 def yemot_read_text(file_name):
-    """קריאת קובץ טקסט מהמערכת של ימות (מחזיר None אם אין)"""
     try:
         url = YEMOT_API + "DownloadFile?" + urllib.parse.urlencode({
             "token": YEMOT_TOKEN, "path": "ivr2:/%s/%s" % (DATA_EXT, file_name)})
@@ -131,7 +131,6 @@ def yemot_read_text(file_name):
 
 
 def yemot_write_text(file_name, text):
-    """שמירת קובץ טקסט במערכת של ימות"""
     try:
         body = urllib.parse.urlencode({
             "token": YEMOT_TOKEN, "what": "ivr2:/%s/%s" % (DATA_EXT, file_name), "contents": text}).encode()
@@ -154,7 +153,6 @@ def save_log():
 
 
 def load_data():
-    """טעינת השמות והיומן מימות בעליית השרת"""
     if not YEMOT_TOKEN:
         return
     try:
@@ -225,7 +223,6 @@ def over_limit(phone):
 
 
 def build_summary(day):
-    """סיכום של יום אחד (טקסט HTML)"""
     h = html.escape
     with _lock:
         log = [l for l in LOG if l["time"].startswith(day)]
@@ -280,7 +277,6 @@ _last_mail_day = [None]
 
 
 def daily_mail_loop():
-    """שולח סיכום פעם ביום בשעה שנקבעה"""
     while True:
         try:
             now = il_now()
@@ -297,7 +293,6 @@ threading.Thread(target=daily_mail_loop, daemon=True).start()
 
 
 def gemini(system, contents, schema=None, use_search=False):
-    """פונקציית הקריאה ל-Gemini, עם אפשרות לחיפוש ברשת"""
     last_error = None
     for model in MODELS:
         try:
@@ -323,7 +318,6 @@ def gemini(system, contents, schema=None, use_search=False):
 
 
 def transcribe_name(ext, file_name):
-    """המרת הקלטת השם לטקסט"""
     try:
         audio = yemot_download(ext, file_name)
     except Exception as e:
@@ -349,7 +343,6 @@ SCHEMA = {
 
 
 def ask_ai(persona, history, ext, file_name):
-    """מוריד את ההקלטה, מתמלל ועונה בקריאה אחת. מחזיר (תמלול, תשובה)"""
     try:
         audio = yemot_download(ext, file_name)
     except Exception as e:
@@ -357,7 +350,6 @@ def ask_ai(persona, history, ext, file_name):
         return "", "סליחה, לא הצלחתי לשמוע את ההקלטה. נסה שוב."
     yemot_delete(ext, file_name)
 
-    # הוסף את הזמן והתאריך של ישראל
     now = il_now()
     current_time = now.strftime("%H:%M")
     current_date = now.strftime("%d/%m/%Y")
@@ -375,7 +367,6 @@ def ask_ai(persona, history, ext, file_name):
         ],
     }]
     
-    # שימוש ב-use_search=True מאפשר לבוט לחפש בגוגל אם השאלה דורשת זאת
     raw = gemini(system, contents, schema=SCHEMA, use_search=True)
     
     if not raw:
@@ -397,12 +388,12 @@ def menu(state, name, prefix=None):
     state["stage"] = "menu"
     read = build_read(
         [("text",
-          "שלום %s. הקש 1 לעוזר כללי. הקש 5 לעוזר טכני. הקש 9 לסיום." % name)],
+          "שלום %s. הקש 1 לעוזר כללי, 2 לעוזר תורני, 3 לעוזר החוצפן, 4 לעוזר היצירתי, 5 לעוזר טכני, 6 לערס, 7 לעוזר המוזיקלי, או 9 לסיום." % name)],
         mode="tap",
         val_name=state["wait"],
         max_digits=1,
         min_digits=1,
-        digits_allowed="159",
+        digits_allowed="12345679",
         sec_wait=10,
     )
     if prefix:
@@ -411,7 +402,6 @@ def menu(state, name, prefix=None):
 
 
 def record(state, val_prefix, prompt, prefix=None):
-    """בקשת הקלטה מהמתקשר (חינם, במקום זיהוי דיבור שעולה יחידות)"""
     state["n"] += 1
     state["wait"] = "%s_%d" % (val_prefix, state["n"])
     file_name = "ai_%s_%d" % (re.sub(r"[^0-9a-zA-Z]", "", state["call_id"])[-12:], state["n"])
@@ -433,8 +423,6 @@ def record(state, val_prefix, prompt, prefix=None):
 
 
 def listen(state, prefix=None, first=False):
-    """הקשבה למתקשר. התשובה של ה-AI (prefix) מושמעת כהודעה של ההקלטה עצמה,
-    כך שלא נאמר כל פעם מחדש להקיש סולמית - רק בכניסה לעוזר."""
     state["stage"] = "chat"
     if first:
         return record(state, "speech", (prefix + ". " if prefix else "") + "דבר אחרי הצפצוף, ובסיום הקש סולמית")
@@ -454,7 +442,6 @@ def yemot():
     params = request.values.to_dict()
     call_id = params.get("ApiCallId")
 
-    # פנייה בלי פרטי שיחה (למשל שירות שמשאיר את השרת ער)
     if not call_id:
         return Response("ok", mimetype="text/plain; charset=utf-8")
 
@@ -480,7 +467,6 @@ def yemot():
 
     name = names.get(phone)
 
-    # ---- חזרה אחרי החלפת קול (הגענו לשלוחה אחרת באותה שיחה) ----
     if state["resume"]:
         mode = state["resume"]
         state["resume"] = None
@@ -490,7 +476,6 @@ def yemot():
             resp = menu(state, name or "אורח", prefix="הקול הוחלף")
         return Response(resp, mimetype="text/plain; charset=utf-8")
 
-    # ---- התחלה: זיהוי או רישום ----
     if state["stage"] == "start":
         if name:
             resp = menu(state, name)
@@ -499,7 +484,6 @@ def yemot():
             resp = record(state, "name", "שלום, זו הפעם הראשונה שלך בקו. אמור את שמך הפרטי, ובסיום הקש סולמית")
         return Response(resp, mimetype="text/plain; charset=utf-8")
 
-    # ---- קבלת השם ----
     if state["stage"] == "ask_name":
         if not has_value:
             resp = record(state, "name", "אמור את שמך הפרטי, ובסיום הקש סולמית")
@@ -512,7 +496,6 @@ def yemot():
 
     name = name or "אורח"
 
-    # ---- תפריט ----
     if state["stage"] == "menu":
         if value == "9":
             return Response(goodbye(call_id, name), mimetype="text/plain; charset=utf-8")
@@ -528,7 +511,6 @@ def yemot():
             resp = menu(state, name)
         return Response(resp, mimetype="text/plain; charset=utf-8")
 
-    # ---- שיחה עם ה-AI ----
     if state["stage"] == "chat":
         if not has_value:
             resp = listen(state, prefix="לא שמעתי אותך")
@@ -569,7 +551,6 @@ def yemot():
         resp = listen(state, prefix=answer)
         return Response(resp, mimetype="text/plain; charset=utf-8")
 
-    # מצב לא צפוי - חזרה לתפריט
     resp = menu(state, name)
     return Response(resp, mimetype="text/plain; charset=utf-8")
 
@@ -654,7 +635,6 @@ def admin():
                '<div class="card">הודעות ביומן<b>%d</b></div></div>' % (
                    len(users), calls_today, len(calls), active, len(log)))
 
-    # users
     out.append('<h2>משתמשים רשומים</h2><table><tr><th>שם</th><th>טלפון</th><th>שיחות</th><th>הודעות</th><th>פעולות</th></tr>')
     for phone, name in sorted(users.items(), key=lambda x: x[1]):
         n_calls = sum(1 for c in calls if c["phone"] == phone)
@@ -670,7 +650,6 @@ def admin():
         out.append('<tr><td colspan="5">עדיין אין משתמשים רשומים</td></tr>')
     out.append('</table>')
 
-    # log
     shown = [l for l in log if not filt or l["phone"] == filt][::-1][:300]
     out.append('<h2>מה דיברו עם הקו%s</h2>' % (" – " + h(filt) + ' (<a href="/admin">הצג הכל</a>)' if filt else ""))
     out.append('<form class="inline" method="post" action="/admin/clear" onsubmit="return confirm(\'למחוק את כל היומן?\')">'
@@ -684,13 +663,6 @@ def admin():
         out.append('<tr><td colspan="4">אין הודעות עדיין</td></tr>')
     out.append('</table>')
 
-    # calls
-    out.append('<h2>שיחות אחרונות</h2><table><tr><th>זמן</th><th>טלפון</th><th>שם</th></tr>')
-    for c in calls[::-1][:100]:
-        out.append('<tr><td>%s</td><td>%s</td><td>%s</td></tr>' % (h(c["time"]), h(c["phone"]), h(users.get(c["phone"], c.get("name", "")) or "לא רשום")))
-    out.append('</table>')
-
-    # personas
     out.append('<h2>העוזרים (אפשר לערוך את האופי של כל עוזר)</h2>')
     out.append('<form method="post" action="/admin/personas"><table><tr><th style="width:40px">מס</th><th style="width:180px">שם העוזר</th><th>ההנחיה ל-AI</th></tr>')
     for k in sorted(PERSONAS):
@@ -799,7 +771,6 @@ def admin_logout():
 
 
 def load_personas():
-    """טעינת ההגדרות האישיות של העוזרים מתוך קובץ ימות במידה וקיימות"""
     if not YEMOT_TOKEN:
         return
     try:
