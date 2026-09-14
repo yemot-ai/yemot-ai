@@ -16,24 +16,24 @@ import urllib.parse
 
 app = Flask(__name__)
 
-# שמות לפי מספר טלפון. נשמרים גם כקובץ במערכת ימות המשיח כדי לשרוד הפעלה מחדש של השרת
+# שמות לפי מספר טלפון.
 names = {}
 
-# יומן שיחות (מה כל אחד שאל ומה ה-AI ענה) + רשימת שיחות
+# יומן שיחות + רשימת שיחות
 LOG = []
 CALLS = []
 LOG_MAX = 1000
 _lock = threading.Lock()
 
-# מצב של כל שיחה פעילה (נמחק בסיום השיחה - אין היסטוריה)
+# מצב של כל שיחה פעילה
 calls = {}
 
 GENERAL_RULES = (
     " אתה מדבר בטלפון, לכן ענה קצר וברור, בלי כוכביות, בלי רשימות, בלי אימוג'ים ובלי סימני עיצוב."
     " ענה בשפה שבה המשתמש דיבר אליך; ברירת המחדל היא עברית."
     " שמור על שפה מכובדת וצנועה, ואל תעסוק בנושאים לא צנועים."
-    " **חשוב מאוד: כשאתה מספק מספרים או מחירים, כתוב אותם במילים עברית (\"שתיים מאות שלושים וחמישה שקל\" ולא \"235\").**"
-    " יש לך גישה לחיפוש באינטרנט. אם המשתמש מבקש מידע עדכני, חדשות, מחירים, או חיפוש באתר מסוים, השתמש בכלי החיפוש באינטרנט המחובר אליך כדי למצוא את המידע המדויק ולסכם אותו."
+    " כשאתה מספק מספרים או מחירים, כתוב אותם במילים עברית ולא בספרות."
+    " אם המשתמש מבקש מידע עדכני, חדשות, מחירים או מידע מהאינטרנט, ניתן להשתמש בחיפוש Google המחובר למודל."
 )
 
 PERSONAS = {
@@ -42,7 +42,7 @@ PERSONAS = {
     "3": "אתה עוזר חוצפני וסרקסטי עם הומור. ענה בחוצפה משעשעת אבל בלי להעליב באמת." + GENERAL_RULES,
     "4": "אתה עוזר יצירתי. ספר סיפורים קצרים, כתוב שירים, בדיחות ורעיונות יצירתיים." + GENERAL_RULES,
     "5": "אתה עוזר טכני. הסבר דברים טכניים בפשטות: מחשבים, אינטרנט, טלפונים." + GENERAL_RULES,
-    "6": "אתה ערס - ידיד קרוב וחמוד. תדבר בנימוס קלוקל מאוד. השתמש בביטויים כמו 'אחלה מה אחי', 'ספר לי', 'בואנו', 'כאן בדיוק'. תרגיש כמו ישיבה עם חבר טוב בבר. פתוח, כיפי ותמיד עם חיוך." + GENERAL_RULES,
+    "6": "אתה ערס - ידיד קרוב וחמוד. תדבר בנימוס קלוקל מאוד. השתמש בביטויים כמו 'אחלה מה אחי', 'ספר לי', 'בואנו', 'כאן בדיוק'. תרגיש כמו ישיבה עם חבר טוב. פתוח, כיפי ותמיד עם חיוך." + GENERAL_RULES,
     "7": "אתה עוזר מוזיקלי. אתה מומחה למוזיקה, בדגש מיוחד על מוזיקה חסידית וישראלית. ענה על שאלות הקשורות למוזיקה, ספק אקורדים לשירים כשמבקשים, הסבר מושגים במוזיקה ושתף ידע על אמנים, שירים וסגנונות נגינה." + GENERAL_RULES,
 }
 
@@ -56,10 +56,12 @@ PERSONA_NAMES = {
     "7": "העוזר המוזיקלי",
 }
 
-YEMOT_TOKEN = os.environ.get("YEMOT_TOKEN", "")          # מספר המערכת:סיסמה
+YEMOT_TOKEN = os.environ.get("YEMOT_TOKEN", "")
 VOICE_EXTS = [e.strip().strip("/") for e in os.environ.get("VOICE_EXTS", "1").split(",") if e.strip()]
-ADMIN_KEY = os.environ.get("ADMIN_KEY", "")                # סיסמה לאתר הניהול
-DATA_EXT = VOICE_EXTS[0]                                   # השלוחה שבה נשמרים קבצי הנתונים
+if not VOICE_EXTS:
+    VOICE_EXTS = ["1"]
+ADMIN_KEY = os.environ.get("ADMIN_KEY", "")
+DATA_EXT = VOICE_EXTS[0]
 
 MAIL_USER = os.environ.get("MAIL_USER", "")
 MAIL_PASS = os.environ.get("MAIL_PASS", "")
@@ -72,27 +74,48 @@ SETTINGS = {
     "unlimited_phones": "0527661756,0527609296",
     "mail_hour": 21,
 }
+
 YEMOT_API = "https://www.call2all.co.il/ym/api/"
 
-MODELS = ["gemini-3.1-flash-lite", "gemini-3-flash", "gemini-2.5-flash-lite", "gemini-2.5-flash"]
+# מודלים עדכניים ויציבים יותר.
+MODELS = [
+    "gemini-3.5-flash-lite",
+    "gemini-3.5-flash",
+    "gemini-3.1-flash-lite",
+    "gemini-2.5-flash-lite",
+    "gemini-2.5-flash",
+]
 
 _client = None
+_client_lock = threading.Lock()
 
 
 def get_client():
     global _client
     if _client is None:
-        _client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY", ""))
+        with _client_lock:
+            if _client is None:
+                api_key = os.environ.get("GEMINI_API_KEY", "").strip()
+                if not api_key:
+                    raise RuntimeError("GEMINI_API_KEY is missing")
+                _client = genai.Client(api_key=api_key)
     return _client
 
 
 def clean_for_tts(text):
+    text = str(text or "")
     text = re.sub(r"[*_#`>\[\]{}]", "", text)
+    text = re.sub(r"https?://\S+|www\.\S+", "", text)
     text = text.replace("\n", ", ")
     text = re.sub(r"\s+", " ", text).strip()
-    if any(c.isdigit() for c in text):
-        return text[:900]
-    return text[:600]
+    return text[:900 if any(c.isdigit() for c in text) else 600]
+
+
+def safe_json_loads(text, default=None):
+    try:
+        return json.loads(text)
+    except Exception:
+        return default
 
 
 def yemot_download(ext, file_name):
@@ -100,8 +123,11 @@ def yemot_download(ext, file_name):
         "token": YEMOT_TOKEN,
         "path": "ivr2:/%s/%s.wav" % (ext, file_name),
     })
-    with urllib.request.urlopen(url, timeout=20) as r:
-        return r.read()
+    with urllib.request.urlopen(url, timeout=25) as r:
+        data = r.read()
+    if not data:
+        raise RuntimeError("empty audio file")
+    return data
 
 
 def yemot_delete(ext, file_name):
@@ -113,31 +139,36 @@ def yemot_delete(ext, file_name):
         })
         urllib.request.urlopen(url, timeout=10).read()
     except Exception as e:
-        print("delete error:", e)
+        print("delete error:", repr(e))
 
 
 def yemot_read_text(file_name):
     try:
         url = YEMOT_API + "DownloadFile?" + urllib.parse.urlencode({
-            "token": YEMOT_TOKEN, "path": "ivr2:/%s/%s" % (DATA_EXT, file_name)})
+            "token": YEMOT_TOKEN,
+            "path": "ivr2:/%s/%s" % (DATA_EXT, file_name),
+        })
         with urllib.request.urlopen(url, timeout=20) as r:
             data = r.read().decode("utf-8", "ignore")
-        if data.lstrip().startswith("{\"responseStatus"):
+        if data.lstrip().startswith('{"responseStatus'):
             return None
         return data
     except Exception as e:
-        print("read text error:", e)
+        print("read text error:", repr(e))
         return None
 
 
 def yemot_write_text(file_name, text):
     try:
         body = urllib.parse.urlencode({
-            "token": YEMOT_TOKEN, "what": "ivr2:/%s/%s" % (DATA_EXT, file_name), "contents": text}).encode()
+            "token": YEMOT_TOKEN,
+            "what": "ivr2:/%s/%s" % (DATA_EXT, file_name),
+            "contents": text,
+        }).encode("utf-8")
         req = urllib.request.Request(YEMOT_API + "UploadTextFile", data=body, method="POST")
-        urllib.request.urlopen(req, timeout=20).read()
+        urllib.request.urlopen(req, timeout=25).read()
     except Exception as e:
-        print("write text error:", e)
+        print("write text error:", repr(e))
 
 
 def save_names():
@@ -152,29 +183,29 @@ def save_log():
     threading.Thread(target=yemot_write_text, args=("ai_log.txt", data), daemon=True).start()
 
 
+def save_settings():
+    data = json.dumps(SETTINGS, ensure_ascii=False)
+    threading.Thread(target=yemot_write_text, args=("ai_settings.txt", data), daemon=True).start()
+
+
 def load_data():
     if not YEMOT_TOKEN:
         return
     try:
         t = yemot_read_text("ai_names.txt")
         if t:
-            names.update(json.loads(t))
+            d = safe_json_loads(t, {})
+            if isinstance(d, dict):
+                names.update(d)
         t = yemot_read_text("ai_log.txt")
         if t:
-            d = json.loads(t)
-            LOG.extend(d.get("log", []))
-            CALLS.extend(d.get("calls", []))
+            d = safe_json_loads(t, {})
+            if isinstance(d, dict):
+                LOG.extend(d.get("log", []))
+                CALLS.extend(d.get("calls", []))
         print("loaded %d names, %d log lines" % (len(names), len(LOG)))
     except Exception as e:
-        print("load error:", e)
-
-
-load_data()
-
-
-def save_settings():
-    data = json.dumps(SETTINGS, ensure_ascii=False)
-    threading.Thread(target=yemot_write_text, args=("ai_settings.txt", data), daemon=True).start()
+        print("load error:", repr(e))
 
 
 def load_settings():
@@ -183,18 +214,42 @@ def load_settings():
     try:
         t = yemot_read_text("ai_settings.txt")
         if t:
-            d = json.loads(t)
-            SETTINGS["daily_limit"] = int(d.get("daily_limit", SETTINGS["daily_limit"]))
-            SETTINGS["unlimited_phones"] = str(d.get("unlimited_phones", ""))
-            SETTINGS["mail_hour"] = int(d.get("mail_hour", SETTINGS["mail_hour"]))
+            d = safe_json_loads(t, {})
+            if isinstance(d, dict):
+                SETTINGS["daily_limit"] = int(d.get("daily_limit", SETTINGS["daily_limit"]))
+                SETTINGS["unlimited_phones"] = str(d.get("unlimited_phones", SETTINGS["unlimited_phones"]))
+                SETTINGS["mail_hour"] = int(d.get("mail_hour", SETTINGS["mail_hour"]))
     except Exception as e:
-        print("load settings error:", e)
+        print("load settings error:", repr(e))
 
 
+def load_personas():
+    if not YEMOT_TOKEN:
+        return
+    try:
+        t = yemot_read_text("ai_personas.txt")
+        if t:
+            d = safe_json_loads(t, {})
+            if isinstance(d, dict):
+                if isinstance(d.get("names"), dict):
+                    for k, v in d["names"].items():
+                        if k in PERSONA_NAMES and v:
+                            PERSONA_NAMES[k] = str(v)[:40]
+                if isinstance(d.get("prompts"), dict):
+                    for k, pr in d["prompts"].items():
+                        if k in PERSONAS and pr:
+                            PERSONAS[k] = str(pr).strip() + GENERAL_RULES
+    except Exception as e:
+        print("load personas error:", repr(e))
+
+
+load_data()
 load_settings()
+load_personas()
 
 
 def il_now():
+    # ישראל UTC+3 בתאריך ההפעלה הנוכחי של המערכת.
     return datetime.datetime.utcnow() + datetime.timedelta(hours=3)
 
 
@@ -209,14 +264,14 @@ def today_str():
 def messages_today(phone):
     today = today_str()
     with _lock:
-        return sum(1 for l in LOG if l["phone"] == phone and l["time"].startswith(today))
+        return sum(1 for l in LOG if l.get("phone") == phone and str(l.get("time", "")).startswith(today))
 
 
 def over_limit(phone):
-    limit = SETTINGS.get("daily_limit", 0)
+    limit = int(SETTINGS.get("daily_limit", 0) or 0)
     if limit <= 0:
         return False
-    unlimited = [x.strip() for x in SETTINGS.get("unlimited_phones", "").split(",") if x.strip()]
+    unlimited = [x.strip() for x in str(SETTINGS.get("unlimited_phones", "")).split(",") if x.strip()]
     if phone in unlimited or phone in OWNER_PHONES:
         return False
     return messages_today(phone) >= limit
@@ -225,27 +280,32 @@ def over_limit(phone):
 def build_summary(day):
     h = html.escape
     with _lock:
-        log = [l for l in LOG if l["time"].startswith(day)]
-        calls = [c for c in CALLS if c["time"].startswith(day)]
+        log = [l for l in LOG if str(l.get("time", "")).startswith(day)]
+        calls_snapshot = [c for c in CALLS if str(c.get("time", "")).startswith(day)]
         users = dict(names)
-    phones = sorted(set(c["phone"] for c in calls) | set(l["phone"] for l in log))
-    out = ["<div dir='rtl' style='font-family:Arial'>",
-           "<h2>סיכום הקו ליום %s</h2>" % h(day),
-           "<p>שיחות: <b>%d</b> &nbsp; מתקשרים שונים: <b>%d</b> &nbsp; הודעות ל-AI: <b>%d</b></p>" % (
-               len(calls), len(phones), len(log))]
+    phones = sorted(set(c.get("phone", "") for c in calls_snapshot) | set(l.get("phone", "") for l in log))
+    out = [
+        "<div dir='rtl' style='font-family:Arial'>",
+        "<h2>סיכום הקו ליום %s</h2>" % h(day),
+        "<p>שיחות: <b>%d</b> &nbsp; מתקשרים שונים: <b>%d</b> &nbsp; הודעות ל-AI: <b>%d</b></p>" % (
+            len(calls_snapshot), len(phones), len(log))
+    ]
     if phones:
         out.append("<h3>לפי מתקשר</h3><ul>")
         for ph in phones:
             nm = users.get(ph, "לא רשום")
             out.append("<li>%s (%s): %d שיחות, %d הודעות</li>" % (
-                h(nm), h(ph), sum(1 for c in calls if c["phone"] == ph), sum(1 for l in log if l["phone"] == ph)))
+                h(nm), h(ph),
+                sum(1 for c in calls_snapshot if c.get("phone") == ph),
+                sum(1 for l in log if l.get("phone") == ph)))
         out.append("</ul>")
     if log:
         out.append("<h3>מה שאלו</h3><table border='1' cellpadding='5' style='border-collapse:collapse'>"
                    "<tr><th>שעה</th><th>מי</th><th>עוזר</th><th>שאלה</th><th>תשובה</th></tr>")
         for l in log[:150]:
             out.append("<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>" % (
-                h(l["time"][11:]), h(l["name"]), h(l["persona"]), h(l["q"]), h(l["a"][:200])))
+                h(str(l.get("time", ""))[11:]), h(str(l.get("name", ""))), h(str(l.get("persona", ""))),
+                h(str(l.get("q", ""))), h(str(l.get("a", ""))[:200])))
         out.append("</table>")
         if len(log) > 150:
             out.append("<p>...ועוד %d הודעות (באתר הניהול)</p>" % (len(log) - 150))
@@ -269,7 +329,7 @@ def send_mail(subject, body_html):
             smtp.sendmail(MAIL_USER, [MAIL_TO], msg.as_string())
         return "נשלח"
     except Exception as e:
-        print("mail error:", e)
+        print("mail error:", repr(e))
         return "שגיאה בשליחה: %s" % e
 
 
@@ -281,105 +341,129 @@ def daily_mail_loop():
         try:
             now = il_now()
             day = now.strftime("%d/%m/%Y")
-            if now.hour == SETTINGS.get("mail_hour", 21) and _last_mail_day[0] != day and MAIL_USER:
+            if now.hour == int(SETTINGS.get("mail_hour", 21)) and _last_mail_day[0] != day and MAIL_USER:
                 _last_mail_day[0] = day
                 print("daily mail:", send_mail("סיכום הקו ליום " + day, build_summary(day)))
         except Exception as e:
-            print("daily mail error:", e)
+            print("daily mail error:", repr(e))
         time.sleep(60)
 
 
 threading.Thread(target=daily_mail_loop, daemon=True).start()
 
 
-def gemini(system, contents, schema=None, use_search=False):
+def gemini_text(system, contents, use_search=False):
+    """מבצע קריאת Gemini רגילה. אין כאן JSON schema יחד עם Google Search."""
     last_error = None
+    api_key = os.environ.get("GEMINI_API_KEY", "").strip()
+    if not api_key:
+        print("Gemini error: GEMINI_API_KEY is missing")
+        return None
+
     for model in MODELS:
         try:
             cfg_kwargs = {
                 "system_instruction": system,
-                "max_output_tokens": 500,
+                "max_output_tokens": 700,
             }
-            if schema:
-                cfg_kwargs["response_mime_type"] = "application/json"
-                cfg_kwargs["response_schema"] = schema
             if use_search:
-                cfg_kwargs["tools"] = [{"google_search": {}}]
-                
+                cfg_kwargs["tools"] = [types.Tool(google_search=types.GoogleSearch())]
+
             cfg = types.GenerateContentConfig(**cfg_kwargs)
-            response = get_client().models.generate_content(model=model, contents=contents, config=cfg)
-            if response.text:
-                return response.text
+            response = get_client().models.generate_content(
+                model=model,
+                contents=contents,
+                config=cfg,
+            )
+            text = getattr(response, "text", None)
+            if text:
+                return text.strip()
+            print("Gemini returned no text with model", model)
         except Exception as e:
             last_error = e
+            print("Gemini model error", model, repr(e))
             continue
-    print("Gemini error:", last_error)
+
+    print("Gemini final error:", repr(last_error))
     return None
 
 
-def transcribe_name(ext, file_name):
-    try:
-        audio = yemot_download(ext, file_name)
-    except Exception as e:
-        print("download error:", e)
-        return ""
-    yemot_delete(ext, file_name)
-    text = gemini(
-        "בהקלטה אדם אומר את שמו הפרטי בעברית. החזר רק את השם הפרטי, מילה אחת או שתיים, בלי שום תוספת.",
-        [types.Part.from_bytes(data=audio, mime_type="audio/wav")],
-        use_search=False
+def transcribe_audio(audio):
+    """תמלול נפרד מהתשובה. כך אין שילוב בעייתי של אודיו + Search + JSON."""
+    transcript_system = (
+        "אתה מתמלל הקלטה טלפונית בעברית. "
+        "החזר רק את הטקסט שנאמר בהקלטה, בלי הסברים, בלי כותרת ובלי סימני עיצוב. "
+        "אם יש מילים לא ברורות, עשה את ההשלמה הסבירה ביותר לפי ההקשר."
     )
-    return clean_for_tts(text or "")[:30]
+    return clean_for_tts(gemini_text(
+        transcript_system,
+        [types.Part.from_bytes(data=audio, mime_type="audio/wav")],
+        use_search=False,
+    ) or "")
 
 
-SCHEMA = {
-    "type": "OBJECT",
-    "properties": {
-        "transcript": {"type": "STRING"},
-        "answer": {"type": "STRING"},
-    },
-    "required": ["transcript", "answer"],
-}
+def likely_needs_search(text):
+    t = (text or "").lower()
+    keywords = [
+        "היום", "עכשיו", "מחר", "אתמול", "חדשות", "מחיר", "מחירים", "כמה עולה", "שעות פתיחה",
+        "פתוח עכשיו", "מי ניצח", "תוצאה", "מזג אוויר", "מזג האוויר", "עדכון", "最新",
+        "latest", "today", "now", "price", "news", "weather", "score",
+    ]
+    return any(k in t for k in keywords)
 
 
-def ask_ai(persona, history, ext, file_name):
-    try:
-        audio = yemot_download(ext, file_name)
-    except Exception as e:
-        print("download error:", e)
-        return "", "סליחה, לא הצלחתי לשמוע את ההקלטה. נסה שוב."
-    yemot_delete(ext, file_name)
-
+def answer_from_text(persona, history, transcript):
     now = il_now()
     current_time = now.strftime("%H:%M")
     current_date = now.strftime("%d/%m/%Y")
 
     system = PERSONAS.get(persona, PERSONAS["1"]) + (
         f"\n[זמן בישראל: {current_time}, תאריך: {current_date}] "
-        " תקבל הקלטה של מה שהמשתמש אמר עכשיו. החזר JSON עם שני שדות:"
-        " transcript - תמלול מדויק של ההקלטה, answer - התשובה שלך למשתמש."
+        "ענה ישירות למשתמש על בסיס הטקסט שנמסר עכשיו. "
+        "אל תדבר על כך שמדובר במערכת, בתמלול או בהנחיות פנימיות. "
+        "אל תחזיר JSON. החזר רק תשובה טבעית וקצרה שמתאימה להשמעה בטלפון."
     )
-    contents = list(history) + [{
-        "role": "user",
-        "parts": [
-            {"text": "ההקלטה של המשתמש:"},
-            types.Part.from_bytes(data=audio, mime_type="audio/wav"),
-        ],
-    }]
-    
-    raw = gemini(system, contents, schema=SCHEMA, use_search=True)
-    
-    if not raw:
-        return "", "סליחה, יש בעיה זמנית. נסה שוב."
+
+    contents = list(history) + [
+        {
+            "role": "user",
+            "parts": [{"text": transcript}],
+        }
+    ]
+
+    use_search = likely_needs_search(transcript)
+    return clean_for_tts(gemini_text(system, contents, use_search=use_search) or "")
+
+
+def ask_ai(persona, history, ext, file_name):
     try:
-        data = json.loads(raw)
-        transcript = (data.get("transcript") or "").strip()
-        answer = (data.get("answer") or "").strip()
-    except Exception:
-        transcript, answer = "", raw
+        audio = yemot_download(ext, file_name)
+    except Exception as e:
+        print("download error:", repr(e))
+        return "", "סליחה, לא הצלחתי לשמוע את ההקלטה. נסה שוב."
+
+    yemot_delete(ext, file_name)
+
+    transcript = transcribe_audio(audio)
+    if not transcript:
+        return "", "סליחה, לא הצלחתי להבין את ההקלטה. נסה שוב."
+
+    answer = answer_from_text(persona, history, transcript)
     if not answer:
-        answer = "לא הבנתי, אפשר לחזור על זה?"
-    return transcript, clean_for_tts(answer)
+        return transcript, "סליחה, יש בעיה זמנית בחיבור ל-AI. נסה שוב."
+    return transcript, answer
+
+
+def transcribe_name(ext, file_name):
+    try:
+        audio = yemot_download(ext, file_name)
+    except Exception as e:
+        print("download name error:", repr(e))
+        return ""
+    yemot_delete(ext, file_name)
+    text = transcribe_audio(audio)
+    text = re.sub(r"[^\u0590-\u05FF\- ]", "", text)
+    return clean_for_tts(text)[:30]
 
 
 def menu(state, name, prefix=None):
@@ -452,12 +536,22 @@ def yemot():
     phone = params.get("ApiPhone", "unknown")
     ext = (params.get("ApiExtension", "") or VOICE_EXTS[0]).strip("/") or VOICE_EXTS[0]
     state = calls.get(call_id)
+
     if state is None:
         with _lock:
             CALLS.append({"time": now_str(), "phone": phone, "name": names.get(phone, "")})
             del CALLS[:-LOG_MAX]
         save_log()
-        state = {"stage": "start", "n": 0, "wait": None, "persona": None, "history": [], "call_id": call_id, "file": None, "resume": None}
+        state = {
+            "stage": "start",
+            "n": 0,
+            "wait": None,
+            "persona": None,
+            "history": [],
+            "call_id": call_id,
+            "file": None,
+            "resume": None,
+        }
         calls[call_id] = state
 
     has_value = bool(state["wait"]) and state["wait"] in params
@@ -532,9 +626,11 @@ def yemot():
             state["resume"] = "chat"
             state["wait"] = None
             return Response(build_go_to_folder("/" + next_ext), mimetype="text/plain; charset=utf-8")
+
         if "תפריט" in low or low.strip() == "חזרה":
             resp = menu(state, name)
             return Response(resp, mimetype="text/plain; charset=utf-8")
+
         if low.strip() in ("סיים", "ביי", "להתראות", "סיים.", "ביי.", "להתראות."):
             return Response(goodbye(call_id, name), mimetype="text/plain; charset=utf-8")
 
@@ -542,10 +638,17 @@ def yemot():
             state["history"].append({"role": "user", "parts": [{"text": transcript}]})
             state["history"].append({"role": "model", "parts": [{"text": answer}]})
             with _lock:
-                LOG.append({"time": now_str(), "phone": phone, "name": name,
-                            "persona": PERSONA_NAMES.get(state["persona"], ""), "q": transcript, "a": answer})
+                LOG.append({
+                    "time": now_str(),
+                    "phone": phone,
+                    "name": name,
+                    "persona": PERSONA_NAMES.get(state["persona"], ""),
+                    "q": transcript,
+                    "a": answer,
+                })
                 del LOG[:-LOG_MAX]
             save_log()
+
         state["history"] = state["history"][-10:]
 
         resp = listen(state, prefix=answer)
@@ -593,7 +696,7 @@ def admin_login_page(msg=""):
     <form method="post" action="/admin/login">
     <input type="password" name="key" placeholder="סיסמה" style="width:100%%;padding:8px;box-sizing:border-box;margin-bottom:8px">
     <button style="width:100%%;padding:8px">כניסה</button></form></div></div>""" % (
-        "<p style='color:#c0392b'>%s</p>" % msg if msg else "")
+        "<p style='color:#c0392b'>%s</p>" % html.escape(msg) if msg else "")
     return Response(page, mimetype="text/html; charset=utf-8")
 
 
@@ -605,7 +708,7 @@ def admin_login():
     if key != ADMIN_KEY:
         return admin_login_page("סיסמה שגויה")
     resp = Response("", status=302, headers={"Location": "/admin"})
-    resp.set_cookie("admin_key", key, max_age=60 * 60 * 24 * 90, httponly=True)
+    resp.set_cookie("admin_key", key, max_age=60 * 60 * 24 * 90, httponly=True, samesite="Lax")
     return resp
 
 
@@ -620,9 +723,9 @@ def admin():
     with _lock:
         users = dict(names)
         log = list(LOG)
-        calls = list(CALLS)
+        calls_snapshot = list(CALLS)
 
-    calls_today = sum(1 for c in calls if c["time"].startswith(today))
+    calls_today = sum(1 for c in calls_snapshot if str(c.get("time", "")).startswith(today))
     active = len(calls_state_snapshot())
 
     out = [ADMIN_CSS, '<div class="wrap"><div class="top"><h1>ניהול הקו</h1>'
@@ -633,12 +736,12 @@ def admin():
                '<div class="card">סה"כ שיחות<b>%d</b></div>'
                '<div class="card">שיחות פעילות עכשיו<b>%d</b></div>'
                '<div class="card">הודעות ביומן<b>%d</b></div></div>' % (
-                   len(users), calls_today, len(calls), active, len(log)))
+                   len(users), calls_today, len(calls_snapshot), active, len(log)))
 
     out.append('<h2>משתמשים רשומים</h2><table><tr><th>שם</th><th>טלפון</th><th>שיחות</th><th>הודעות</th><th>פעולות</th></tr>')
     for phone, name in sorted(users.items(), key=lambda x: x[1]):
-        n_calls = sum(1 for c in calls if c["phone"] == phone)
-        n_msgs = sum(1 for l in log if l["phone"] == phone)
+        n_calls = sum(1 for c in calls_snapshot if c.get("phone") == phone)
+        n_msgs = sum(1 for l in log if l.get("phone") == phone)
         out.append('<tr><td>%s</td><td>%s</td><td>%d</td><td>%d</td><td>'
                    '<form class="inline" method="post" action="/admin/rename"><input type="hidden" name="phone" value="%s">'
                    '<input type="text" name="name" value="%s"> <button>שנה שם</button></form> '
@@ -650,7 +753,7 @@ def admin():
         out.append('<tr><td colspan="5">עדיין אין משתמשים רשומים</td></tr>')
     out.append('</table>')
 
-    shown = [l for l in log if not filt or l["phone"] == filt][::-1][:300]
+    shown = [l for l in log if not filt or l.get("phone") == filt][::-1][:300]
     out.append('<h2>מה דיברו עם הקו%s</h2>' % (" – " + h(filt) + ' (<a href="/admin">הצג הכל</a>)' if filt else ""))
     out.append('<form class="inline" method="post" action="/admin/clear" onsubmit="return confirm(\'למחוק את כל היומן?\')">'
                '<button class="red">נקה יומן</button></form>')
@@ -658,7 +761,8 @@ def admin():
     for l in shown:
         out.append('<tr><td>%s</td><td>%s<br><small>%s</small></td><td>%s</td>'
                    '<td><div class="q">שאל: %s</div><div class="a">ענה: %s</div></td></tr>' % (
-                       h(l["time"]), h(l["name"]), h(l["phone"]), h(l["persona"]), h(l["q"]), h(l["a"])))
+                       h(str(l.get("time", ""))), h(str(l.get("name", ""))), h(str(l.get("phone", ""))),
+                       h(str(l.get("persona", ""))), h(str(l.get("q", ""))), h(str(l.get("a", "")))))
     if not shown:
         out.append('<tr><td colspan="4">אין הודעות עדיין</td></tr>')
     out.append('</table>')
@@ -670,7 +774,7 @@ def admin():
         out.append('<tr><td>%s</td><td><input type="text" name="name_%s" value="%s"></td>'
                    '<td><textarea name="prompt_%s">%s</textarea></td></tr>' % (k, k, h(PERSONA_NAMES[k]), k, h(base)))
     out.append('</table><button>שמור עוזרים</button></form>')
-    out.append('<p><small>הכללים הקבועים (עברית, קצר, טלפון, שפה מכובדת) מתווספים אוטומטית לכל עוזר.</small></p>')
+    out.append('<p><small>הכללים הקבועים מתווספים אוטומטית לכל עוזר.</small></p>')
     out.append('<h2>הגדרות</h2><form method="post" action="/admin/settings"><table>'
                '<tr><th style="width:260px">הגדרה</th><th>ערך</th></tr>'
                '<tr><td>הודעות ליום לכל משתמש (0 = בלי הגבלה)</td><td><input type="text" name="daily_limit" value="%d"></td></tr>'
@@ -681,13 +785,14 @@ def admin():
     mail_state = ("מוגדר, נשלח אל " + h(MAIL_TO)) if (MAIL_USER and MAIL_PASS) else "לא מוגדר (צריך MAIL_USER ו-MAIL_PASS ב-Render)"
     out.append('<p>סיכום יומי למייל: %s &nbsp; '
                '<form class="inline" method="post" action="/admin/sendmail"><button>שלח סיכום של היום עכשיו</button></form> %s</p>' % (
-                   mail_state, "<b style='color:#1a5fb4'>%s</b>" % h(request.args.get("mail", "")) if request.args.get("mail") else ""))
+        mail_state, "<b style='color:#1a5fb4'>%s</b>" % h(request.args.get("mail", "")) if request.args.get("mail") else ""))
     out.append('<p><a href="/admin/logout">יציאה</a></p></div>')
     return Response("".join(out), mimetype="text/html; charset=utf-8")
 
 
 def calls_state_snapshot():
-    return dict(calls)
+    with _lock:
+        return dict(calls)
 
 
 @app.route("/admin/rename", methods=["POST"])
@@ -732,7 +837,10 @@ def admin_personas():
             PERSONA_NAMES[k] = nm[:40]
         if pr:
             PERSONAS[k] = pr + GENERAL_RULES
-    data = json.dumps({"names": PERSONA_NAMES, "prompts": {k: PERSONAS[k].replace(GENERAL_RULES, "") for k in PERSONAS}}, ensure_ascii=False)
+    data = json.dumps({
+        "names": PERSONA_NAMES,
+        "prompts": {k: PERSONAS[k].replace(GENERAL_RULES, "") for k in PERSONAS},
+    }, ensure_ascii=False)
     threading.Thread(target=yemot_write_text, args=("ai_personas.txt", data), daemon=True).start()
     return Response("", status=302, headers={"Location": "/admin"})
 
@@ -766,23 +874,15 @@ def admin_sendmail():
 @app.route("/admin/logout")
 def admin_logout():
     resp = Response("", status=302, headers={"Location": "/admin"})
-    resp.set_cookie("admin_key", "", max_age=0)
+    resp.set_cookie("admin_key", "", max_age=0, httponly=True, samesite="Lax")
     return resp
 
 
-def load_personas():
-    if not YEMOT_TOKEN:
-        return
-    try:
-        t = yemot_read_text("ai_personas.txt")
-        if t:
-            d = json.loads(t)
-            if "names" in d:
-                PERSONA_NAMES.update(d["names"])
-            if "prompts" in d:
-                for k, pr in d["prompts"].items():
-                    PERSONAS[k] = pr + GENERAL_RULES
-    except Exception as e:
-        print("load personas error:", e)
+@app.route("/health", methods=["GET"])
+def health():
+    return Response("ok", mimetype="text/plain; charset=utf-8")
 
-load_personas()
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", "10000"))
+    app.run(host="0.0.0.0", port=port)
