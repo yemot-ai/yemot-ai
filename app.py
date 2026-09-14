@@ -33,6 +33,7 @@ GENERAL_RULES = (
     " ענה בשפה שבה המשתמש דיבר אליך; ברירת המחדל היא עברית."
     " שמור על שפה מכובדת וצנועה, ואל תעסוק בנושאים לא צנועים."
     " **חשוב מאוד: כשאתה מספק מספרים או מחירים, כתוב אותם במילים עברית (\"שתיים מאות שלושים וחמישה שקל\" ולא \"235\").**"
+    " יש לך גישה לחיפוש באינטרנט. אם המשתמש מבקש מידע עדכני, חדשות, מחירים, או חיפוש באתר מסוים (כמו ערוץ 14, יד 2 וכו'), השתמש בכלי החיפוש באינטרנט המחובר אליך כדי למצוא את המידע המדויק ולסכם אותו."
 )
 
 PERSONAS = {
@@ -44,6 +45,9 @@ PERSONAS = {
     "6": ("אתה ערס - ידיד קרוב וחמוד. תדבר בנימוס קלוקל מאוד. "
           "השתמש בביטויים כמו 'אחלה מה אחי', 'ספר לי', 'בואנו', 'כאן בדיוק'. "
           "תרגיש כמו ישיבה עם חבר טוב בבר. פתוח, כיפי ותמיד עם חיוך.") + GENERAL_RULES,
+    "7": ("אתה עוזר מוזיקלי. אתה מומחה למוזיקה, בדגש מיוחד על מוזיקה חסידית וישראלית. "
+          "ענה על שאלות הקשורות למוזיקה, ספק אקורדים לשירים כשמבקשים, הסבר מושגים במוזיקה "
+          "ושתף ידע על אמנים, שירים וסגנונות נגינה.") + GENERAL_RULES,
 }
 
 PERSONA_NAMES = {
@@ -53,6 +57,7 @@ PERSONA_NAMES = {
     "4": "העוזר היצירתי",
     "5": "העוזר הטכני",
     "6": "הערס",
+    "7": "העוזר המוזיקלי",
 }
 
 YEMOT_TOKEN = os.environ.get("YEMOT_TOKEN", "")          # מספר המערכת:סיסמה
@@ -305,17 +310,22 @@ def daily_mail_loop():
 threading.Thread(target=daily_mail_loop, daemon=True).start()
 
 
-def gemini(system, contents, schema=None):
+def gemini(system, contents, schema=None, use_search=False):
+    """פונקציית הקריאה ל-Gemini, עם אפשרות לחיפוש ברשת"""
     last_error = None
     for model in MODELS:
         try:
+            cfg_kwargs = {
+                "system_instruction": system,
+                "max_output_tokens": 500,
+            }
             if schema:
-                cfg = types.GenerateContentConfig(
-                    system_instruction=system, max_output_tokens=500,
-                    response_mime_type="application/json", response_schema=schema,
-                )
-            else:
-                cfg = types.GenerateContentConfig(system_instruction=system, max_output_tokens=500)
+                cfg_kwargs["response_mime_type"] = "application/json"
+                cfg_kwargs["response_schema"] = schema
+            if use_search:
+                cfg_kwargs["tools"] = [{"google_search": {}}]
+                
+            cfg = types.GenerateContentConfig(**cfg_kwargs)
             response = get_client().models.generate_content(model=model, contents=contents, config=cfg)
             if response.text:
                 return response.text
@@ -337,6 +347,7 @@ def transcribe_name(ext, file_name):
     text = gemini(
         "בהקלטה אדם אומר את שמו הפרטי בעברית. החזר רק את השם הפרטי, מילה אחת או שתיים, בלי שום תוספת.",
         [types.Part.from_bytes(data=audio, mime_type="audio/wav")],
+        use_search=False
     )
     return clean_for_tts(text or "")[:30]
 
@@ -377,7 +388,10 @@ def ask_ai(persona, history, ext, file_name):
             types.Part.from_bytes(data=audio, mime_type="audio/wav"),
         ],
     }]
-    raw = gemini(system, contents, schema=SCHEMA)
+    
+    # שימוש ב-use_search=True מאפשר לבוט לחפש בגוגל אם השאלה דורשת זאת
+    raw = gemini(system, contents, schema=SCHEMA, use_search=True)
+    
     if not raw:
         return "", "סליחה, יש בעיה זמנית. נסה שוב."
     try:
@@ -398,7 +412,7 @@ def menu(state, name, prefix=None):
     read = build_read(
         [("text",
           "שלום %s. הקש 1 לעוזר כללי. הקש 2 לעוזר תורני. הקש 3 לעוזר חוצפן. "
-          "הקש 4 לעוזר יצירתי. הקש 5 לעוזר טכני. הקש 6 לערס. הקש 9 לסיום." % name)],
+          "הקש 4 לעוזר יצירתי. הקש 5 לעוזר טכני. הקש 6 לערס. הקש 7 לעוזר מוזיקלי. הקש 9 לסיום." % name)],
         mode="tap",
         val_name=state["wait"],
         max_digits=1,
