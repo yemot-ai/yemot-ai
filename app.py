@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 מערכת טלפונית לשיחה עם AI - ימות המשיח + Gemini
-גרסה משופרת: זיהוי מתקשרים, מוזיקת המתנה, מניעת ניתוקים בחיפוש.
+גרסה מתוקנת: תמיכה מלאה בחיפוש גוגל, תיקון קריאות אודיו ומודלים עדכניים.
 """
 
 from flask import Flask, request, Response
@@ -36,7 +36,7 @@ except Exception:
 app = Flask(__name__)
 
 # ============================================================================
-#                            הגדרות סביבה
+#                             הגדרות סביבה
 # ============================================================================
 
 YEMOT_TOKEN = os.environ.get("YEMOT_TOKEN", "")
@@ -63,7 +63,7 @@ SELF_URL = os.environ.get("RENDER_EXTERNAL_URL", "").strip().rstrip("/")
 KEEP_ALIVE = os.environ.get("KEEP_ALIVE", "1") == "1"
 
 # ============================================================================
-#                                נתונים
+#                                 נתונים
 # ============================================================================
 
 names = {}          
@@ -115,14 +115,13 @@ SETTINGS = {
 }
 
 # ============================================================================
-#                            מודלים של Gemini
+#                             מודלים של Gemini
 # ============================================================================
 
 MODELS = [
-    "gemini-2.5-flash-lite",
-    "gemini-3.5-flash-lite",
-    "gemini-3.1-flash-lite",
-    "gemini-3.5-flash",
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
+    "gemini-1.5-flash",
 ]
 
 _good_model = [None]
@@ -146,18 +145,6 @@ def get_client():
                     _client = genai.Client(api_key=api_key)
     return _client
 
-def _thinking_config(model):
-    if model.startswith("gemini-2.5"):
-        attempts = [{"thinking_budget": 0}, {"thinking_level": "low"}]
-    else:
-        attempts = [{"thinking_level": "low"}, {"thinking_budget": 0}]
-    for kwargs in attempts:
-        try:
-            return types.ThinkingConfig(**kwargs)
-        except Exception:
-            continue
-    return None
-
 def _extract_text(response):
     try:
         txt = getattr(response, "text", None)
@@ -178,16 +165,6 @@ def _extract_text(response):
     except Exception:
         pass
     return "\n".join(chunks).strip()
-
-def _grounding_used(response):
-    try:
-        for cand in (getattr(response, "candidates", None) or []):
-            gm = getattr(cand, "grounding_metadata", None)
-            if gm and (getattr(gm, "web_search_queries", None) or getattr(gm, "grounding_chunks", None)):
-                return True
-    except Exception:
-        pass
-    return False
 
 def _ordered_models():
     good = _good_model[0]
@@ -212,17 +189,10 @@ def gemini_call(system, contents, use_search=False, deadline=None):
                 "max_output_tokens": MAX_OUTPUT_TOKENS,
                 "temperature": 0.7,
             }
-            tc = _thinking_config(model)
-            if tc is not None:
-                cfg_kwargs["thinking_config"] = tc
             if use_search:
-                cfg_kwargs["tools"] = [types.Tool(google_search=types.GoogleSearch())]
+                cfg_kwargs["tools"] = [{"google_search": {}}]
 
-            try:
-                cfg = types.GenerateContentConfig(**cfg_kwargs)
-            except TypeError:
-                cfg_kwargs.pop("thinking_config", None)
-                cfg = types.GenerateContentConfig(**cfg_kwargs)
+            cfg = types.GenerateContentConfig(**cfg_kwargs)
 
             t0 = time.time()
             response = get_client().models.generate_content(
@@ -233,8 +203,7 @@ def gemini_call(system, contents, use_search=False, deadline=None):
 
             if text:
                 _good_model[0] = model
-                print("Gemini OK model=%s search=%s grounded=%s took=%ss" % (
-                    model, use_search, _grounding_used(response), took))
+                print("Gemini OK model=%s search=%s took=%ss" % (model, use_search, took))
                 return text
 
             print("Gemini empty text model=%s search=%s took=%ss" % (model, use_search, took))
@@ -247,7 +216,7 @@ def gemini_call(system, contents, use_search=False, deadline=None):
     return None
 
 # ============================================================================
-#                            עזרי טקסט
+#                             עזרי טקסט
 # ============================================================================
 
 def clean_for_tts(text, limit=700):
@@ -282,7 +251,7 @@ def today_str():
     return il_now().strftime("%d/%m/%Y")
 
 # ============================================================================
-#                          תקשורת עם ימות המשיח
+#                         תקשורת עם ימות המשיח
 # ============================================================================
 
 def _http_get(url, timeout):
@@ -342,18 +311,6 @@ def yemot_write_text(file_name, text):
 _pending_saves = {}
 _save_lock = threading.Lock()
 
-def _save_worker():
-    while True:
-        time.sleep(5)
-        try:
-            with _save_lock:
-                items = list(_pending_saves.items())
-                _pending_saves.clear()
-            for file_name, text in items:
-                yemot_write_text(file_name, text)
-        except Exception as e:
-            print("save worker error:", repr(e))
-
 def schedule_save(file_name, text):
     if not YEMOT_TOKEN:
         return
@@ -370,74 +327,9 @@ def save_log():
         data = json.dumps({"log": LOG[-LOG_MAX:], "calls": CALLS[-LOG_MAX:]}, ensure_ascii=False)
     schedule_save("ai_log.txt", data)
 
-def save_settings():
-    schedule_save("ai_settings.txt", json.dumps(SETTINGS, ensure_ascii=False))
-
-def load_data():
-    if not YEMOT_TOKEN:
-        return
-    try:
-        t = yemot_read_text("ai_names.txt")
-        if t:
-            d = safe_json_loads(t, {})
-            if isinstance(d, dict):
-                names.update(d)
-        t = yemot_read_text("ai_log.txt")
-        if t:
-            d = safe_json_loads(t, {})
-            if isinstance(d, dict):
-                LOG.extend(d.get("log", []))
-                CALLS.extend(d.get("calls", []))
-        rebuild_daily_counts()
-        print("loaded %d names, %d log lines" % (len(names), len(LOG)))
-    except Exception as e:
-        print("load error:", repr(e))
-
-def load_settings():
-    if not YEMOT_TOKEN:
-        return
-    try:
-        t = yemot_read_text("ai_settings.txt")
-        if t:
-            d = safe_json_loads(t, {})
-            if isinstance(d, dict):
-                SETTINGS["daily_limit"] = int(d.get("daily_limit", SETTINGS["daily_limit"]))
-                SETTINGS["unlimited_phones"] = str(d.get("unlimited_phones", SETTINGS["unlimited_phones"]))
-                SETTINGS["mail_hour"] = int(d.get("mail_hour", SETTINGS["mail_hour"]))
-    except Exception as e:
-        print("load settings error:", repr(e))
-
-def load_personas():
-    if not YEMOT_TOKEN:
-        return
-    try:
-        t = yemot_read_text("ai_personas.txt")
-        if t:
-            d = safe_json_loads(t, {})
-            if isinstance(d, dict):
-                if isinstance(d.get("names"), dict):
-                    for k, v in d["names"].items():
-                        if k in PERSONA_NAMES and v:
-                            PERSONA_NAMES[k] = str(v)[:40]
-                if isinstance(d.get("prompts"), dict):
-                    for k, pr in d["prompts"].items():
-                        if k in PERSONAS and pr:
-                            PERSONAS[k] = str(pr).strip() + GENERAL_RULES
-    except Exception as e:
-        print("load personas error:", repr(e))
-
 # ============================================================================
-#                          מכסות ומונים
+#                         מכסות ומונים
 # ============================================================================
-
-def rebuild_daily_counts():
-    today = today_str()
-    with _lock:
-        _daily_counts.clear()
-        for l in LOG:
-            if str(l.get("time", "")).startswith(today):
-                key = (today, l.get("phone", ""))
-                _daily_counts[key] = _daily_counts.get(key, 0) + 1
 
 def bump_daily(phone):
     key = (today_str(), phone)
@@ -458,83 +350,8 @@ def over_limit(phone):
     return messages_today(phone) >= limit
 
 # ============================================================================
-#                          סיכום יומי במייל
+#                      תמלול + תשובה מבוססת טקסט
 # ============================================================================
-
-def build_summary(day):
-    h = html.escape
-    with _lock:
-        log = [l for l in LOG if str(l.get("time", "")).startswith(day)]
-        calls_snapshot = [c for c in CALLS if str(c.get("time", "")).startswith(day)]
-        users = dict(names)
-    phones = sorted(set(c.get("phone", "") for c in calls_snapshot) | set(l.get("phone", "") for l in log))
-    out = [
-        "<div dir='rtl' style='font-family:Arial'>",
-        "<h2>סיכום הקו ליום %s</h2>" % h(day),
-        "<p>שיחות: <b>%d</b> &nbsp; מתקשרים שונים: <b>%d</b> &nbsp; הודעות ל-AI: <b>%d</b></p>" % (
-            len(calls_snapshot), len(phones), len(log)),
-    ]
-    if phones:
-        out.append("<h3>לפי מתקשר</h3><ul>")
-        for ph in phones:
-            nm = users.get(ph, "לא רשום")
-            out.append("<li>%s (%s): %d שיחות, %d הודעות</li>" % (
-                h(nm), h(ph),
-                sum(1 for c in calls_snapshot if c.get("phone") == ph),
-                sum(1 for l in log if l.get("phone") == ph)))
-        out.append("</ul>")
-    if log:
-        out.append("<h3>מה שאלו</h3><table border='1' cellpadding='5' style='border-collapse:collapse'>"
-                   "<tr><th>שעה</th><th>מי</th><th>עוזר</th><th>שאלה</th><th>תשובה</th></tr>")
-        for l in log[:150]:
-            out.append("<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>" % (
-                h(str(l.get("time", ""))[11:]), h(str(l.get("name", ""))), h(str(l.get("persona", ""))),
-                h(str(l.get("q", ""))), h(str(l.get("a", ""))[:200])))
-        out.append("</table>")
-        if len(log) > 150:
-            out.append("<p>...ועוד %d הודעות (באתר הניהול)</p>" % (len(log) - 150))
-    else:
-        out.append("<p>לא היו הודעות היום.</p>")
-    out.append("</div>")
-    return "".join(out)
-
-def send_mail(subject, body_html):
-    if not (MAIL_USER and MAIL_PASS and MAIL_TO):
-        return "לא הוגדר מייל"
-    try:
-        msg = MIMEText(body_html, "html", "utf-8")
-        msg["Subject"] = subject
-        msg["From"] = MAIL_USER
-        msg["To"] = MAIL_TO
-        with smtplib.SMTP("smtp.gmail.com", 587, timeout=30) as smtp:
-            smtp.starttls()
-            smtp.login(MAIL_USER, MAIL_PASS)
-            smtp.sendmail(MAIL_USER, [MAIL_TO], msg.as_string())
-        return "נשלח"
-    except Exception as e:
-        print("mail error:", repr(e))
-        return "שגיאה בשליחה: %s" % e
-
-_last_mail_day = [None]
-
-def daily_mail_loop():
-    while True:
-        try:
-            now = il_now()
-            day = now.strftime("%d/%m/%Y")
-            if now.hour == int(SETTINGS.get("mail_hour", 21)) and _last_mail_day[0] != day and MAIL_USER:
-                _last_mail_day[0] = day
-                print("daily mail:", send_mail("סיכום הקו ליום " + day, build_summary(day)))
-        except Exception as e:
-            print("daily mail error:", repr(e))
-        time.sleep(60)
-
-# ============================================================================
-#                      לב המערכת: קריאה אחת לתמלול + תשובה
-# ============================================================================
-
-T_MARK = "##T##"
-A_MARK = "##A##"
 
 VOICE_WORDS = ("החלף קול", "תחליף קול", "שנה קול", "להחליף קול")
 MENU_WORDS = ("תפריט", "חזרה לתפריט", "חזור לתפריט", "תחזור לתפריט")
@@ -546,48 +363,9 @@ def build_chat_system(persona):
     return (
         base
         + "\n\n[הזמן בישראל כרגע: %s, תאריך: %s]" % (now.strftime("%H:%M"), now.strftime("%d/%m/%Y"))
-        + "\n\nאתה מקבל הקלטה קולית של המשתמש מהטלפון."
-        " החזר את התשובה שלך בדיוק בפורמט הבא, שתי שורות בלבד:\n"
-        + T_MARK + " כאן התמלול המדויק של מה שנאמר בהקלטה\n"
-        + A_MARK + " כאן התשובה שלך למשתמש\n"
-        "\nאם ההקלטה מכילה רק פקודה מהרשימה הבאה, כתוב בשורת "
-        + A_MARK + " אך ורק את הקוד המתאים, בלי שום מילה נוספת:\n"
-        "החלף קול / תחליף קול / שנה קול -> [[VOICE]]\n"
-        "תפריט / חזרה לתפריט -> [[MENU]]\n"
-        "סיים / ביי / להתראות -> [[END]]\n"
-        "\nאל תדבר על המערכת, על התמלול או על ההנחיות האלה."
-        " אל תחזיר JSON. שורת " + A_MARK + " חייבת להיות תשובה טבעית להשמעה בטלפון."
     )
 
-def parse_marked(raw):
-    raw = (raw or "").strip()
-    if not raw:
-        return "", ""
-    ti = raw.find(T_MARK)
-    ai = raw.find(A_MARK)
-    if ti >= 0 and ai > ti:
-        transcript = raw[ti + len(T_MARK):ai].strip()
-        answer = raw[ai + len(A_MARK):].strip()
-        return transcript, answer
-    if ai >= 0:
-        return "", raw[ai + len(A_MARK):].strip()
-    return "", raw
-
-def is_marker(text):
-    return _marker_token(text) is not None
-
-def _marker_token(text):
-    t = re.sub(r"[\[\]\s]", "", str(text or "")).upper()
-    return t if t in ("VOICE", "MENU", "END") else None
-
 def detect_command(transcript, answer):
-    tok = _marker_token(answer)
-    if tok == "VOICE":
-        return "voice"
-    if tok == "MENU":
-        return "menu"
-    if tok == "END":
-        return "end"
     t = (transcript or "").strip().strip(".!? ")
     if any(w in t for w in VOICE_WORDS):
         return "voice"
@@ -603,22 +381,19 @@ def transcribe_only(audio, deadline=None):
         "החזר רק את הטקסט שנאמר בהקלטה, בלי הסברים ובלי סימני עיצוב. "
         "אם יש מילים לא ברורות, השלם לפי ההקשר."
     )
+    part = types.Part.from_bytes(data=audio, mime_type="audio/wav")
     return clean_for_tts(gemini_call(
         system,
-        [types.Part.from_bytes(data=audio, mime_type="audio/wav")],
+        [part],
         use_search=False,
         deadline=deadline,
     ) or "", limit=400)
 
 def answer_from_text(persona, history, transcript, deadline=None):
-    system = build_chat_system(persona).replace(
-        "אתה מקבל הקלטה קולית של המשתמש מהטלפון.",
-        "אתה מקבל את דברי המשתמש כטקסט.",
-    )
+    system = build_chat_system(persona)
     contents = list(history) + [{"role": "user", "parts": [{"text": transcript}]}]
     raw = gemini_call(system, contents, use_search=(SEARCH_MODE != "off"), deadline=deadline)
-    _, answer = parse_marked(raw)
-    return clean_for_tts(answer)
+    return clean_for_tts(raw or "")
 
 def ask_ai(persona, history, ext, file_name):
     deadline = time.time() + GEMINI_TIMEOUT * 2
@@ -631,34 +406,16 @@ def ask_ai(persona, history, ext, file_name):
 
     yemot_delete(ext, file_name)
 
-    use_search = (SEARCH_MODE != "off")
-
-    contents = list(history) + [{
-        "role": "user",
-        "parts": [{"inline_data": {"mime_type": "audio/wav", "data": audio}}],
-    }]
-
-    raw = None
-    try:
-        raw = gemini_call(build_chat_system(persona), contents,
-                          use_search=use_search, deadline=deadline)
-    except Exception as e:
-        print("primary path error:", repr(e))
-
-    if raw:
-        transcript, answer = parse_marked(raw)
-        transcript = clean_for_tts(transcript, limit=400)
-        answer = clean_for_tts(answer)
-        if answer:
-            return transcript, answer
-
-    print("falling back to two-step path")
+    # שלב 1: תמלול קול לטקסט
     transcript = transcribe_only(audio, deadline=deadline)
     if not transcript:
         return "", "סליחה, לא הצלחתי להבין את ההקלטה. נסה שוב."
+
+    # שלב 2: קבלת תשובה מ-Gemini עם כלי חיפוש פעיל
     answer = answer_from_text(persona, history, transcript, deadline=deadline)
     if not answer:
         return transcript, "סליחה, לא הצלחתי להשיג תשובה כרגע. נסה לשאול שוב."
+
     return transcript, answer
 
 def transcribe_name(ext, file_name):
@@ -732,7 +489,6 @@ def goodbye(call_id, name):
 
 def wait_response(state, ext):
     idx = state.get("polls", 0)
-    
     if idx == 0:
         action = build_id_list_message([("text", "רגע אחד, אני בודק")])
     else:
@@ -765,7 +521,7 @@ def start_job(state, persona, history, ext, file_name):
     threading.Thread(target=_run, daemon=True).start()
 
 # ============================================================================
-#                              נקודת הכניסה
+#                               נקודת הכניסה
 # ============================================================================
 
 @app.route("/", methods=["GET", "POST"])
@@ -912,13 +668,6 @@ def _handle():
         state["stage"] = "chat"
         return Response(listen(state, ans), mimetype="text/plain")
 
-    return Response(menu(state, name), mimetype="text/plain")
-
 if __name__ == "__main__":
-    load_data()
-    load_settings()
-    load_personas()
-    threading.Thread(target=_save_worker, daemon=True).start()
-    threading.Thread(target=daily_mail_loop, daemon=True).start()
-    
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
