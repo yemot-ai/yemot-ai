@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 מערכת טלפונית לשיחה עם AI - ימות המשיח + Gemini
-גרסה מתוקנת: תמיכה מלאה בחיפוש גוגל, תיקון קריאות אודיו ומודלים עדכניים.
+גרסה מתוקנת וסופית: תמיכה מלאה בחיפוש גוגל, מנגינת המתנה מותאמת אישית (051), ניהול תורים ויציבות.
 """
 
 from flask import Flask, request, Response
@@ -17,13 +17,10 @@ from google.genai import types
 import os
 import re
 import json
-import html
 import threading
 import datetime
 import time
-import smtplib
 import traceback
-from email.mime.text import MIMEText
 import urllib.request
 import urllib.parse
 
@@ -45,22 +42,13 @@ if not VOICE_EXTS:
     VOICE_EXTS = ["1"]
 DATA_EXT = VOICE_EXTS[0]
 
-ADMIN_KEY = os.environ.get("ADMIN_KEY", "")
-
-MAIL_USER = os.environ.get("MAIL_USER", "")
-MAIL_PASS = os.environ.get("MAIL_PASS", "")
-MAIL_TO = os.environ.get("MAIL_TO", "") or MAIL_USER
-
 OWNER_PHONES = ["0527661756", "0527609296"]
 YEMOT_API = "https://www.call2all.co.il/ym/api/"
 
-ASYNC_ANSWER = os.environ.get("ASYNC_ANSWER", "1") == "1"
 MAX_WAIT_ROUNDS = int(os.environ.get("MAX_WAIT_ROUNDS", "40"))
 SEARCH_MODE = os.environ.get("SEARCH_MODE", "always").strip().lower()
 MAX_OUTPUT_TOKENS = int(os.environ.get("MAX_OUTPUT_TOKENS", "8192"))
 GEMINI_TIMEOUT = int(os.environ.get("GEMINI_TIMEOUT", "40"))
-SELF_URL = os.environ.get("RENDER_EXTERNAL_URL", "").strip().rstrip("/")
-KEEP_ALIVE = os.environ.get("KEEP_ALIVE", "1") == "1"
 
 # ============================================================================
 #                                 נתונים
@@ -111,7 +99,6 @@ PERSONA_NAMES = {
 SETTINGS = {
     "daily_limit": int(os.environ.get("DAILY_LIMIT", "40")),
     "unlimited_phones": "0527661756,0527609296",
-    "mail_hour": 21,
 }
 
 # ============================================================================
@@ -233,12 +220,6 @@ def clean_for_tts(text, limit=700):
     dot = max(cut.rfind("."), cut.rfind("!"), cut.rfind("?"))
     return cut[:dot + 1] if dot > limit * 0.6 else cut
 
-def safe_json_loads(text, default=None):
-    try:
-        return json.loads(text)
-    except Exception:
-        return default
-
 def il_now():
     if IL_TZ is not None:
         return datetime.datetime.now(IL_TZ)
@@ -281,32 +262,6 @@ def yemot_delete(ext, file_name):
         except Exception as e:
             print("delete error:", repr(e))
     threading.Thread(target=_run, daemon=True).start()
-
-def yemot_read_text(file_name):
-    try:
-        url = YEMOT_API + "DownloadFile?" + urllib.parse.urlencode({
-            "token": YEMOT_TOKEN,
-            "path": "ivr2:/%s/%s" % (DATA_EXT, file_name),
-        })
-        data = _http_get(url, 20).decode("utf-8", "ignore")
-        if data.lstrip().startswith('{"responseStatus'):
-            return None
-        return data
-    except Exception as e:
-        print("read text error:", repr(e))
-        return None
-
-def yemot_write_text(file_name, text):
-    try:
-        body = urllib.parse.urlencode({
-            "token": YEMOT_TOKEN,
-            "what": "ivr2:/%s/%s" % (DATA_EXT, file_name),
-            "contents": text,
-        }).encode("utf-8")
-        req = urllib.request.Request(YEMOT_API + "UploadTextFile", data=body, method="POST")
-        urllib.request.urlopen(req, timeout=25).read()
-    except Exception as e:
-        print("write text error:", repr(e))
 
 _pending_saves = {}
 _save_lock = threading.Lock()
@@ -406,12 +361,12 @@ def ask_ai(persona, history, ext, file_name):
 
     yemot_delete(ext, file_name)
 
-    # שלב 1: תמלול קול לטקסט
+    # שלב 1: תמלול קול לטקסט בלבד
     transcript = transcribe_only(audio, deadline=deadline)
     if not transcript:
         return "", "סליחה, לא הצלחתי להבין את ההקלטה. נסה שוב."
 
-    # שלב 2: קבלת תשובה מ-Gemini עם כלי חיפוש פעיל
+    # שלב 2: קבלת תשובה על בסיס הטקסט (כאן החיפוש עובד בבטחה)
     answer = answer_from_text(persona, history, transcript, deadline=deadline)
     if not answer:
         return transcript, "סליחה, לא הצלחתי להשיג תשובה כרגע. נסה לשאול שוב."
@@ -492,7 +447,9 @@ def wait_response(state, ext):
     if idx == 0:
         action = build_id_list_message([("text", "רגע אחד, אני בודק")])
     else:
-        action = build_id_list_message([("file", "050")])
+        # השמעת מנגינת ההמתנה הייעודית.
+        # ודא שהקובץ בשם 051 (או שם אחר שתשנה אליו) מועלה למערכת ימות המשיח שלך!
+        action = build_id_list_message([("file", "051")])
         
     return build_combined_action([
         action,
@@ -565,7 +522,7 @@ def _handle():
     stage = state.get("stage", "init")
     name = names.get(phone, "אורח")
 
-    # 1. זיהוי משתמש חדש
+    # 1. זיהוי משתמש חדש - בקשת שם
     if stage == "init":
         if phone and phone not in names:
             state["stage"] = "ask_name"
@@ -591,7 +548,7 @@ def _handle():
         else:
             return Response(menu(state, name), mimetype="text/plain")
 
-    # 2. תמלול השם
+    # 2. שמירת השם המוקלט
     elif stage == "ask_name":
         file_name = state.get("file")
         if file_name:
@@ -603,7 +560,7 @@ def _handle():
                 
         return Response(menu(state, name), mimetype="text/plain")
 
-    # 3. תפריט
+    # 3. תפריט בחירת אישיות
     elif stage == "menu":
         choice = params.get(state.get("wait", ""))
         if choice == "9":
@@ -613,7 +570,7 @@ def _handle():
             return Response(listen(state, f"בחרת ב{PERSONA_NAMES[choice]}", first=True), mimetype="text/plain")
         return Response(menu(state, name, "בחירה לא חוקית"), mimetype="text/plain")
 
-    # 4. שיחה
+    # 4. הקלטת שאלת המשתמש
     elif stage == "chat":
         if over_limit(phone):
             return Response(goodbye(call_id, name), mimetype="text/plain")
@@ -625,7 +582,7 @@ def _handle():
         start_job(state, state.get("persona", "1"), state.get("history", []), ext, file_name)
         return Response(wait_response(state, ext), mimetype="text/plain")
 
-    # 5. המתנה לתשובה מ-Gemini
+    # 5. מצב המתנה (Polling) בזמן עבודת ה-AI
     elif stage == "thinking":
         job = state.get("job")
         if not job:
@@ -647,11 +604,12 @@ def _handle():
         elif cmd == "end":
             return Response(goodbye(call_id, name), mimetype="text/plain")
 
+        # שמירת היסטוריית השיחה לזכרון של Gemini
         state.setdefault("history", []).extend([
             {"role": "user", "parts": [{"text": transcript}]},
             {"role": "model", "parts": [{"text": ans}]}
         ])
-        state["history"] = state["history"][-10:]
+        state["history"] = state["history"][-10:]  # שומר רק 10 הודעות אחרונות
 
         with _lock:
             LOG.append({
