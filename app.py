@@ -17,6 +17,7 @@ import os
 import re
 import threading
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from zoneinfo import ZoneInfo
@@ -47,7 +48,7 @@ ADMIN_KEY = os.environ.get(
 ).strip()
 
 
-# שלוחות קול.
+# שלוחות קול
 # לדוגמה:
 # VOICE_EXTS=1,2,3
 VOICE_EXTS = [
@@ -65,43 +66,46 @@ if not VOICE_EXTS:
 DATA_EXT = VOICE_EXTS[0]
 
 
-# מודל ראשי מהיר.
-# מודל גיבוי רק במקרה שהמודל הראשי נכשל.
+# מודל ראשי + מודל גיבוי
 AI_MODELS = [
     "gemini-3.5-flash-lite",
     "gemini-3.1-flash-lite",
 ]
 
 
-# אורך הקלטה מרבי.
+# מגבלת אורך הקלטה
 MAX_AUDIO_SECONDS = 25
 
 
-# גודל WAV מרבי.
+# מגבלת גודל קובץ קול
 MAX_AUDIO_BYTES = 7 * 1024 * 1024
 
 
-# כמה זוגות שאלות/תשובות לשמור בזיכרון בזמן השיחה בלבד.
+# כמה הודעות נשמרות בהקשר של השיחה
+# בזיכרון בלבד
 MAX_HISTORY_MESSAGES = 6
 
 
-# כמה זמן שיחה שלא קיבלה בקשה תישאר בזיכרון.
+# כמה זמן שיחה לא פעילה תישאר בזיכרון
 CALL_TTL_SECONDS = 45 * 60
 
 
-# מכסה יומית.
-DEFAULT_DAILY_LIMIT = max(
-    0,
-    int(
-        os.environ.get(
-            "DAILY_LIMIT",
-            "40"
-        ) or 0
+# מכסה יומית
+try:
+    DEFAULT_DAILY_LIMIT = max(
+        0,
+        int(
+            os.environ.get(
+                "DAILY_LIMIT",
+                "40"
+            ) or 0
+        )
     )
-)
+except Exception:
+    DEFAULT_DAILY_LIMIT = 40
 
 
-# משתמשים ללא הגבלה.
+# מספרים ללא הגבלה
 OWNER_PHONES = {
     "0527661756",
     "0527609296",
@@ -109,7 +113,7 @@ OWNER_PHONES = {
 
 
 # ============================================================
-# מצב זמני בזיכרון בלבד
+# זיכרון זמני בלבד
 # ============================================================
 
 names = {}
@@ -128,7 +132,7 @@ _client = None
 
 
 # ============================================================
-# כללים כלליים
+# כללים כלליים ל-AI
 # ============================================================
 
 GENERAL_RULES = (
@@ -137,7 +141,7 @@ GENERAL_RULES = (
     "ובלי סימני עיצוב."
     " ענה בשפה שבה המשתמש דיבר אליך; "
     "ברירת המחדל היא עברית."
-    " שמור על שפה מכובדת וצנועה."
+    " שמור על שפה מכובדת."
     " כשאתה מספק מספרים או מחירים, "
     "כתוב אותם במילים בעברית ולא בספרות."
 )
@@ -199,7 +203,7 @@ for key, (name, prompt) in DEFAULT_PERSONAS.items():
 
 
 # ============================================================
-# אזור זמן ישראל
+# זמן ישראל
 # ============================================================
 
 try:
@@ -219,11 +223,16 @@ def il_now():
 
 
 # ============================================================
-# כלי טקסט
+# ניקוי טקסט
 # ============================================================
 
-def clean_for_tts(text, limit=650):
-    text = str(text or "")
+def clean_for_tts(
+    text,
+    limit=650
+):
+    text = str(
+        text or ""
+    )
 
     text = re.sub(
         r"[*_#`>\[\]{}]",
@@ -310,10 +319,11 @@ def cleanup_calls():
 
 
 # ============================================================
-# מכסת הודעות
+# מגבלת הודעות
 # ============================================================
 
 def over_limit(phone):
+
     if phone in OWNER_PHONES:
         return False
 
@@ -343,6 +353,7 @@ def over_limit(phone):
 
 
 def consume_message(phone):
+
     if phone in OWNER_PHONES:
         return True
 
@@ -377,7 +388,7 @@ def consume_message(phone):
 
 
 # ============================================================
-# ימות המשיח - הורדת קובץ
+# ימות המשיח - הורדת WAV
 # ============================================================
 
 def yemot_download(
@@ -427,8 +438,7 @@ def yemot_download(
 
 
 # ============================================================
-# ימות המשיח - מחיקת קובץ
-# נעשה ברקע כדי לא לעכב את השיחה
+# מחיקת WAV
 # ============================================================
 
 def yemot_delete(
@@ -484,9 +494,8 @@ def delete_audio_async(
 
 
 # ============================================================
-# קבצי מידע קבועים
-# רק שמות והגדרות.
-# שום היסטוריית שיחה לא נשמרת.
+# קריאת קובץ טקסט
+# תיקון: 404 = קובץ עדיין לא קיים
 # ============================================================
 
 def yemot_read_text(
@@ -531,6 +540,21 @@ def yemot_read_text(
 
         return data
 
+    except urllib.error.HTTPError as exc:
+
+        # קובץ לא קיים:
+        # לא מדובר בתקלה של המערכת.
+        if exc.code == 404:
+            return None
+
+        print(
+            "read text HTTP error:",
+            exc.code,
+            repr(exc)
+        )
+
+        return None
+
     except Exception as exc:
 
         print(
@@ -540,6 +564,10 @@ def yemot_read_text(
 
         return None
 
+
+# ============================================================
+# כתיבת קובץ טקסט
+# ============================================================
 
 def yemot_write_text(
     file_name,
@@ -587,8 +615,14 @@ def yemot_write_text(
         return False
 
 
+# ============================================================
+# שמירת שמות בלבד
+# ============================================================
+
 def save_names():
+
     with state_lock:
+
         data = json.dumps(
             names,
             ensure_ascii=False
@@ -604,7 +638,12 @@ def save_names():
     ).start()
 
 
+# ============================================================
+# שמירת הגדרות עוזרים בלבד
+# ============================================================
+
 def save_personas():
+
     with state_lock:
 
         data = json.dumps(
@@ -625,7 +664,12 @@ def save_personas():
     ).start()
 
 
+# ============================================================
+# טעינת שמות
+# ============================================================
+
 def load_names():
+
     text = yemot_read_text(
         "ai_names.txt"
     )
@@ -634,9 +678,11 @@ def load_names():
         return
 
     try:
+
         data = json.loads(
             text
         )
+
     except Exception:
         return
 
@@ -663,7 +709,12 @@ def load_names():
                 names[phone] = name
 
 
+# ============================================================
+# טעינת פרסונות
+# ============================================================
+
 def load_personas():
+
     text = yemot_read_text(
         "ai_personas.txt"
     )
@@ -672,9 +723,11 @@ def load_personas():
         return
 
     try:
+
         data = json.loads(
             text
         )
+
     except Exception:
         return
 
@@ -705,6 +758,7 @@ def load_personas():
                     key in persona_names
                     and value
                 ):
+
                     persona_names[key] = clean_for_tts(
                         value,
                         40
@@ -721,6 +775,7 @@ def load_personas():
                     key in persona_prompts
                     and value
                 ):
+
                     persona_prompts[key] = clean_for_tts(
                         value,
                         1200
@@ -733,10 +788,11 @@ if YEMOT_TOKEN:
 
 
 # ============================================================
-# GEMINI CLIENT
+# Gemini Client
 # ============================================================
 
 def get_client():
+
     global _client
 
     if _client is not None:
@@ -748,6 +804,7 @@ def get_client():
             return _client
 
         if not GEMINI_API_KEY:
+
             raise RuntimeError(
                 "GEMINI_API_KEY is missing"
             )
@@ -760,35 +817,26 @@ def get_client():
 
 
 # ============================================================
-# בחירת פרסונה
+# פרומפט פרסונה
 # ============================================================
 
 def get_persona_prompt(
     persona_key
 ):
+
     with state_lock:
 
-        prompt = persona_prompts.get(
+        return persona_prompts.get(
             persona_key,
             persona_prompts["1"]
         )
 
-    return prompt
-
 
 # ============================================================
-# ה-AI הראשי
+# AI קולית
 #
-# חשוב:
-# אין תמלול נפרד.
-#
-# Gemini מקבל:
-# 1. היסטוריה
-# 2. אודיו חדש
-# 3. הוראות
-#
-# ומחזיר:
-# תשובה + טקסט שהובן + פקודה אם קיימת.
+# קריאה אחת:
+# WAV + היסטוריה -> תשובה
 # ============================================================
 
 def ai_audio_turn(
@@ -796,6 +844,7 @@ def ai_audio_turn(
     history,
     audio_bytes
 ):
+
     now = il_now()
 
     current_date = now.strftime(
@@ -820,73 +869,78 @@ def ai_audio_turn(
         + """
  אתה מקבל הקלטה קולית של משתמש בשיחת טלפון.
 
- המטרה היא לענות למשתמש במהירות ובטבעיות.
+ המטרה היא להבין את ההקלטה ולתת תשובה מהירה וטבעית.
 
- יש לבצע את המשימה בתוך קריאת AI אחת.
+ אם המשתמש ביקש מידע עדכני או מידע שיכול להשתנות,
+ השתמש ב-Google Search.
+ אחרת אל תבצע חיפוש מיותר.
 
- תחילה הבן מה המשתמש אמר.
- לאחר מכן:
- אם מדובר בשאלה רגילה, החזר תשובה קצרה.
- אם המשתמש מבקש מידע עדכני או מידע שיכול להשתנות,
- ניתן להשתמש ב-Google Search.
- אל תחפש באינטרנט כשאין בכך צורך.
+ יש שלוש פקודות מיוחדות:
 
- יש גם שלוש פקודות מיוחדות:
- אם המשתמש אומר להחליף קול, החזר COMMAND|CHANGE_VOICE
- אם המשתמש אומר תפריט או חזרה, החזר COMMAND|MENU
- אם המשתמש אומר סיים, ביי או להתראות, החזר COMMAND|HANGUP
+ אם המשתמש אומר:
+ החלף קול / תחליף קול / שנה קול
 
- עבור שאלה רגילה יש להחזיר בדיוק בפורמט:
+ החזר בדיוק:
+ COMMAND|CHANGE_VOICE
 
-TRANSCRIPT|הטקסט שהמשתמש אמר
-ANSWER|התשובה שלך
+ אם המשתמש אומר:
+ תפריט / חזרה
 
-אין להחזיר שום שורה נוספת.
+ החזר בדיוק:
+ COMMAND|MENU
 
- עבור פקודה יש להחזיר בדיוק שורה אחת:
+ אם המשתמש אומר:
+ סיים / ביי / להתראות
 
-COMMAND|CHANGE_VOICE
+ החזר בדיוק:
+ COMMAND|HANGUP
 
-או:
+ עבור שאלה רגילה החזר בדיוק:
 
-COMMAND|MENU
+ TRANSCRIPT|הטקסט שהמשתמש אמר
+ ANSWER|התשובה למשתמש
 
-או:
+ אין להחזיר שורות אחרות.
 
-COMMAND|HANGUP
-
-התשובה מיועדת להשמעה בטלפון.
-היא חייבת להיות קצרה.
-אין להשתמש בכוכביות.
-אין להשתמש ברשימות.
-אין להשתמש באימוג'ים.
-אין לדבר על הפורמט הזה.
-"""
+ התשובה צריכה להתאים להשמעה בטלפון.
+ היה קצר וברור.
+ אל תשתמש בכוכביות.
+ אל תשתמש ברשימות.
+ אל תשתמש באימוג'ים.
+ """
     )
 
     contents = []
 
-    # היסטוריה זמנית של השיחה בלבד
+    # ההיסטוריה קיימת רק בזיכרון
+    # במהלך השיחה
     for item in history:
+
         contents.append(
             item
         )
 
-    # האודיו החדש
+    # אודיו חדש
     contents.append({
+
         "role": "user",
+
         "parts": [
+
             types.Part.from_bytes(
                 data=audio_bytes,
                 mime_type="audio/wav"
             ),
+
             types.Part.from_text(
                 text=(
                     "האזן להקלטה ופעל "
                     "לפי ההוראות."
                 )
             ),
+
         ],
+
     })
 
     for model_name in AI_MODELS:
@@ -894,8 +948,14 @@ COMMAND|HANGUP
         try:
 
             config_args = {
-                "system_instruction": system_instruction,
-                "max_output_tokens": 220,
+
+                "system_instruction":
+                    system_instruction,
+
+                "max_output_tokens":
+                    220,
+
+                # Google Search זמין למודל
                 "tools": [
                     types.Tool(
                         google_search=types.GoogleSearch()
@@ -904,7 +964,7 @@ COMMAND|HANGUP
             }
 
             # Gemini 3.x:
-            # מינימום reasoning לצורך latency נמוך
+            # מינימום חשיבה = תגובה מהירה יותר
             if model_name.startswith(
                 "gemini-3."
             ):
@@ -933,14 +993,12 @@ COMMAND|HANGUP
 
             if text:
 
-                text = text.strip()
-
                 print(
                     "Gemini success:",
                     model_name
                 )
 
-                return text
+                return text.strip()
 
             print(
                 "Gemini empty response:",
@@ -961,48 +1019,63 @@ COMMAND|HANGUP
 
 
 # ============================================================
-# פענוח תשובת Gemini
+# פענוח תשובת AI
 # ============================================================
 
 def parse_ai_result(
     raw
 ):
+
     raw = str(
         raw or ""
     ).strip()
 
     if not raw:
+
         return {
             "type": "error",
             "transcript": "",
             "answer": "",
         }
 
-    # פקודות
     upper = raw.upper()
 
-    if "COMMAND|CHANGE_VOICE" in upper:
+    # פקודת החלפת קול
+    if (
+        "COMMAND|CHANGE_VOICE"
+        in upper
+    ):
+
         return {
             "type": "change_voice",
             "transcript": "",
             "answer": "",
         }
 
-    if "COMMAND|MENU" in upper:
+    # תפריט
+    if (
+        "COMMAND|MENU"
+        in upper
+    ):
+
         return {
             "type": "menu",
             "transcript": "",
             "answer": "",
         }
 
-    if "COMMAND|HANGUP" in upper:
+    # סיום
+    if (
+        "COMMAND|HANGUP"
+        in upper
+    ):
+
         return {
             "type": "hangup",
             "transcript": "",
             "answer": "",
         }
 
-    # תשובה רגילה
     transcript_match = re.search(
         r"TRANSCRIPT\|(.*?)(?:\n|$)",
         raw,
@@ -1027,12 +1100,14 @@ def parse_ai_result(
         else ""
     )
 
-    # במקרה של פורמט חלקי
+    # fallback אם Gemini לא שמר בדיוק
+    # על הפורמט
     if not answer:
 
         lines = [
             line.strip()
-            for line in raw.splitlines()
+            for line
+            in raw.splitlines()
             if line.strip()
         ]
 
@@ -1047,27 +1122,29 @@ def parse_ai_result(
                 flags=re.IGNORECASE
             )
 
-    answer = clean_for_tts(
-        answer,
-        700
-    )
-
     transcript = clean_for_tts(
         transcript,
         500
     )
 
+    answer = clean_for_tts(
+        answer,
+        700
+    )
+
     return {
-        "type": "answer"
-        if answer
-        else "error",
+        "type": (
+            "answer"
+            if answer
+            else "error"
+        ),
         "transcript": transcript,
         "answer": answer,
     }
 
 
 # ============================================================
-# הודעה אחת
+# טיפול ב-AI
 # ============================================================
 
 def ask_ai(
@@ -1076,6 +1153,7 @@ def ask_ai(
     ext,
     file_name
 ):
+
     try:
 
         audio = yemot_download(
@@ -1099,7 +1177,7 @@ def ask_ai(
             ),
         }
 
-    # לא לעכב את השיחה על מחיקת הקובץ
+    # מחיקה ברקע
     delete_audio_async(
         ext,
         file_name
@@ -1126,7 +1204,7 @@ def ask_ai(
 
 
 # ============================================================
-# בניית תפריט
+# תפריט
 # ============================================================
 
 def menu(
@@ -1134,6 +1212,7 @@ def menu(
     name,
     prefix=None
 ):
+
     state["n"] += 1
 
     state["wait"] = (
@@ -1188,6 +1267,7 @@ def record(
     prompt,
     prefix=None
 ):
+
     state["n"] += 1
 
     state["wait"] = (
@@ -1250,6 +1330,7 @@ def listen(
     prefix=None,
     first=False
 ):
+
     state["stage"] = "chat"
 
     if first:
@@ -1278,17 +1359,17 @@ def listen(
 
 
 # ============================================================
-# סיום
+# סיום שיחה
 # ============================================================
 
 def goodbye(
     call_id,
     name
 ):
+
     with state_lock:
 
-        # ברגע שמסתיימת השיחה
-        # כל ההיסטוריה נמחקת
+        # כאן נמחק כל הזיכרון של השיחה
         calls.pop(
             call_id,
             None
@@ -1309,7 +1390,7 @@ def goodbye(
 
 
 # ============================================================
-# ENDPOINT ראשי
+# Endpoint של ימות המשיח
 # ============================================================
 
 @app.route(
@@ -1345,6 +1426,7 @@ def yemot():
     ) == "yes":
 
         with state_lock:
+
             calls.pop(
                 call_id,
                 None
@@ -1391,18 +1473,32 @@ def yemot():
         if state is None:
 
             state = {
+
                 "stage": "start",
+
                 "n": 0,
+
                 "wait": None,
+
                 "persona": None,
+
                 "history": [],
+
                 "call_id": call_id,
+
                 "file": None,
+
                 "resume": None,
+
                 "voice_ext": ext,
-                "last_seen": time.monotonic(),
+
+                "last_seen":
+                    time.monotonic(),
+
                 "message_count": 0,
-                "lock": threading.Lock(),
+
+                "lock":
+                    threading.Lock(),
             }
 
             calls[call_id] = state
@@ -1415,8 +1511,7 @@ def yemot():
 
             state["voice_ext"] = ext
 
-    # מונע התנגשות בין שתי בקשות
-    # של אותה שיחה.
+    # מניעת התנגשות בשיחה
     with state["lock"]:
 
         return handle_call(
@@ -1428,7 +1523,7 @@ def yemot():
 
 
 # ============================================================
-# טיפול בשיחה
+# טיפול בבקשת שיחה
 # ============================================================
 
 def handle_call(
@@ -1437,6 +1532,7 @@ def handle_call(
     phone,
     ext
 ):
+
     has_value = (
         bool(state["wait"])
         and state["wait"]
@@ -1465,7 +1561,7 @@ def handle_call(
         )
 
     # ========================================================
-    # אחרי החלפת קול
+    # חזרה לאחר החלפת קול
     # ========================================================
 
     if state.get("resume"):
@@ -1500,7 +1596,7 @@ def handle_call(
         )
 
     # ========================================================
-    # התחלה
+    # התחלת שיחה
     # ========================================================
 
     if state["stage"] == "start":
@@ -1594,7 +1690,6 @@ def handle_call(
             state["file"]
         )
 
-        # קריאת AI אחת בלבד גם כאן.
         name_prompt = (
             "החזר רק את השם הפרטי "
             "שנאמר בהקלטה. "
@@ -1638,12 +1733,48 @@ def handle_call(
                 repr(exc)
             )
 
-            new_name = ""
+            # fallback אחד פשוט
+            try:
+
+                result = get_client().models.generate_content(
+                    model="gemini-3.1-flash-lite",
+                    contents=[
+                        types.Part.from_bytes(
+                            data=audio,
+                            mime_type="audio/wav"
+                        )
+                    ],
+                    config=types.GenerateContentConfig(
+                        system_instruction=name_prompt,
+                        max_output_tokens=20,
+                        thinking_config=types.ThinkingConfig(
+                            thinking_level="minimal"
+                        ),
+                    )
+                )
+
+                new_name = clean_for_tts(
+                    getattr(
+                        result,
+                        "text",
+                        ""
+                    ),
+                    30
+                )
+
+            except Exception as fallback_exc:
+
+                print(
+                    "name fallback error:",
+                    repr(fallback_exc)
+                )
+
+                new_name = ""
 
         new_name = re.sub(
             r"[^\u0590-\u05FF\- ]",
             "",
-            new_name
+            new_name or ""
         ).strip()
 
         if not new_name:
@@ -1673,7 +1804,7 @@ def handle_call(
     name = name or "אורח"
 
     # ========================================================
-    # תפריט
+    # MENU
     # ========================================================
 
     if state["stage"] == "menu":
@@ -1731,7 +1862,7 @@ def handle_call(
         )
 
     # ========================================================
-    # צ'אט
+    # CHAT
     # ========================================================
 
     if state["stage"] == "chat":
@@ -1752,6 +1883,7 @@ def handle_call(
         if over_limit(phone):
 
             if state.get("file"):
+
                 delete_audio_async(
                     ext,
                     state["file"]
@@ -1776,6 +1908,7 @@ def handle_call(
         if not consume_message(phone):
 
             if state.get("file"):
+
                 delete_audio_async(
                     ext,
                     state["file"]
@@ -1915,26 +2048,31 @@ def handle_call(
                 "להכין תשובה. נסה שוב."
             )
 
-        # היסטוריה נשמרת בזיכרון בלבד
-        # ורק בתוך השיחה הנוכחית.
+        # היסטוריה זמנית בלבד
         if transcript:
 
             state["history"].append({
+
                 "role": "user",
+
                 "parts": [
                     {
                         "text": transcript
                     }
                 ],
+
             })
 
             state["history"].append({
+
                 "role": "model",
+
                 "parts": [
                     {
                         "text": answer
                     }
                 ],
+
             })
 
             state["history"] = state[
@@ -1975,8 +2113,7 @@ def handle_call(
 
 
 # ============================================================
-# ADMIN - ניהול מינימלי
-# אין כאן יומן שיחות.
+# ADMIN
 # ============================================================
 
 ADMIN_CSS = """
@@ -2062,7 +2199,7 @@ def admin_session_token():
         ADMIN_KEY.encode(
             "utf-8"
         ),
-        b"yby-ai-session-v2",
+        b"yby-ai-session-v3",
         hashlib.sha256
     ).hexdigest()
 
@@ -2091,6 +2228,7 @@ def is_admin():
 def admin_login_page(
     message=""
 ):
+
     page = (
         ADMIN_CSS
         + """
@@ -2499,6 +2637,7 @@ def admin_delete():
     )
 
     with state_lock:
+
         names.pop(
             phone,
             None
@@ -2587,7 +2726,7 @@ def admin_logout():
 
 
 # ============================================================
-# HEALTH
+# HEALTH CHECK
 # ============================================================
 
 @app.route(
@@ -2606,7 +2745,7 @@ def health():
 
 
 # ============================================================
-# ERROR HANDLER
+# טיפול בשגיאה לא צפויה
 # ============================================================
 
 @app.errorhandler(Exception)
