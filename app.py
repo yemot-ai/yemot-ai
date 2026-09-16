@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 מערכת טלפונית לשיחה עם AI - ימות המשיח + Gemini
-גרסה מתוקנת וסופית: תמיכה מלאה בחיפוש גוגל, מנגינת המתנה מותאמת אישית (051), ניהול תורים ויציבות.
+גרסה מעודכנת: הגנה מפני קריסות בלולאות המתנה, ניווט קבצים מדויק, חיפוש גוגל פעיל.
 """
 
 from flask import Flask, request, Response
@@ -69,7 +69,7 @@ GENERAL_RULES = (
     " אתה מדבר בטלפון, לכן ענה קצר וברור, בלי כוכביות, בלי רשימות, בלי אימוג'ים ובלי סימני עיצוב."
     " הגבל את עצמך לשלושה משפטים לכל היותר, אלא אם התבקשת במפורש להרחיב."
     " ענה בשפה שבה המשתמש דיבר אליך; ברירת המחדל היא עברית."
-    " שמור על שפה מכובדת וצנועה, ואל תעסוק בנושאים לא צנועים."
+    " שמור על שפה מכובדת, ואל תעסוק בנושאים בוטים."
     " כשאתה מספק מספרים או מחירים, כתוב אותם במילים בעברית ולא בספרות."
     " יש לך כלי חיפוש Google מחובר. כשנשאלת על מידע עדכני, מחירים, חדשות,"
     " מזג אוויר, שעות פתיחה או כל דבר שהשתנה לאחרונה - השתמש בו והשב לפי התוצאות."
@@ -78,17 +78,17 @@ GENERAL_RULES = (
 
 PERSONAS = {
     "1": "אתה עוזר כללי ידידותי ומועיל." + GENERAL_RULES,
-    "2": "אתה עוזר תורני. ענה בסגנון תורני מכובד, וציין מקורות כשאפשר." + GENERAL_RULES,
+    "2": "אתה עוזר למדן. ציין מקורות אמינים כשאפשר." + GENERAL_RULES,
     "3": "אתה עוזר חוצפני וסרקסטי עם הומור. ענה בחוצפה משעשעת אבל בלי להעליב באמת." + GENERAL_RULES,
     "4": "אתה עוזר יצירתי. ספר סיפורים קצרים, כתוב שירים, בדיחות ורעיונות יצירתיים." + GENERAL_RULES,
     "5": "אתה עוזר טכני. הסבר דברים טכניים בפשטות: מחשבים, אינטרנט, טלפונים." + GENERAL_RULES,
     "6": "אתה ערס - ידיד קרוב וחמוד. תדבר בנימוס קלוקל מאוד. השתמש בביטויים כמו 'אחלה מה אחי', 'ספר לי', 'בואנו', 'כאן בדיוק'. תרגיש כמו ישיבה עם חבר טוב. פתוח, כיפי ותמיד עם חיוך." + GENERAL_RULES,
-    "7": "אתה עוזר מוזיקלי. אתה מומחה למוזיקה, בדגש מיוחד על מוזיקה חסידית וישראלית. ענה על שאלות הקשורות למוזיקה, ספק אקורדים לשירים כשמבקשים, הסבר מושגים במוזיקה ושתף ידע על אמנים, שירים וסגנונות נגינה." + GENERAL_RULES,
+    "7": "אתה עוזר מוזיקלי. אתה מומחה למוזיקה, ענה על שאלות הקשורות למוזיקה, ספק אקורדים לשירים כשמבקשים, הסבר מושגים במוזיקה ושתף ידע על אמנים, שירים וסגנונות נגינה." + GENERAL_RULES,
 }
 
 PERSONA_NAMES = {
     "1": "העוזר הכללי",
-    "2": "העוזר התורני",
+    "2": "העוזר הלמדן",
     "3": "העוזר החוצפן",
     "4": "העוזר היצירתי",
     "5": "העוזר הטכני",
@@ -240,10 +240,17 @@ def _http_get(url, timeout):
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return r.read()
 
+def _build_yemot_path(ext, file_name):
+    # פתרון לניתוב נכון של התיקיות למניעת שגיאות הורדה
+    clean_ext = str(ext).strip('/')
+    if clean_ext:
+        return "ivr2:/%s/%s.wav" % (clean_ext, file_name)
+    return "ivr2:/%s.wav" % file_name
+
 def yemot_download(ext, file_name):
     url = YEMOT_API + "DownloadFile?" + urllib.parse.urlencode({
         "token": YEMOT_TOKEN,
-        "path": "ivr2:/%s/%s.wav" % (ext, file_name),
+        "path": _build_yemot_path(ext, file_name),
     })
     data = _http_get(url, 15)
     if not data:
@@ -256,7 +263,7 @@ def yemot_delete(ext, file_name):
             url = YEMOT_API + "FileAction?" + urllib.parse.urlencode({
                 "token": YEMOT_TOKEN,
                 "action": "delete",
-                "what": "ivr2:/%s/%s.wav" % (ext, file_name),
+                "what": _build_yemot_path(ext, file_name),
             })
             _http_get(url, 10)
         except Exception as e:
@@ -361,12 +368,12 @@ def ask_ai(persona, history, ext, file_name):
 
     yemot_delete(ext, file_name)
 
-    # שלב 1: תמלול קול לטקסט בלבד
+    # שלב 1: תמלול קול לטקסט
     transcript = transcribe_only(audio, deadline=deadline)
     if not transcript:
         return "", "סליחה, לא הצלחתי להבין את ההקלטה. נסה שוב."
 
-    # שלב 2: קבלת תשובה על בסיס הטקסט (כאן החיפוש עובד בבטחה)
+    # שלב 2: קבלת תשובה על בסיס הטקסט + חיפוש 
     answer = answer_from_text(persona, history, transcript, deadline=deadline)
     if not answer:
         return transcript, "סליחה, לא הצלחתי להשיג תשובה כרגע. נסה לשאול שוב."
@@ -394,7 +401,7 @@ def menu(state, name, prefix=None):
     state["stage"] = "menu"
     read = build_read(
         [("text",
-          "שלום %s. הקש 1 לעוזר כללי, 2 לעוזר תורני, 3 לעוזר החוצפן, 4 לעוזר היצירתי, "
+          "שלום %s. הקש 1 לעוזר כללי, 2 לעוזר למדן, 3 לעוזר החוצפן, 4 לעוזר היצירתי, "
           "5 לעוזר טכני, 6 לערס, 7 לעוזר המוזיקלי, או 9 לסיום." % name)],
         mode="tap",
         val_name=state["wait"],
@@ -444,17 +451,25 @@ def goodbye(call_id, name):
 
 def wait_response(state, ext):
     idx = state.get("polls", 0)
+    state["n"] += 1
+    state["wait"] = "poll_%d" % state["n"]
+    
+    # השמעת הטקסט בסיבוב הראשון, ומנגינה (051) בסיבובים הבאים
     if idx == 0:
-        action = build_id_list_message([("text", "רגע אחד, אני בודק")])
+        action_msg = [("text", "רגע אחד, אני בודק")]
     else:
-        # השמעת מנגינת ההמתנה הייעודית.
-        # ודא שהקובץ בשם 051 (או שם אחר שתשנה אליו) מועלה למערכת ימות המשיח שלך!
-        action = build_id_list_message([("file", "051")])
+        action_msg = [("file", "051")]
         
-    return build_combined_action([
-        action,
-        build_go_to_folder("/" + ext),
-    ])
+    # שימוש ב-build_read יוצר השהיה אוטומטית שמונעת עומס ולולאות קריסה
+    return build_read(
+        action_msg,
+        mode="tap",
+        val_name=state["wait"],
+        max_digits=1,
+        min_digits=1,
+        sec_wait=3,  # המתנה של 3 שניות בין בדיקה לבדיקה, גם אם קובץ השמע חסר
+        digits_allowed=""
+    )
 
 def start_job(state, persona, history, ext, file_name):
     job = {"done": False, "transcript": "", "answer": "", "error": None}
@@ -522,7 +537,7 @@ def _handle():
     stage = state.get("stage", "init")
     name = names.get(phone, "אורח")
 
-    # 1. זיהוי משתמש חדש - בקשת שם
+    # 1. זיהוי משתמש חדש
     if stage == "init":
         if phone and phone not in names:
             state["stage"] = "ask_name"
@@ -604,12 +619,12 @@ def _handle():
         elif cmd == "end":
             return Response(goodbye(call_id, name), mimetype="text/plain")
 
-        # שמירת היסטוריית השיחה לזכרון של Gemini
+        # שמירת היסטוריית השיחה
         state.setdefault("history", []).extend([
             {"role": "user", "parts": [{"text": transcript}]},
             {"role": "model", "parts": [{"text": ans}]}
         ])
-        state["history"] = state["history"][-10:]  # שומר רק 10 הודעות אחרונות
+        state["history"] = state["history"][-10:]
 
         with _lock:
             LOG.append({
