@@ -12,12 +12,6 @@ from zoneinfo import ZoneInfo
 from flask import Flask, Response, request
 from google import genai
 from google.genai import types
-from yemot_flow.actions import (
-    build_combined_action,
-    build_go_to_folder,
-    build_id_list_message,
-    build_read,
-)
 
 app = Flask(__name__)
 
@@ -40,17 +34,12 @@ if not VOICE_EXTS:
 
 DATA_EXT = VOICE_EXTS[0]
 
-# ============================================================
-# מודלים (סדר מבוסס מהירות תגובה)
-# ============================================================
-
 AI_MODELS = [
     "gemini-2.0-flash-lite",  # מהיר ביותר ל-IVR
     "gemini-2.0-flash",       # גיבוי ראשון
     "gemini-1.5-flash",       # גיבוי שני
 ]
 
-MAX_AUDIO_SECONDS = 25
 MAX_AUDIO_BYTES = 7 * 1024 * 1024
 MAX_HISTORY_PAIRS = 3
 CALL_TTL_SECONDS = 30 * 60
@@ -220,7 +209,6 @@ def extract_text_from_result(result):
     if hasattr(result, "text") and result.text:
         return result.text.strip()
     
-    # חילוץ מורכב במידה ו-Google Search החזיר תשובה מפורקת
     try:
         if result.candidates and result.candidates[0].content and result.candidates[0].content.parts:
             parts = result.candidates[0].content.parts
@@ -234,7 +222,6 @@ def extract_text_from_result(result):
 def ai_audio_turn(persona_key, history, audio):
     formatted_contents = []
     
-    # בניית היסטוריה נקייה למניעת שגיאות מבנה
     for turn in history:
         formatted_contents.append(
             types.Content(
@@ -243,7 +230,6 @@ def ai_audio_turn(persona_key, history, audio):
             )
         )
 
-    # הוספת קובץ השמע העדכני
     formatted_contents.append(
         types.Content(
             role="user",
@@ -261,7 +247,7 @@ def ai_audio_turn(persona_key, history, audio):
             config = types.GenerateContentConfig(
                 system_instruction=ai_system(persona_key),
                 max_output_tokens=160,
-                tools=[{"google_search": {}}],  # חיפוש אינטרנט פעיל ומתוקן
+                tools=[{"google_search": {}}],
             )
 
             result = client.models.generate_content(
@@ -275,7 +261,6 @@ def ai_audio_turn(persona_key, history, audio):
                 print(f"Gemini Success ({model}):", text[:60])
                 return text
 
-            print(f"Model {model} returned empty text, trying next...")
         except Exception as exc:
             print(f"Gemini error on model {model}:", repr(exc))
 
@@ -321,4 +306,90 @@ def ask_ai(persona_key, history, ext, file_name):
             "type": "error",
             "transcript": "",
             "answer": "לא הצלחתי לקלוט את ההקלטה. אנא נסה לדבר שוב.",
-        }```
+        }
+
+    raw_res = ai_audio_turn(persona_key, history, audio)
+    return parse_ai_result(raw_res)
+
+# ============================================================
+# נתיבי API עבור ימות המשיח (Endpoints)
+# ============================================================
+
+@app.route("/", methods=["GET", "POST"])
+@app.route("/ivr", methods=["GET", "POST"])
+def ivr_entry():
+    cleanup_calls()
+    phone = normalize_phone(request.values.get("ApiPhone"))
+    call_id = request.values.get("ApiCallId") or phone
+
+    with state_lock:
+        if call_id not in calls:
+            calls[call_id] = {
+                "phone": phone,
+                "persona": "1",
+                "history": [],
+                "last_seen": time.monotonic(),
+            }
+        else:
+            calls[call_id]["last_seen"] = time.monotonic()
+
+    # בדיקת חריגה משרת בימות המשיח
+    val = request.values.get("val")
+    ext = request.values.get("ext", DATA_EXT)
+
+    if val and val.startswith("file_"):
+        file_name = val.replace("file_", "")
+        delete_audio_async(ext, file_name)
+
+        if over_limit(phone):
+            res_text = "id_list_message=t-הגעת למכסת ההודעות היומית. תודה ושלום.&hangup"
+            return Response(res_text, content_type="text/plain; charset=utf-8")
+
+        with state_lock:
+            call_data = calls[call_id]
+            persona = call_data["persona"]
+            history = list(call_data["history"])
+
+        ai_res = ask_ai(persona, history, ext, file_name)
+
+        if ai_res["type"] == "answer":
+            consume_message(phone)
+            with state_lock:
+                calls[call_id]["history"].append({"role": "user", "parts": [ai_res["transcript"] or "הקלטה קולית"]})
+                calls[call_id]["history"].append({"role": "model", "parts": [ai_res["answer"]]})
+                if len(calls[call_id]["history"]) > MAX_HISTORY_PAIRS * 2:
+                    calls[call_id]["history"] = calls[call_id]["history"][-MAX_HISTORY_PAIRS * 2:]
+
+            res_text = (
+                f"id_list_message=t-{ai_res['answer']}&"
+                f"read=t-השמע את שאלתך לאחר הצליל ובסיום הקש סולמית=val,no,25,2,N,file,select_val=no"
+            )
+            return Response(res_text, content_type="text/plain; charset=utf-8")
+
+        elif ai_res["type"] == "change_voice":
+            res_text = "go_to_folder=/persona_select"
+            return Response(res_text, content_type="text/plain; charset=utf-8")
+
+        elif ai_res["type"] == "hangup":
+            res_text = "id_list_message=t-תודה רבה ויום טוב.&hangup"
+            return Response(res_text, content_type="text/plain; charset=utf-8")
+
+        else:
+            res_text = (
+                f"id_list_message=t-{ai_res['answer'] or 'לא הצלחתי להבין, אנא נסה שוב.'}&"
+                f"read=t-השמע את שאלתך לאחר הצליל ובסיום הקש סולמית=val,no,25,2,N,file,select_val=no"
+            )
+            return Response(res_text, content_type="text/plain; charset=utf-8")
+
+    # ברירת מחדל: בקשת הקלטה מהמשתמש
+    res_text = "read=t-שלום, השמע את שאלתך לאחר הצליל ובסיום הקש סולמית=val,no,25,2,N,file,select_val=no"
+    return Response(res_text, content_type="text/plain; charset=utf-8")
+
+# ============================================================
+# הרצת השרת
+# ============================================================
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+    # threaded=True קריטי לתמיכה במספר משתמשים במקביל
+    app.run(host="0.0.0.0", port=port, threaded=True)
