@@ -16,51 +16,38 @@ from google.genai import types
 app = Flask(__name__)
 
 # ============================================================
-# הגדרות סביבה
+# הגדרות סביבה ותצורה
 # ============================================================
 
 YEMOT_API = "https://www.call2all.co.il/ym/api/"
 YEMOT_TOKEN = os.environ.get("YEMOT_TOKEN", "").strip()
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
-ADMIN_KEY = os.environ.get("ADMIN_KEY", "").strip()
 
 VOICE_EXTS = [
     x.strip().strip("/")
     for x in os.environ.get("VOICE_EXTS", "1").split(",")
     if x.strip()
 ]
-if not VOICE_EXTS:
-    VOICE_EXTS = ["1"]
+DATA_EXT = VOICE_EXTS[0] if VOICE_EXTS else "1"
 
-DATA_EXT = VOICE_EXTS[0]
-
+# שימוש במודלים המהירים ביותר לזמן תגובה מינימלי
 AI_MODELS = [
-    "gemini-2.0-flash-lite",  # מהיר ביותר ל-IVR
-    "gemini-2.0-flash",       # גיבוי ראשון
-    "gemini-1.5-flash",       # גיבוי שני
+    "gemini-2.0-flash-lite",  # מודל קל ומהיר במיוחד לשיחות IVR
+    "gemini-2.0-flash",       # מודל גיבוי עוצמתי
 ]
 
 MAX_AUDIO_BYTES = 7 * 1024 * 1024
 MAX_HISTORY_PAIRS = 3
 CALL_TTL_SECONDS = 30 * 60
-
-try:
-    DAILY_LIMIT = max(0, int(os.environ.get("DAILY_LIMIT", "40") or 0))
-except Exception:
-    DAILY_LIMIT = 40
-
+DAILY_LIMIT = max(0, int(os.environ.get("DAILY_LIMIT", "40") or 0))
 OWNER_PHONES = {"0527661756", "0527609296"}
 
 # ============================================================
-# ניהול מצב בזיכרון (Thread-Safe)
+# ניהול מצב בזיכרון (Thread-Safe ומהיר)
 # ============================================================
 
-names = {}
-persona_names = {}
-persona_prompts = {}
 calls = {}
 usage = {}
-
 state_lock = threading.RLock()
 client_lock = threading.Lock()
 _client = None
@@ -72,19 +59,16 @@ GENERAL_RULES = (
     "כאשר אתה מציין מספרים או מחירים, כתוב אותם במילים (לדוגמה: חמישים ולא 50)."
 )
 
+# הגדרות 7 השלוחות לביצועים מדויקים
 DEFAULT_PERSONAS = {
     "1": ("העוזר הכללי", "אתה עוזר כללי ידידותי ומועיל."),
-    "2": ("העוזר הלימודי", "אתה עוזר לימודי ומכובד. ענה בצורה ברורה ומסודרת."),
-    "3": ("העוזר החוצפן", "אתה עוזר חוצפני וסרקסטי עם הומור. היה משעשע אבל אל תעליב."),
+    "2": ("העוזר הלימודי", "אתה עוזר לימודי מקצועי. ענה בצורה ברורה, מסודרת ועניינית."),
+    "3": ("העוזר החוצפן", "אתה עוזר חוצפני וסרקסטי עם הומור. היה משעשע אבל קצר וקולע."),
     "4": ("העוזר היצירתי", "אתה עוזר יצירתי. הצע רעיונות, סיפורים קצרים ותוכן יצירתי."),
-    "5": ("העוזר הטכני", "אתה עוזר טכני. הסבר מחשבים, אינטרנט וטלפונים בפשטות."),
-    "6": ("החבר", "אתה חבר קרוב, חמוד וזורם. דבר בחום ובשפה קלילה."),
-    "7": ("העוזר המוזיקלי", "אתה עוזר מוזיקלי. אתה מומחה למוזיקה, אקורדים, מושגים, סגנונות ואמנים."),
+    "5": ("העוזר הטכני", "אתה עוזר טכני. הסבר תהליכי מחשוב, אוטומציות, אינטרנט וקוד בפשטות."),
+    "6": ("החבר", "אתה חבר קרוב, חמוד וזורם. דבר בחום ובשפה קלילה ופתוחה."),
+    "7": ("העוזר המוזיקלי", "אתה מומחה למוזיקה. ספק מידע על אקורדים, מושגים, סגנונות, ואמנים ישראלים."),
 }
-
-for key, (name, prompt) in DEFAULT_PERSONAS.items():
-    persona_names[key] = name
-    persona_prompts[key] = prompt
 
 try:
     ISRAEL_TZ = ZoneInfo("Asia/Jerusalem")
@@ -103,17 +87,16 @@ def clean_for_tts(text, limit=600):
     return text[:limit]
 
 def normalize_phone(phone):
-    phone = re.sub(r"\D", "", str(phone or ""))
-    return phone or "unknown"
+    return re.sub(r"\D", "", str(phone or "")) or "unknown"
 
 def cleanup_calls():
     now = time.monotonic()
     today = il_now().date().isoformat()
     with state_lock:
-        expired_calls = [c for c, s in calls.items() if now - s.get("last_seen", 0) > CALL_TTL_SECONDS]
+        expired_calls = [c for c, s in list(calls.items()) if now - s.get("last_seen", 0) > CALL_TTL_SECONDS]
         for c in expired_calls:
             calls.pop(c, None)
-        expired_usage = [p for p, u in usage.items() if u.get("day") != today]
+        expired_usage = [p for p, u in list(usage.items()) if u.get("day") != today]
         for p in expired_usage:
             usage.pop(p, None)
 
@@ -123,197 +106,143 @@ def over_limit(phone):
     today = il_now().date().isoformat()
     with state_lock:
         item = usage.get(phone)
-        if not item or item.get("day") != today:
-            return False
-        return int(item.get("count", 0)) >= DAILY_LIMIT
+        return bool(item and item.get("day") == today and item.get("count", 0) >= DAILY_LIMIT)
 
 def consume_message(phone):
     if phone in OWNER_PHONES or DAILY_LIMIT <= 0:
         return True
     today = il_now().date().isoformat()
     with state_lock:
-        item = usage.get(phone)
-        if not item or item.get("day") != today:
-            item = {"day": today, "count": 0}
-            usage[phone] = item
+        item = usage.setdefault(phone, {"day": today, "count": 0})
+        if item["day"] != today:
+            item.update({"day": today, "count": 0})
         if item["count"] >= DAILY_LIMIT:
             return False
         item["count"] += 1
         return True
 
 # ============================================================
-# תקשורת מול ימות המשיח
+# תקשורת יעילה ומהירה מול ימות המשיח
 # ============================================================
 
 def yemot_download(ext, file_name):
     if not YEMOT_TOKEN:
         raise RuntimeError("YEMOT_TOKEN is missing")
     url = f"{YEMOT_API}DownloadFile?{urllib.parse.urlencode({'token': YEMOT_TOKEN, 'path': f'ivr2:/{ext}/{file_name}.wav'})}"
-    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-    with urllib.request.urlopen(req, timeout=12) as response:
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0", "Connection": "keep-alive"})
+    with urllib.request.urlopen(req, timeout=10) as response:
         data = response.read(MAX_AUDIO_BYTES + 1)
-    if not data:
-        raise RuntimeError("empty audio file")
-    if len(data) > MAX_AUDIO_BYTES:
-        raise RuntimeError("audio file exceeds size limit")
+    if not data or len(data) > MAX_AUDIO_BYTES:
+        raise RuntimeError("Invalid or too large audio file")
     return data
 
-def yemot_delete(ext, file_name):
-    if not YEMOT_TOKEN:
-        return
-    try:
-        url = f"{YEMOT_API}FileAction?{urllib.parse.urlencode({'token': YEMOT_TOKEN, 'action': 'delete', 'what': f'ivr2:/{ext}/{file_name}.wav'})}"
-        urllib.request.urlopen(url, timeout=5).read()
-    except Exception as exc:
-        print("delete error:", repr(exc))
-
-def delete_audio_async(ext, file_name):
-    threading.Thread(target=yemot_delete, args=(ext, file_name), daemon=True).start()
+def yemot_delete_async(ext, file_name):
+    def delete_task():
+        if not YEMOT_TOKEN: return
+        try:
+            url = f"{YEMOT_API}FileAction?{urllib.parse.urlencode({'token': YEMOT_TOKEN, 'action': 'delete', 'what': f'ivr2:/{ext}/{file_name}.wav'})}"
+            urllib.request.urlopen(url, timeout=4).read()
+        except Exception:
+            pass
+    threading.Thread(target=delete_task, daemon=True).start()
 
 # ============================================================
-# Gemini Client & Logic
+# Gemini AI - חיפוש ברשת ועיבוד קולי
 # ============================================================
 
 def get_client():
     global _client
-    if _client is not None:
-        return _client
+    if _client: return _client
     with client_lock:
-        if _client is not None:
-            return _client
-        if not GEMINI_API_KEY:
-            raise RuntimeError("GEMINI_API_KEY environment variable missing")
-        _client = genai.Client(api_key=GEMINI_API_KEY)
+        if not _client:
+            if not GEMINI_API_KEY:
+                raise RuntimeError("GEMINI_API_KEY environment variable missing")
+            _client = genai.Client(api_key=GEMINI_API_KEY)
         return _client
 
 def ai_system(persona_key):
-    with state_lock:
-        persona = persona_prompts.get(persona_key, persona_prompts["1"])
+    persona_prompt = DEFAULT_PERSONAS.get(persona_key, DEFAULT_PERSONAS["1"])[1]
     now = il_now()
     return (
-        f"{persona} {GENERAL_RULES} [זמן נוכחי: {now:%d/%m/%Y %H:%M}]\n"
+        f"{persona_prompt} {GENERAL_RULES} [זמן נוכחי: {now:%d/%m/%Y %H:%M}]\n"
         "הנחיות מענה:\n"
-        "1. אם המשתמש מבקש מידע עדכני, חדשות, או נתונים משתנים - השתמש ב-Google Search.\n"
-        "2. פקודות מיוחדות התקפות במידת הצורך:\n"
-        "   - החלף קול / שנה קול -> COMMAND|CHANGE_VOICE\n"
-        "   - תפריט / חזרה -> COMMAND|MENU\n"
+        "1. אם הבקשה דורשת ידע עולמי עדכני, עובדות, או נתונים משתנים - השתמש באופן פעיל בכלי החיפוש (Google Search) כדי לספק מענה מדויק.\n"
+        "2. פקודות מיוחדות (רק במידת הצורך):\n"
+        "   - החלף קול / שנה קול -> COMMAND|MENU\n"
         "   - יציאה / סיום -> COMMAND|HANGUP\n"
-        "3. לכל מענה רגיל החזר בפורמט מדוייק:\n"
+        "3. לכל מענה רגיל החזר בפורמט המדויק הבא בלבד:\n"
         "TRANSCRIPT|הטקסט שהבנת מההקלטה\n"
-        "ANSWER|התשובה הקצרה שלך"
+        "ANSWER|התשובה המלאה והברורה שלך"
     )
 
-def extract_text_from_result(result):
-    if not result:
-        return ""
-    if hasattr(result, "text") and result.text:
-        return result.text.strip()
-    
+def extract_text(result):
+    if not result: return ""
+    if hasattr(result, "text") and result.text: return result.text.strip()
     try:
-        if result.candidates and result.candidates[0].content and result.candidates[0].content.parts:
-            parts = result.candidates[0].content.parts
-            texts = [p.text for p in parts if hasattr(p, "text") and p.text]
-            if texts:
-                return "\n".join(texts).strip()
-    except Exception as e:
-        print("Error extracting text parts:", repr(e))
+        if result.candidates and result.candidates[0].content.parts:
+            return "\n".join(p.text for p in result.candidates[0].content.parts if hasattr(p, "text") and p.text).strip()
+    except Exception:
+        pass
     return ""
-
-def ai_audio_turn(persona_key, history, audio):
-    formatted_contents = []
-    
-    for turn in history:
-        formatted_contents.append(
-            types.Content(
-                role=turn["role"],
-                parts=[types.Part.from_text(text=turn["parts"][0])]
-            )
-        )
-
-    formatted_contents.append(
-        types.Content(
-            role="user",
-            parts=[
-                types.Part.from_bytes(data=audio, mime_type="audio/wav"),
-                types.Part.from_text(text="הקשב להקלטה הקולית וענה לפיה."),
-            ]
-        )
-    )
-
-    client = get_client()
-
-    for model in AI_MODELS:
-        try:
-            config = types.GenerateContentConfig(
-                system_instruction=ai_system(persona_key),
-                max_output_tokens=160,
-                tools=[{"google_search": {}}],
-            )
-
-            result = client.models.generate_content(
-                model=model,
-                contents=formatted_contents,
-                config=config,
-            )
-
-            text = extract_text_from_result(result)
-            if text:
-                print(f"Gemini Success ({model}):", text[:60])
-                return text
-
-        except Exception as exc:
-            print(f"Gemini error on model {model}:", repr(exc))
-
-    return ""
-
-def parse_ai_result(raw):
-    raw = str(raw or "").strip()
-    if not raw:
-        return {"type": "error", "transcript": "", "answer": ""}
-
-    upper = raw.upper()
-    if "COMMAND|CHANGE_VOICE" in upper:
-        return {"type": "change_voice", "transcript": "", "answer": ""}
-    if "COMMAND|MENU" in upper:
-        return {"type": "menu", "transcript": "", "answer": ""}
-    if "COMMAND|HANGUP" in upper:
-        return {"type": "hangup", "transcript": "", "answer": ""}
-
-    transcript_match = re.search(r"TRANSCRIPT\|(.*?)(?:\n|$)", raw, re.IGNORECASE)
-    answer_match = re.search(r"ANSWER\|(.*)", raw, re.IGNORECASE | re.DOTALL)
-
-    transcript = clean_for_tts(transcript_match.group(1).strip(), 400) if transcript_match else ""
-    answer = clean_for_tts(answer_match.group(1).strip(), 600) if answer_match else ""
-
-    if not answer:
-        lines = [x.strip() for x in raw.splitlines() if x.strip()]
-        if lines:
-            cleaned = re.sub(r"^(ANSWER|TRANSCRIPT)\s*\|\s*", "", lines[-1], flags=re.IGNORECASE)
-            answer = clean_for_tts(cleaned, 600)
-
-    return {
-        "type": "answer" if answer else "error",
-        "transcript": transcript,
-        "answer": answer,
-    }
 
 def ask_ai(persona_key, history, ext, file_name):
     try:
         audio = yemot_download(ext, file_name)
-    except Exception as exc:
-        print("Audio download error:", repr(exc))
-        return {
-            "type": "error",
-            "transcript": "",
-            "answer": "לא הצלחתי לקלוט את ההקלטה. אנא נסה לדבר שוב.",
-        }
+    except Exception:
+        return {"type": "error", "transcript": "", "answer": "סליחה, הקו נקטע או שההקלטה לא נקלטה. אנא נסו שוב."}
 
-    raw_res = ai_audio_turn(persona_key, history, audio)
-    return parse_ai_result(raw_res)
+    contents = [types.Content(role=t["role"], parts=[types.Part.from_text(text=t["parts"][0])]) for t in history]
+    contents.append(types.Content(
+        role="user",
+        parts=[
+            types.Part.from_bytes(data=audio, mime_type="audio/wav"),
+            types.Part.from_text(text="הקשב להקלטה הקולית, חפש ברשת במידת הצורך, וענה לפיה."),
+        ]
+    ))
+
+    client = get_client()
+    for model in AI_MODELS:
+        try:
+            config = types.GenerateContentConfig(
+                system_instruction=ai_system(persona_key),
+                max_output_tokens=250,
+                tools=[{"google_search": {}}],  # כלי החיפוש באינטרנט מופעל כאן
+            )
+            result = client.models.generate_content(model=model, contents=contents, config=config)
+            raw = extract_text(result)
+            if raw: break
+        except Exception as exc:
+            raw = ""
+            print(f"Model error {model}: {exc}")
+
+    if not raw:
+        return {"type": "error", "transcript": "", "answer": "הייתה שגיאה בעיבוד. נסו שוב."}
+
+    upper = raw.upper()
+    if "COMMAND|MENU" in upper or "COMMAND|CHANGE_VOICE" in upper: return {"type": "menu", "transcript": "", "answer": ""}
+    if "COMMAND|HANGUP" in upper: return {"type": "hangup", "transcript": "", "answer": ""}
+
+    t_match = re.search(r"TRANSCRIPT\|(.*?)(?:\n|$)", raw, re.IGNORECASE)
+    a_match = re.search(r"ANSWER\|(.*)", raw, re.IGNORECASE | re.DOTALL)
+    
+    answer = clean_for_tts(a_match.group(1), 600) if a_match else clean_for_tts(re.sub(r"^(ANSWER|TRANSCRIPT)\s*\|\s*", "", raw.splitlines()[-1], flags=re.IGNORECASE), 600)
+    
+    return {
+        "type": "answer" if answer else "error",
+        "transcript": clean_for_tts(t_match.group(1), 400) if t_match else "",
+        "answer": answer or "לא הצלחתי להבין, נסו שוב.",
+    }
 
 # ============================================================
-# נתיבי API עבור ימות המשיח (Endpoints)
+# נתיבי ה-API (Routing) 
 # ============================================================
+
+def build_menu_response():
+    menu_text = (
+        "ברוכים הבאים למערכת. הקישו 1 לעוזר הכללי, 2 לעוזר הלימודי, 3 לחוצפן, "
+        "4 ליצירתי, 5 לטכני, 6 לחבר, ו-7 לעוזר המוזיקלי."
+    )
+    return Response(f"read=t-{menu_text}=val,1,1,1,1,Number,menu_choice=no", content_type="text/plain; charset=utf-8")
 
 @app.route("/", methods=["GET", "POST"])
 @app.route("/ivr", methods=["GET", "POST"])
@@ -323,67 +252,56 @@ def ivr_entry():
     call_id = request.values.get("ApiCallId") or phone
 
     with state_lock:
-        if call_id not in calls:
-            calls[call_id] = {
-                "phone": phone,
-                "persona": "1",
-                "history": [],
-                "last_seen": time.monotonic(),
-            }
-        else:
-            calls[call_id]["last_seen"] = time.monotonic()
+        call_data = calls.setdefault(call_id, {"phone": phone, "persona": "1", "history": [], "last_seen": 0})
+        call_data["last_seen"] = time.monotonic()
 
-    # בדיקת חריגה משרת בימות המשיח
-    val = request.values.get("val")
+    val = request.values.get("val", "").strip()
     ext = request.values.get("ext", DATA_EXT)
 
-    if val and val.startswith("file_"):
+    # 1. תפריט ראשי
+    if not val or val in ["0", "*"]:
+        return build_menu_response()
+
+    # 2. בחירת שלוחה
+    if val in DEFAULT_PERSONAS:
+        with state_lock:
+            calls[call_id].update({"persona": val, "history": []})
+        persona_name = DEFAULT_PERSONAS[val][0]
+        return Response(
+            f"id_list_message=t-בחרתם ב{persona_name}.&read=t-השמיעו את שאלתכם לאחר הצליל ובסיום הקישו סולמית=val,no,25,2,N,file,select_val=no",
+            content_type="text/plain; charset=utf-8"
+        )
+
+    # 3. עיבוד הקלטה
+    if val.startswith("file_"):
         file_name = val.replace("file_", "")
-        delete_audio_async(ext, file_name)
+        yemot_delete_async(ext, file_name)
 
         if over_limit(phone):
-            res_text = "id_list_message=t-הגעת למכסת ההודעות היומית. תודה ושלום.&hangup"
-            return Response(res_text, content_type="text/plain; charset=utf-8")
+            return Response("id_list_message=t-הגעתם למכסת ההודעות היומית. תודה ושלום.&hangup", content_type="text/plain; charset=utf-8")
 
         with state_lock:
-            call_data = calls[call_id]
-            persona = call_data["persona"]
-            history = list(call_data["history"])
+            persona, history = call_data["persona"], list(call_data["history"])
 
         ai_res = ask_ai(persona, history, ext, file_name)
 
         if ai_res["type"] == "answer":
             consume_message(phone)
             with state_lock:
-                calls[call_id]["history"].append({"role": "user", "parts": [ai_res["transcript"] or "הקלטה קולית"]})
-                calls[call_id]["history"].append({"role": "model", "parts": [ai_res["answer"]]})
-                if len(calls[call_id]["history"]) > MAX_HISTORY_PAIRS * 2:
-                    calls[call_id]["history"] = calls[call_id]["history"][-MAX_HISTORY_PAIRS * 2:]
+                calls[call_id]["history"].extend([
+                    {"role": "user", "parts": [ai_res["transcript"] or "הקלטה קולית"]},
+                    {"role": "model", "parts": [ai_res["answer"]]}
+                ])
+                calls[call_id]["history"] = calls[call_id]["history"][-MAX_HISTORY_PAIRS * 2:]
+            
+            return Response(f"id_list_message=t-{ai_res['answer']}&read=t-השמיעו שאלה נוספת לאחר הצליל או הקישו 0 לתפריט=val,no,25,2,N,file,select_val=no", content_type="text/plain; charset=utf-8")
 
-            res_text = (
-                f"id_list_message=t-{ai_res['answer']}&"
-                f"read=t-השמע את שאלתך לאחר הצליל ובסיום הקש סולמית=val,no,25,2,N,file,select_val=no"
-            )
-            return Response(res_text, content_type="text/plain; charset=utf-8")
+        if ai_res["type"] == "menu": return build_menu_response()
+        if ai_res["type"] == "hangup": return Response("id_list_message=t-תודה רבה ולהתראות.&hangup", content_type="text/plain; charset=utf-8")
+        
+        return Response(f"id_list_message=t-{ai_res['answer']}&read=t-נסו שוב לאחר הצליל=val,no,25,2,N,file,select_val=no", content_type="text/plain; charset=utf-8")
 
-        elif ai_res["type"] == "change_voice":
-            res_text = "go_to_folder=/persona_select"
-            return Response(res_text, content_type="text/plain; charset=utf-8")
-
-        elif ai_res["type"] == "hangup":
-            res_text = "id_list_message=t-תודה רבה ויום טוב.&hangup"
-            return Response(res_text, content_type="text/plain; charset=utf-8")
-
-        else:
-            res_text = (
-                f"id_list_message=t-{ai_res['answer'] or 'לא הצלחתי להבין, אנא נסה שוב.'}&"
-                f"read=t-השמע את שאלתך לאחר הצליל ובסיום הקש סולמית=val,no,25,2,N,file,select_val=no"
-            )
-            return Response(res_text, content_type="text/plain; charset=utf-8")
-
-    # ברירת מחדל: בקשת הקלטה מהמשתמש
-    res_text = "read=t-שלום, השמע את שאלתך לאחר הצליל ובסיום הקש סולמית=val,no,25,2,N,file,select_val=no"
-    return Response(res_text, content_type="text/plain; charset=utf-8")
+    return build_menu_response()
 
 # ============================================================
 # הרצת השרת
@@ -391,5 +309,10 @@ def ivr_entry():
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-    # threaded=True קריטי לתמיכה במספר משתמשים במקביל
-    app.run(host="0.0.0.0", port=port, threaded=True)
+    try:
+        from waitress import serve
+        print(f"Starting highly optimized Waitress server on port {port}...")
+        serve(app, host="0.0.0.0", port=port, threads=12) # תמיכה ב-12 קריאות מקביליות מהירות
+    except ImportError:
+        print("Waitress not installed. Falling back to Flask dev server. Run 'pip install waitress' for maximum performance.")
+        app.run(host="0.0.0.0", port=port, threaded=True)
