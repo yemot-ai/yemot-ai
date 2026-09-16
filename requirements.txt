@@ -1,3 +1,4 @@
 flask
+yemot-flow
 google-genai
-waitress
+gunicorn
