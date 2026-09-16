@@ -39,7 +39,7 @@ except Exception:  # פייתון ישן מאוד / חסר tzdata
 app = Flask(__name__)
 
 # ============================================================================
-#                              הגדרות סביבה
+#                            הגדרות סביבה
 # ============================================================================
 
 YEMOT_TOKEN = os.environ.get("YEMOT_TOKEN", "")
@@ -71,12 +71,6 @@ MAX_WAIT_ROUNDS = int(os.environ.get("MAX_WAIT_ROUNDS", "20"))
 SEARCH_MODE = os.environ.get("SEARCH_MODE", "always").strip().lower()
 
 # תקרת טוקנים. חייבת להיות גבוהה!
-# תוקן: כשמופעל חיפוש (grounding), המודל צורך לעיתים כ-1,900 עד 4,900 טוקני
-# "חשיבה"/עיבוד רק כדי לבצע את החיפוש עצמו - לפני שהוא כותב אפילו מילה אחת
-# מהתשובה. תקרה של 2048 (כפי שהיה קודם) נחתכת בדיוק באמצע התהליך הזה,
-# מחזירה טקסט ריק, ומפילה את הקוד למסלול הגיבוי - שם לעיתים גם הוא נחתך.
-# זו הייתה הסיבה שהמודל "התנצל" שאין לו גישה לאינטרנט, למרות שכלי החיפוש
-# היה דלוק. 8192 נותן מרווח בטוח גם לשיחות עם חיפוש כבד.
 MAX_OUTPUT_TOKENS = int(os.environ.get("MAX_OUTPUT_TOKENS", "8192"))
 
 # timeout לקריאת Gemini, בשניות
@@ -87,7 +81,7 @@ SELF_URL = os.environ.get("RENDER_EXTERNAL_URL", "").strip().rstrip("/")
 KEEP_ALIVE = os.environ.get("KEEP_ALIVE", "1") == "1"
 
 # ============================================================================
-#                                 נתונים
+#                                נתונים
 # ============================================================================
 
 names = {}          # מספר טלפון -> שם
@@ -99,7 +93,7 @@ _lock = threading.Lock()
 calls = {}          # מצב של כל שיחה פעילה (call_id -> state)
 _calls_lock = threading.Lock()
 
-# מונה הודעות יומי - במקום לסרוק את כל הלוג בכל הודעה
+# מונה הודעות יומי
 _daily_counts = {}  # (יום, טלפון) -> כמות
 
 GENERAL_RULES = (
@@ -142,21 +136,15 @@ SETTINGS = {
 # ============================================================================
 #                            מודלים של Gemini
 # ============================================================================
-#
-# הסדר הוא לפי מהירות: flash-lite קודם.
-# אומת מול https://ai.google.dev/gemini-api/docs/models בספטמבר 2026.
-# gemini-2.5-flash הוסר מהרשימה - הוא בדרך להפסקת תמיכה.
-#
+
 MODELS = [
+    "gemini-2.5-flash-lite",
     "gemini-3.5-flash-lite",
     "gemini-3.1-flash-lite",
-    "gemini-2.5-flash-lite",
     "gemini-3.5-flash",
 ]
 
-# המודל האחרון שעבד בהצלחה. חוסך round-trips מיותרים בכל שיחה.
 _good_model = [None]
-
 _client = None
 _client_lock = threading.Lock()
 
@@ -175,17 +163,11 @@ def get_client():
                         http_options=types.HttpOptions(timeout=GEMINI_TIMEOUT * 1000),
                     )
                 except Exception:
-                    # גרסת SDK ישנה שלא מכירה http_options
                     _client = genai.Client(api_key=api_key)
     return _client
 
 
 def _thinking_config(model):
-    """
-    כיבוי / מזעור חשיבה. זה החיסכון הגדול ביותר בזמן תגובה.
-    Gemini 3.x משתמש ב-thinking_level, Gemini 2.5 ב-thinking_budget.
-    עטוף ב-try כדי לא להישבר בגרסאות SDK שונות.
-    """
     if model.startswith("gemini-2.5"):
         attempts = [{"thinking_budget": 0}, {"thinking_level": "low"}]
     else:
@@ -199,10 +181,6 @@ def _thinking_config(model):
 
 
 def _extract_text(response):
-    """
-    חילוץ טקסט בטוח. response.text לבדו מחזיר None כשיש grounding,
-    קריאות כלים, או כשהחשיבה קטעה את התשובה. כאן עוברים על כל החלקים.
-    """
     try:
         txt = getattr(response, "text", None)
         if txt and txt.strip():
@@ -215,7 +193,7 @@ def _extract_text(response):
             content = getattr(cand, "content", None)
             for part in (getattr(content, "parts", None) or []):
                 if getattr(part, "thought", False):
-                    continue  # לא לקרוא את מחשבות המודל בקול
+                    continue
                 t = getattr(part, "text", None)
                 if t:
                     chunks.append(t)
@@ -225,10 +203,6 @@ def _extract_text(response):
 
 
 def _grounding_used(response):
-    """
-    האם השימוש בחיפוש אכן הניב תוצאות (יש groundingMetadata עם שאילתות).
-    משמש רק ללוגים/אבחון - לא משנה את ההתנהגות.
-    """
     try:
         for cand in (getattr(response, "candidates", None) or []):
             gm = getattr(cand, "grounding_metadata", None)
@@ -240,7 +214,6 @@ def _grounding_used(response):
 
 
 def _ordered_models():
-    """המודל שעבד לאחרונה קודם, אחריו השאר."""
     good = _good_model[0]
     if good and good in MODELS:
         return [good] + [m for m in MODELS if m != good]
@@ -248,16 +221,6 @@ def _ordered_models():
 
 
 def gemini_call(system, contents, use_search=False, deadline=None):
-    """
-    קריאה אחת ל-Gemini עם fallback בין מודלים.
-
-    שתי נקודות קריטיות כאן:
-    1. max_output_tokens חייב להיות גבוה. לפי התיעוד הרשמי, הפרמטר הזה סופר
-       גם טוקני חשיבה/עיבוד חיפוש, ואם המודל מגיע לתקרה תוך כדי כך הוא מחזיר
-       פלט ריק. זו הייתה הסיבה ל"תקלה בחיבור לאינטרנט" - עם חיפוש, תקרה
-       נמוכה מדי נגמרת באמצע התהליך והתשובה חוזרת ריקה.
-    2. thinking מוגדר ל-low במקום ברירת המחדל. זה מה שמקצר את הזמן.
-    """
     last_error = None
     api_key = os.environ.get("GEMINI_API_KEY", "").strip()
     if not api_key:
@@ -295,17 +258,11 @@ def gemini_call(system, contents, use_search=False, deadline=None):
 
             if text:
                 _good_model[0] = model
-                if use_search:
-                    print("Gemini OK model=%s search=%s grounded=%s took=%ss" % (
-                        model, use_search, _grounding_used(response), took))
-                else:
-                    print("Gemini OK model=%s search=%s took=%ss" % (model, use_search, took))
+                print("Gemini OK model=%s search=%s grounded=%s took=%ss" % (
+                    model, use_search, _grounding_used(response), took))
                 return text
 
-            print("Gemini empty text model=%s search=%s took=%ss (finish=%s)" % (
-                model, use_search, took,
-                getattr((getattr(response, "candidates", None) or [None])[0],
-                        "finish_reason", "?")))
+            print("Gemini empty text model=%s search=%s took=%ss" % (model, use_search, took))
         except Exception as e:
             last_error = e
             print("Gemini model error", model, repr(e))
@@ -320,9 +277,8 @@ def gemini_call(system, contents, use_search=False, deadline=None):
 # ============================================================================
 
 def clean_for_tts(text, limit=700):
-    """ניקוי טקסט להקראה. מסיר עיצוב, קישורים, וסימוני מקורות של grounding."""
     text = str(text or "")
-    text = re.sub(r"\[\d+(?:,\s*\d+)*\]", "", text)      # [1] [2,3] של grounding
+    text = re.sub(r"\[\d+(?:,\s*\d+)*\]", "", text)
     text = re.sub(r"[*_#`>\[\]{}]", "", text)
     text = re.sub(r"https?://\S+|www\.\S+", "", text)
     text = text.replace("\n", ", ")
@@ -345,7 +301,6 @@ def safe_json_loads(text, default=None):
 def il_now():
     if IL_TZ is not None:
         return datetime.datetime.now(IL_TZ)
-    # גיבוי: קיזוז קבוע (לא מדויק בחורף)
     return datetime.datetime.utcnow() + datetime.timedelta(hours=3)
 
 
@@ -379,7 +334,6 @@ def yemot_download(ext, file_name):
 
 
 def yemot_delete(ext, file_name):
-    """מחיקה ברקע בלבד - אסור לחסום את השיחה בשביל זה."""
     def _run():
         try:
             url = YEMOT_API + "FileAction?" + urllib.parse.urlencode({
@@ -420,8 +374,6 @@ def yemot_write_text(file_name, text):
     except Exception as e:
         print("write text error:", repr(e))
 
-
-# ---- שמירה מושהית: מונעת העלאת קובץ שלם בכל הודעה בודדת ----
 
 _pending_saves = {}
 _save_lock = threading.Lock()
@@ -520,7 +472,7 @@ def load_personas():
 
 
 # ============================================================================
-#                         מכסות ומונים
+#                          מכסות ומונים
 # ============================================================================
 
 def rebuild_daily_counts():
@@ -633,11 +585,6 @@ def daily_mail_loop():
 # ============================================================================
 #                      לב המערכת: קריאה אחת לתמלול + תשובה
 # ============================================================================
-#
-# במקום שתי קריאות סדרתיות (תמלול, ואז תשובה) - קריאה אחת שמחזירה את שתיהן.
-# זה חוסך בערך חצי מזמן התגובה.
-# הפורמט הוא טקסטואלי פשוט ולא JSON schema, כי JSON schema אכן מתנגש
-# עם Google Search - וזו הייתה הסיבה שפיצלת מלכתחילה.
 
 T_MARK = "##T##"
 A_MARK = "##A##"
@@ -668,7 +615,6 @@ def build_chat_system(persona):
 
 
 def parse_marked(raw):
-    """פירוק התשובה לתמלול ותשובה. סלחני - עובד גם אם המודל חרג מהפורמט."""
     raw = (raw or "").strip()
     if not raw:
         return "", ""
@@ -680,12 +626,10 @@ def parse_marked(raw):
         return transcript, answer
     if ai >= 0:
         return "", raw[ai + len(A_MARK):].strip()
-    # המודל התעלם מהפורמט - נניח שכל הטקסט הוא התשובה
     return "", raw
 
 
 def is_marker(text):
-    """האם הטקסט הוא קוד פקודה (לפני או אחרי ניקוי סוגריים)."""
     return _marker_token(text) is not None
 
 
@@ -695,11 +639,6 @@ def _marker_token(text):
 
 
 def detect_command(transcript, answer):
-    """
-    זיהוי פקודה גם מהקוד של המודל וגם מהטקסט עצמו, ליתר ביטחון.
-    שים לב: clean_for_tts מסיר סוגריים מרובעים, ולכן [[MENU]] עלול
-    להגיע לכאן כ-MENU. הבדיקה כאן מנוטרלת מסוגריים בכוונה.
-    """
     tok = _marker_token(answer)
     if tok == "VOICE":
         return "voice"
@@ -718,7 +657,6 @@ def detect_command(transcript, answer):
 
 
 def transcribe_only(audio, deadline=None):
-    """מסלול גיבוי: תמלול נקי בלי כלים."""
     system = (
         "אתה מתמלל הקלטה טלפונית בעברית. "
         "החזר רק את הטקסט שנאמר בהקלטה, בלי הסברים ובלי סימני עיצוב. "
@@ -733,7 +671,6 @@ def transcribe_only(audio, deadline=None):
 
 
 def answer_from_text(persona, history, transcript, deadline=None):
-    """מסלול גיבוי: תשובה מטקסט."""
     system = build_chat_system(persona).replace(
         "אתה מקבל הקלטה קולית של המשתמש מהטלפון.",
         "אתה מקבל את דברי המשתמש כטקסט.",
@@ -745,11 +682,6 @@ def answer_from_text(persona, history, transcript, deadline=None):
 
 
 def ask_ai(persona, history, ext, file_name):
-    """
-    מחזיר (transcript, answer).
-    מסלול ראשי: קריאה אחת - אודיו + חיפוש + תשובה.
-    מסלול גיבוי: תמלול, ואז תשובה. רץ רק אם הראשי נכשל.
-    """
     deadline = time.time() + GEMINI_TIMEOUT * 2
 
     try:
@@ -758,7 +690,7 @@ def ask_ai(persona, history, ext, file_name):
         print("download error:", repr(e))
         return "", "סליחה, לא הצלחתי לשמוע את ההקלטה. נסה שוב."
 
-    yemot_delete(ext, file_name)  # ברקע, לא חוסם
+    yemot_delete(ext, file_name)
 
     use_search = (SEARCH_MODE != "off")
 
@@ -781,7 +713,6 @@ def ask_ai(persona, history, ext, file_name):
         if answer:
             return transcript, answer
 
-    # ---- מסלול גיבוי ----
     print("falling back to two-step path")
     transcript = transcribe_only(audio, deadline=deadline)
     if not transcript:
@@ -866,8 +797,6 @@ def goodbye(call_id, name):
     ])
 
 
-# ---- מנגנון "רגע אחד" ----
-
 WAIT_FILLERS = [
     "רגע אחד, אני בודק",
     "עוד רגע",
@@ -878,7 +807,6 @@ WAIT_FILLERS = [
 
 
 def wait_response(state, ext):
-    """משמיע מילת המתנה קצרה וחוזר לשלוחה. כך ימות אף פעם לא נתקעת בהמתנה."""
     idx = state.get("polls", 0)
     filler = WAIT_FILLERS[idx % len(WAIT_FILLERS)] if idx < 2 else WAIT_FILLERS[2 + (idx % 3)]
     return build_combined_action([
@@ -888,7 +816,6 @@ def wait_response(state, ext):
 
 
 def start_job(state, persona, history, ext, file_name):
-    """מפעיל את חישוב התשובה ברקע ומחזיר מיד."""
     job = {"done": False, "transcript": "", "answer": "", "error": None}
     state["job"] = job
     state["polls"] = 0
@@ -933,470 +860,101 @@ def yemot():
 def _handle():
     params = request.values.to_dict()
     call_id = params.get("ApiCallId")
-
+    
     if not call_id:
-        return Response("ok", mimetype="text/plain; charset=utf-8")
+        return Response("ok", mimetype="text/plain")
 
-    if params.get("hangup") == "yes":
-        with _calls_lock:
-            calls.pop(call_id, None)
-        return Response("noop", mimetype="text/plain; charset=utf-8")
-
-    phone = params.get("ApiPhone", "unknown")
-    ext = (params.get("ApiExtension", "") or VOICE_EXTS[0]).strip("/") or VOICE_EXTS[0]
+    phone = params.get("ApiPhone", "")
+    ext = params.get("ApiExtension", "")
 
     with _calls_lock:
-        state = calls.get(call_id)
-        if state is None:
-            state = {
-                "stage": "start", "n": 0, "wait": None, "persona": None,
-                "history": [], "call_id": call_id, "file": None,
-                "resume": None, "job": None, "polls": 0, "ext": ext,
+        if call_id not in calls:
+            calls[call_id] = {
+                "call_id": call_id,
+                "phone": phone,
+                "stage": "init",
+                "n": 0,
+                "history": []
             }
-            calls[call_id] = state
-            new_call = True
-        else:
-            new_call = False
-    state["ext"] = ext
+            with _lock:
+                CALLS.append({"call_id": call_id, "phone": phone, "time": now_str()})
+        state = calls[call_id]
 
-    if new_call:
-        with _lock:
-            CALLS.append({"time": now_str(), "phone": phone, "name": names.get(phone, "")})
-            del CALLS[:-LOG_MAX]
-        save_log()
+    stage = state.get("stage", "init")
+    name = names.get(phone, "אורח")
 
-    has_value = bool(state["wait"]) and state["wait"] in params
-    value = (params.get(state["wait"], "") or "").strip() if has_value else ""
-    if value == "None":
-        value = ""
+    if stage == "init":
+        return Response(menu(state, name), mimetype="text/plain")
 
-    name = names.get(phone)
+    elif stage == "menu":
+        choice = params.get(state.get("wait", ""))
+        if choice == "9":
+            return Response(goodbye(call_id, name), mimetype="text/plain")
+        if choice in PERSONAS:
+            state["persona"] = choice
+            return Response(listen(state, f"בחרת ב{PERSONA_NAMES[choice]}", first=True), mimetype="text/plain")
+        return Response(menu(state, name, "בחירה לא חוקית"), mimetype="text/plain")
 
-    # ----- שלב ההמתנה לתשובה שמתחשבת ברקע -----
-    if state["stage"] == "thinking":
-        job = state.get("job") or {"done": True, "transcript": "", "answer": ""}
-        if not job["done"]:
-            state["polls"] = state.get("polls", 0) + 1
-            if state["polls"] > MAX_WAIT_ROUNDS:
-                state["job"] = None
-                resp = listen(state, prefix="סליחה, זה לוקח יותר מדי זמן. אפשר לשאול שוב")
-                return Response(resp, mimetype="text/plain; charset=utf-8")
-            return Response(wait_response(state, ext), mimetype="text/plain; charset=utf-8")
-        state["job"] = None
-        return finish_turn(state, job["transcript"], job["answer"],
-                           phone, name or "אורח", ext, call_id)
-
-    if state["resume"]:
-        mode = state["resume"]
-        state["resume"] = None
-        resp = listen(state, prefix="הקול הוחלף") if mode == "chat" \
-            else menu(state, name or "אורח", prefix="הקול הוחלף")
-        return Response(resp, mimetype="text/plain; charset=utf-8")
-
-    if state["stage"] == "start":
-        if name:
-            resp = menu(state, name)
-        else:
-            state["stage"] = "ask_name"
-            resp = record(state, "name",
-                          "שלום, זו הפעם הראשונה שלך בקו. אמור את שמך הפרטי, ובסיום הקש סולמית")
-        return Response(resp, mimetype="text/plain; charset=utf-8")
-
-    if state["stage"] == "ask_name":
-        if not has_value:
-            resp = record(state, "name", "אמור את שמך הפרטי, ובסיום הקש סולמית")
-            return Response(resp, mimetype="text/plain; charset=utf-8")
-        name = transcribe_name(ext, state["file"]) or "אורח"
-        names[phone] = name
-        save_names()
-        resp = menu(state, name, prefix="נעים להכיר %s, השם נשמר" % name)
-        return Response(resp, mimetype="text/plain; charset=utf-8")
-
-    name = name or "אורח"
-
-    if state["stage"] == "menu":
-        if value == "9":
-            return Response(goodbye(call_id, name), mimetype="text/plain; charset=utf-8")
-        if value in PERSONAS:
-            state["persona"] = value
-            state["history"] = []
-            resp = listen(
-                state,
-                prefix="אתה עכשיו עם %s. אמור החלף קול כדי להחליף את הקול, "
-                       "תפריט כדי לחזור, או סיים כדי לסיים" % PERSONA_NAMES[value],
-                first=True,
-            )
-        else:
-            resp = menu(state, name)
-        return Response(resp, mimetype="text/plain; charset=utf-8")
-
-    if state["stage"] == "chat":
-        if not has_value:
-            resp = listen(state, prefix="לא שמעתי אותך")
-            return Response(resp, mimetype="text/plain; charset=utf-8")
-
+    elif stage == "chat":
         if over_limit(phone):
-            yemot_delete(ext, state["file"])
-            resp = menu(state, name, prefix="הגעת למכסת ההודעות היומית שלך. אפשר לנסות שוב מחר")
-            return Response(resp, mimetype="text/plain; charset=utf-8")
+            return Response(goodbye(call_id, name), mimetype="text/plain")
 
-        if ASYNC_ANSWER:
-            start_job(state, state["persona"], list(state["history"]), ext, state["file"])
-            return Response(
-                build_combined_action([
-                    build_id_list_message([("text", "רגע אחד, אני בודק")]),
-                    build_go_to_folder("/" + ext),
-                ]),
-                mimetype="text/plain; charset=utf-8",
-            )
+        file_name = state.get("file")
+        if not file_name:
+            return Response(listen(state, "לא זוהתה הקלטה"), mimetype="text/plain")
 
-        transcript, answer = ask_ai(state["persona"], state["history"], ext, state["file"])
-        return finish_turn(state, transcript, answer, phone, name, ext, call_id)
+        start_job(state, state.get("persona", "1"), state.get("history", []), ext, file_name)
+        return Response(wait_response(state, ext), mimetype="text/plain")
 
-    resp = menu(state, name)
-    return Response(resp, mimetype="text/plain; charset=utf-8")
+    elif stage == "thinking":
+        job = state.get("job")
+        if not job:
+            return Response(menu(state, name, "שגיאה במערכת, מחזיר לתפריט"), mimetype="text/plain")
 
+        if not job.get("done"):
+            state["polls"] = state.get("polls", 0) + 1
+            if state["polls"] >= MAX_WAIT_ROUNDS:
+                state["stage"] = "chat"
+                return Response(listen(state, "הפעולה ארכה זמן רב מדי. אנא נסה שוב."), mimetype="text/plain")
+            return Response(wait_response(state, ext), mimetype="text/plain")
 
-def finish_turn(state, transcript, answer, phone, name, ext, call_id):
-    """מטפל בתוצאה: פקודות, לוג, והשמעת התשובה."""
-    cmd = detect_command(transcript, answer)
+        ans = job.get("answer", "")
+        transcript = job.get("transcript", "")
+        cmd = detect_command(transcript, ans)
 
-    if cmd == "voice":
-        if len(VOICE_EXTS) < 2 or ext not in VOICE_EXTS:
-            resp = listen(state, prefix="אין קולות נוספים להחלפה")
-            return Response(resp, mimetype="text/plain; charset=utf-8")
-        next_ext = VOICE_EXTS[(VOICE_EXTS.index(ext) + 1) % len(VOICE_EXTS)]
-        state["resume"] = "chat"
-        state["wait"] = None
-        return Response(build_go_to_folder("/" + next_ext), mimetype="text/plain; charset=utf-8")
+        if cmd == "menu":
+            return Response(menu(state, name), mimetype="text/plain")
+        elif cmd == "end":
+            return Response(goodbye(call_id, name), mimetype="text/plain")
 
-    if cmd == "menu":
-        return Response(menu(state, name), mimetype="text/plain; charset=utf-8")
-
-    if cmd == "end":
-        return Response(goodbye(call_id, name), mimetype="text/plain; charset=utf-8")
-
-    if transcript or answer:
-        state["history"].append({"role": "user", "parts": [{"text": transcript or "(הקלטה)"}]})
-        state["history"].append({"role": "model", "parts": [{"text": answer}]})
+        state.setdefault("history", []).extend([
+            {"role": "user", "parts": [{"text": transcript}]},
+            {"role": "model", "parts": [{"text": ans}]}
+        ])
         state["history"] = state["history"][-10:]
+
         with _lock:
             LOG.append({
-                "time": now_str(), "phone": phone, "name": name,
-                "persona": PERSONA_NAMES.get(state["persona"], ""),
-                "q": transcript, "a": answer,
+                "time": now_str(),
+                "phone": phone,
+                "name": name,
+                "persona": PERSONA_NAMES.get(state.get("persona", "1"), ""),
+                "q": transcript,
+                "a": ans
             })
-            del LOG[:-LOG_MAX]
+            save_log()
+            
         bump_daily(phone)
-        save_log()
+        state["stage"] = "chat"
+        return Response(listen(state, ans), mimetype="text/plain")
 
-    resp = listen(state, prefix=answer or "לא הצלחתי להבין, נסה שוב")
-    return Response(resp, mimetype="text/plain; charset=utf-8")
-
-
-# ============================================================================
-#                              אתר ניהול
-# ============================================================================
-
-ADMIN_CSS = """
-<style>
-body{font-family:Arial,sans-serif;direction:rtl;background:#f4f6f9;margin:0;color:#222}
-.wrap{max-width:1100px;margin:0 auto;padding:16px}
-h1{margin:8px 0 16px}
-.cards{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px}
-.card{background:#fff;border-radius:10px;padding:14px 18px;box-shadow:0 1px 3px #0002;min-width:150px}
-.card b{font-size:26px;display:block}
-table{width:100%;border-collapse:collapse;background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 1px 3px #0002;margin-bottom:20px}
-th,td{padding:8px 10px;border-bottom:1px solid #eee;text-align:right;vertical-align:top;font-size:14px}
-th{background:#2d3e50;color:#fff}
-input[type=text]{padding:5px;border:1px solid #ccc;border-radius:6px;width:130px}
-button{padding:5px 10px;border:0;border-radius:6px;background:#2d3e50;color:#fff;cursor:pointer}
-button.red{background:#c0392b}
-form.inline{display:inline}
-.q{color:#1a5fb4}.a{color:#333}
-textarea{width:100%;height:70px;padding:6px;border:1px solid #ccc;border-radius:6px;font-family:inherit}
-.top{display:flex;justify-content:space-between;align-items:center}
-a{color:#1a5fb4}
-</style>
-"""
-
-
-def is_admin():
-    if not ADMIN_KEY:
-        return False
-    key = request.values.get("key") or request.cookies.get("admin_key")
-    return key == ADMIN_KEY
-
-
-def admin_login_page(msg=""):
-    page = ADMIN_CSS + """<div class="wrap" style="max-width:380px;margin-top:80px">
-    <div class="card"><h2>כניסה לניהול הקו</h2>%s
-    <form method="post" action="/admin/login">
-    <input type="password" name="key" placeholder="סיסמה" style="width:100%%;padding:8px;box-sizing:border-box;margin-bottom:8px">
-    <button style="width:100%%;padding:8px">כניסה</button></form></div></div>""" % (
-        "<p style='color:#c0392b'>%s</p>" % html.escape(msg) if msg else "")
-    return Response(page, mimetype="text/html; charset=utf-8")
-
-
-@app.route("/admin/login", methods=["POST"])
-def admin_login():
-    key = request.form.get("key", "")
-    if not ADMIN_KEY:
-        return admin_login_page("לא הוגדרה סיסמה (ADMIN_KEY) בשרת")
-    if key != ADMIN_KEY:
-        return admin_login_page("סיסמה שגויה")
-    resp = Response("", status=302, headers={"Location": "/admin"})
-    resp.set_cookie("admin_key", key, max_age=60 * 60 * 24 * 90, httponly=True, samesite="Lax")
-    return resp
-
-
-def calls_state_snapshot():
-    with _calls_lock:
-        return dict(calls)
-
-
-@app.route("/admin", methods=["GET"])
-def admin():
-    if not is_admin():
-        return admin_login_page()
-    h = html.escape
-    filt = request.args.get("phone", "").strip()
-    today = today_str()
-
-    with _lock:
-        users = dict(names)
-        log = list(LOG)
-        calls_snapshot = list(CALLS)
-
-    calls_today = sum(1 for c in calls_snapshot if str(c.get("time", "")).startswith(today))
-    active = len(calls_state_snapshot())
-
-    out = [ADMIN_CSS, '<div class="wrap"><div class="top"><h1>ניהול הקו</h1>'
-           '<a href="/admin">רענון</a></div>']
-    out.append('<div class="cards">'
-               '<div class="card">משתמשים רשומים<b>%d</b></div>'
-               '<div class="card">שיחות היום<b>%d</b></div>'
-               '<div class="card">סה"כ שיחות<b>%d</b></div>'
-               '<div class="card">שיחות פעילות עכשיו<b>%d</b></div>'
-               '<div class="card">הודעות ביומן<b>%d</b></div>'
-               '<div class="card">מודל פעיל<b style="font-size:15px">%s</b></div></div>' % (
-                   len(users), calls_today, len(calls_snapshot), active, len(log),
-                   h(_good_model[0] or MODELS[0])))
-
-    out.append('<h2>משתמשים רשומים</h2><table><tr><th>שם</th><th>טלפון</th><th>שיחות</th>'
-               '<th>הודעות</th><th>פעולות</th></tr>')
-    for phone, nm in sorted(users.items(), key=lambda x: x[1]):
-        n_calls = sum(1 for c in calls_snapshot if c.get("phone") == phone)
-        n_msgs = sum(1 for l in log if l.get("phone") == phone)
-        out.append('<tr><td>%s</td><td>%s</td><td>%d</td><td>%d</td><td>'
-                   '<form class="inline" method="post" action="/admin/rename">'
-                   '<input type="hidden" name="phone" value="%s">'
-                   '<input type="text" name="name" value="%s"> <button>שנה שם</button></form> '
-                   '<form class="inline" method="post" action="/admin/delete" '
-                   'onsubmit="return confirm(\'למחוק את המשתמש?\')">'
-                   '<input type="hidden" name="phone" value="%s"><button class="red">מחק</button></form> '
-                   '<a href="/admin?phone=%s">הצג שיחות</a></td></tr>' % (
-                       h(nm), h(phone), n_calls, n_msgs, h(phone), h(nm), h(phone), h(phone)))
-    if not users:
-        out.append('<tr><td colspan="5">עדיין אין משתמשים רשומים</td></tr>')
-    out.append('</table>')
-
-    shown = [l for l in log if not filt or l.get("phone") == filt][::-1][:300]
-    out.append('<h2>מה דיברו עם הקו%s</h2>' % (
-        " – " + h(filt) + ' (<a href="/admin">הצג הכל</a>)' if filt else ""))
-    out.append('<form class="inline" method="post" action="/admin/clear" '
-               'onsubmit="return confirm(\'למחוק את כל היומן?\')">'
-               '<button class="red">נקה יומן</button></form>')
-    out.append('<table><tr><th>זמן</th><th>מי</th><th>עוזר</th><th>מה נאמר</th></tr>')
-    for l in shown:
-        out.append('<tr><td>%s</td><td>%s<br><small>%s</small></td><td>%s</td>'
-                   '<td><div class="q">שאל: %s</div><div class="a">ענה: %s</div></td></tr>' % (
-                       h(str(l.get("time", ""))), h(str(l.get("name", ""))), h(str(l.get("phone", ""))),
-                       h(str(l.get("persona", ""))), h(str(l.get("q", ""))), h(str(l.get("a", "")))))
-    if not shown:
-        out.append('<tr><td colspan="4">אין הודעות עדיין</td></tr>')
-    out.append('</table>')
-
-    out.append('<h2>העוזרים (אפשר לערוך את האופי של כל עוזר)</h2>')
-    out.append('<form method="post" action="/admin/personas"><table>'
-               '<tr><th style="width:40px">מס</th><th style="width:180px">שם העוזר</th>'
-               '<th>ההנחיה ל-AI</th></tr>')
-    for k in sorted(PERSONAS):
-        base = PERSONAS[k].replace(GENERAL_RULES, "")
-        out.append('<tr><td>%s</td><td><input type="text" name="name_%s" value="%s"></td>'
-                   '<td><textarea name="prompt_%s">%s</textarea></td></tr>' % (
-                       k, k, h(PERSONA_NAMES[k]), k, h(base)))
-    out.append('</table><button>שמור עוזרים</button></form>')
-    out.append('<p><small>הכללים הקבועים מתווספים אוטומטית לכל עוזר.</small></p>')
-
-    out.append('<h2>הגדרות</h2><form method="post" action="/admin/settings"><table>'
-               '<tr><th style="width:260px">הגדרה</th><th>ערך</th></tr>'
-               '<tr><td>הודעות ליום לכל משתמש (0 = בלי הגבלה)</td>'
-               '<td><input type="text" name="daily_limit" value="%d"></td></tr>'
-               '<tr><td>מספרים ללא הגבלה (מופרדים בפסיק)</td>'
-               '<td><input type="text" name="unlimited_phones" value="%s" style="width:320px"></td></tr>'
-               '<tr><td>שעת שליחת הסיכום היומי למייל (0-23)</td>'
-               '<td><input type="text" name="mail_hour" value="%d"></td></tr>'
-               '</table><button>שמור הגדרות</button></form>' % (
-                   SETTINGS["daily_limit"], h(SETTINGS["unlimited_phones"]), SETTINGS["mail_hour"]))
-
-    mail_state = ("מוגדר, נשלח אל " + h(MAIL_TO)) if (MAIL_USER and MAIL_PASS) \
-        else "לא מוגדר (צריך MAIL_USER ו-MAIL_PASS ב-Render)"
-    out.append('<p>סיכום יומי למייל: %s &nbsp; '
-               '<form class="inline" method="post" action="/admin/sendmail">'
-               '<button>שלח סיכום של היום עכשיו</button></form> %s</p>' % (
-                   mail_state,
-                   "<b style='color:#1a5fb4'>%s</b>" % h(request.args.get("mail", ""))
-                   if request.args.get("mail") else ""))
-    out.append('<p><a href="/admin/logout">יציאה</a></p></div>')
-    return Response("".join(out), mimetype="text/html; charset=utf-8")
-
-
-@app.route("/admin/rename", methods=["POST"])
-def admin_rename():
-    if not is_admin():
-        return admin_login_page()
-    phone = request.form.get("phone", "")
-    nm = clean_for_tts(request.form.get("name", ""), limit=30)[:30]
-    if phone in names and nm:
-        names[phone] = nm
-        save_names()
-    return Response("", status=302, headers={"Location": "/admin"})
-
-
-@app.route("/admin/delete", methods=["POST"])
-def admin_delete():
-    if not is_admin():
-        return admin_login_page()
-    names.pop(request.form.get("phone", ""), None)
-    save_names()
-    return Response("", status=302, headers={"Location": "/admin"})
-
-
-@app.route("/admin/clear", methods=["POST"])
-def admin_clear():
-    if not is_admin():
-        return admin_login_page()
-    with _lock:
-        LOG.clear()
-        _daily_counts.clear()
-    save_log()
-    return Response("", status=302, headers={"Location": "/admin"})
-
-
-@app.route("/admin/personas", methods=["POST"])
-def admin_personas():
-    if not is_admin():
-        return admin_login_page()
-    for k in list(PERSONAS):
-        nm = request.form.get("name_" + k, "").strip()
-        pr = request.form.get("prompt_" + k, "").strip()
-        if nm:
-            PERSONA_NAMES[k] = nm[:40]
-        if pr:
-            PERSONAS[k] = pr + GENERAL_RULES
-    data = json.dumps({
-        "names": PERSONA_NAMES,
-        "prompts": {k: PERSONAS[k].replace(GENERAL_RULES, "") for k in PERSONAS},
-    }, ensure_ascii=False)
-    schedule_save("ai_personas.txt", data)
-    return Response("", status=302, headers={"Location": "/admin"})
-
-
-@app.route("/admin/settings", methods=["POST"])
-def admin_settings():
-    if not is_admin():
-        return admin_login_page()
-    try:
-        SETTINGS["daily_limit"] = max(0, int(request.form.get("daily_limit", "0") or 0))
-    except ValueError:
-        pass
-    try:
-        SETTINGS["mail_hour"] = min(23, max(0, int(request.form.get("mail_hour", "21") or 21)))
-    except ValueError:
-        pass
-    SETTINGS["unlimited_phones"] = re.sub(r"[^0-9,]", "", request.form.get("unlimited_phones", ""))
-    save_settings()
-    return Response("", status=302, headers={"Location": "/admin"})
-
-
-@app.route("/admin/sendmail", methods=["POST"])
-def admin_sendmail():
-    if not is_admin():
-        return admin_login_page()
-    day = today_str()
-    result = send_mail("סיכום הקו ליום " + day, build_summary(day))
-    return Response("", status=302, headers={"Location": "/admin?mail=" + urllib.parse.quote(result)})
-
-
-@app.route("/admin/logout")
-def admin_logout():
-    resp = Response("", status=302, headers={"Location": "/admin"})
-    resp.set_cookie("admin_key", "", max_age=0, httponly=True, samesite="Lax")
-    return resp
-
-
-@app.route("/health", methods=["GET"])
-def health():
-    return Response("ok", mimetype="text/plain; charset=utf-8")
-
-
-@app.route("/warm", methods=["GET"])
-def warm():
-    """בדיקת תקינות מלאה: מוודא שהמודל והחיפוש עובדים."""
-    t0 = time.time()
-    txt = gemini_call("ענה במילה אחת בלבד.", "מה השעה עכשיו בישראל?", use_search=True)
-    return Response(json.dumps({
-        "ok": bool(txt),
-        "model": _good_model[0],
-        "seconds": round(time.time() - t0, 2),
-        "answer": (txt or "")[:200],
-    }, ensure_ascii=False), mimetype="application/json; charset=utf-8")
-
-
-# ============================================================================
-#                          חימום ושמירה על ערנות
-# ============================================================================
-
-def warmup():
-    """
-    קריאה קטנה בהפעלה: פותחת את חיבור ה-TLS, מאתחלת את הלקוח,
-    ומגלה מראש איזה מודל עובד. חוסך 2-4 שניות בשיחה הראשונה.
-    """
-    try:
-        time.sleep(2)
-        txt = gemini_call("ענה במילה אחת.", "שלום", use_search=False)
-        print("warmup done, model =", _good_model[0], "reply =", (txt or "")[:30])
-    except Exception as e:
-        print("warmup error:", repr(e))
-
-
-def keep_alive_loop():
-    """
-    מונע cold start ב-Render Free (השירות נכבה אחרי 15 דקות חוסר פעילות).
-    זו הסיבה העיקרית לשיחות שלוקחות 30-60 שניות אחרי הפסקה.
-    """
-    if not (KEEP_ALIVE and SELF_URL):
-        print("keep-alive off (RENDER_EXTERNAL_URL not set)")
-        return
-    while True:
-        time.sleep(600)  # כל 10 דקות
-        try:
-            _http_get(SELF_URL + "/health", 20)
-        except Exception as e:
-            print("keep-alive error:", repr(e))
-
-
-load_data()
-load_settings()
-load_personas()
-
-threading.Thread(target=_save_worker, daemon=True).start()
-threading.Thread(target=daily_mail_loop, daemon=True).start()
-threading.Thread(target=warmup, daemon=True).start()
-threading.Thread(target=keep_alive_loop, daemon=True).start()
-
+    return Response(menu(state, name), mimetype="text/plain")
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", "10000"))
-    app.run(host="0.0.0.0", port=port, threaded=True)
+    load_data()
+    load_settings()
+    load_personas()
+    threading.Thread(target=_save_worker, daemon=True).start()
+    threading.Thread(target=daily_mail_loop, daemon=True).start()
+    
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
