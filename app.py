@@ -70,8 +70,14 @@ MAX_WAIT_ROUNDS = int(os.environ.get("MAX_WAIT_ROUNDS", "20"))
 # מצב חיפוש: always (מומלץ) / auto / off
 SEARCH_MODE = os.environ.get("SEARCH_MODE", "always").strip().lower()
 
-# תקרת טוקנים. חייבת להיות גבוהה! ראה הערה בפונקציה gemini_call.
-MAX_OUTPUT_TOKENS = int(os.environ.get("MAX_OUTPUT_TOKENS", "2048"))
+# תקרת טוקנים. חייבת להיות גבוהה!
+# תוקן: כשמופעל חיפוש (grounding), המודל צורך לעיתים כ-1,900 עד 4,900 טוקני
+# "חשיבה"/עיבוד רק כדי לבצע את החיפוש עצמו - לפני שהוא כותב אפילו מילה אחת
+# מהתשובה. תקרה של 2048 (כפי שהיה קודם) נחתכת בדיוק באמצע התהליך הזה,
+# מחזירה טקסט ריק, ומפילה את הקוד למסלול הגיבוי - שם לעיתים גם הוא נחתך.
+# זו הייתה הסיבה שהמודל "התנצל" שאין לו גישה לאינטרנט, למרות שכלי החיפוש
+# היה דלוק. 8192 נותן מרווח בטוח גם לשיחות עם חיפוש כבד.
+MAX_OUTPUT_TOKENS = int(os.environ.get("MAX_OUTPUT_TOKENS", "8192"))
 
 # timeout לקריאת Gemini, בשניות
 GEMINI_TIMEOUT = int(os.environ.get("GEMINI_TIMEOUT", "40"))
@@ -218,6 +224,21 @@ def _extract_text(response):
     return "\n".join(chunks).strip()
 
 
+def _grounding_used(response):
+    """
+    האם השימוש בחיפוש אכן הניב תוצאות (יש groundingMetadata עם שאילתות).
+    משמש רק ללוגים/אבחון - לא משנה את ההתנהגות.
+    """
+    try:
+        for cand in (getattr(response, "candidates", None) or []):
+            gm = getattr(cand, "grounding_metadata", None)
+            if gm and (getattr(gm, "web_search_queries", None) or getattr(gm, "grounding_chunks", None)):
+                return True
+    except Exception:
+        pass
+    return False
+
+
 def _ordered_models():
     """המודל שעבד לאחרונה קודם, אחריו השאר."""
     good = _good_model[0]
@@ -231,10 +252,10 @@ def gemini_call(system, contents, use_search=False, deadline=None):
     קריאה אחת ל-Gemini עם fallback בין מודלים.
 
     שתי נקודות קריטיות כאן:
-    1. max_output_tokens גבוה (2048). לפי התיעוד הרשמי, הפרמטר הזה סופר גם
-       טוקני חשיבה, ואם המודל מגיע לתקרה תוך כדי חשיבה הוא מחזיר פלט ריק.
-       זו הייתה הסיבה ל"תקלה בחיבור לאינטרנט" - עם חיפוש, 700 טוקנים
-       נגמרו באמצע החשיבה והתשובה חזרה ריקה.
+    1. max_output_tokens חייב להיות גבוה. לפי התיעוד הרשמי, הפרמטר הזה סופר
+       גם טוקני חשיבה/עיבוד חיפוש, ואם המודל מגיע לתקרה תוך כדי כך הוא מחזיר
+       פלט ריק. זו הייתה הסיבה ל"תקלה בחיבור לאינטרנט" - עם חיפוש, תקרה
+       נמוכה מדי נגמרת באמצע התהליך והתשובה חוזרת ריקה.
     2. thinking מוגדר ל-low במקום ברירת המחדל. זה מה שמקצר את הזמן.
     """
     last_error = None
@@ -274,12 +295,17 @@ def gemini_call(system, contents, use_search=False, deadline=None):
 
             if text:
                 _good_model[0] = model
-                print("Gemini OK model=%s search=%s took=%ss" % (model, use_search, took))
+                if use_search:
+                    print("Gemini OK model=%s search=%s grounded=%s took=%ss" % (
+                        model, use_search, _grounding_used(response), took))
+                else:
+                    print("Gemini OK model=%s search=%s took=%ss" % (model, use_search, took))
                 return text
 
-            print("Gemini empty text model=%s took=%ss (finish=%s)" % (
-                model, took, getattr((getattr(response, "candidates", None) or [None])[0],
-                                     "finish_reason", "?")))
+            print("Gemini empty text model=%s search=%s took=%ss (finish=%s)" % (
+                model, use_search, took,
+                getattr((getattr(response, "candidates", None) or [None])[0],
+                        "finish_reason", "?")))
         except Exception as e:
             last_error = e
             print("Gemini model error", model, repr(e))
