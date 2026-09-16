@@ -66,33 +66,37 @@ if not VOICE_EXTS:
 DATA_EXT = VOICE_EXTS[0]
 
 
-# מודל ראשי + מודל גיבוי
+# ============================================================
+# מודלי Gemini
+#
+# מודל ראשי = מהיר
+# מודל גיבוי = חזק יותר במקרה תקלה
+# ============================================================
+
 AI_MODELS = [
-    "gemini-3.5-flash-lite",
-    "gemini-3.1-flash-lite",
+    "gemini-2.5-flash-lite",
+    "gemini-2.5-flash",
 ]
 
 
-# מגבלת אורך הקלטה
+# ============================================================
+# מגבלות
+# ============================================================
+
 MAX_AUDIO_SECONDS = 25
 
-
-# מגבלת גודל קובץ קול
 MAX_AUDIO_BYTES = 7 * 1024 * 1024
 
+# ארבעה זוגות של שאלה/תשובה
+# נשמרים בזיכרון של השיחה בלבד
+MAX_HISTORY_PAIRS = 4
 
-# כמה הודעות נשמרות בהקשר של השיחה
-# בזיכרון בלבד
-MAX_HISTORY_MESSAGES = 6
-
-
-# כמה זמן שיחה לא פעילה תישאר בזיכרון
+# שיחה ישנה תימחק מהזיכרון
 CALL_TTL_SECONDS = 45 * 60
 
 
-# מכסה יומית
 try:
-    DEFAULT_DAILY_LIMIT = max(
+    DAILY_LIMIT = max(
         0,
         int(
             os.environ.get(
@@ -102,7 +106,7 @@ try:
         )
     )
 except Exception:
-    DEFAULT_DAILY_LIMIT = 40
+    DAILY_LIMIT = 40
 
 
 # מספרים ללא הגבלה
@@ -113,7 +117,9 @@ OWNER_PHONES = {
 
 
 # ============================================================
-# זיכרון זמני בלבד
+# זיכרון זמני
+#
+# תוכן השיחות לא נשמר בקבצים.
 # ============================================================
 
 names = {}
@@ -126,6 +132,7 @@ calls = {}
 usage = {}
 
 state_lock = threading.RLock()
+
 client_lock = threading.Lock()
 
 _client = None
@@ -172,8 +179,7 @@ DEFAULT_PERSONAS = {
     "4": (
         "העוזר היצירתי",
         "אתה עוזר יצירתי. "
-        "הצע רעיונות, סיפורים קצרים, "
-        "בדיחות ותוכן יצירתי."
+        "הצע רעיונות, סיפורים קצרים ותוכן יצירתי."
     ),
 
     "5": (
@@ -203,7 +209,7 @@ for key, (name, prompt) in DEFAULT_PERSONAS.items():
 
 
 # ============================================================
-# זמן ישראל
+# אזור זמן ישראל
 # ============================================================
 
 try:
@@ -280,15 +286,17 @@ def normalize_phone(phone):
 # ============================================================
 
 def cleanup_calls():
-    now_mono = time.monotonic()
+    now = time.monotonic()
+
+    today = il_now().date().isoformat()
 
     with state_lock:
 
-        expired = [
+        expired_calls = [
             call_id
             for call_id, state in calls.items()
             if (
-                now_mono
+                now
                 - state.get(
                     "last_seen",
                     0
@@ -297,13 +305,11 @@ def cleanup_calls():
             )
         ]
 
-        for call_id in expired:
+        for call_id in expired_calls:
             calls.pop(
                 call_id,
                 None
             )
-
-        today = il_now().date().isoformat()
 
         expired_usage = [
             phone
@@ -319,7 +325,7 @@ def cleanup_calls():
 
 
 # ============================================================
-# מגבלת הודעות
+# מכסת הודעות
 # ============================================================
 
 def over_limit(phone):
@@ -327,16 +333,14 @@ def over_limit(phone):
     if phone in OWNER_PHONES:
         return False
 
-    if DEFAULT_DAILY_LIMIT <= 0:
+    if DAILY_LIMIT <= 0:
         return False
 
     today = il_now().date().isoformat()
 
     with state_lock:
 
-        item = usage.get(
-            phone
-        )
+        item = usage.get(phone)
 
         if not item:
             return False
@@ -349,7 +353,7 @@ def over_limit(phone):
                 "count",
                 0
             )
-        ) >= DEFAULT_DAILY_LIMIT
+        ) >= DAILY_LIMIT
 
 
 def consume_message(phone):
@@ -357,21 +361,20 @@ def consume_message(phone):
     if phone in OWNER_PHONES:
         return True
 
-    if DEFAULT_DAILY_LIMIT <= 0:
+    if DAILY_LIMIT <= 0:
         return True
 
     today = il_now().date().isoformat()
 
     with state_lock:
 
-        item = usage.get(
-            phone
-        )
+        item = usage.get(phone)
 
         if (
             not item
             or item.get("day") != today
         ):
+
             item = {
                 "day": today,
                 "count": 0,
@@ -379,7 +382,7 @@ def consume_message(phone):
 
             usage[phone] = item
 
-        if item["count"] >= DEFAULT_DAILY_LIMIT:
+        if item["count"] >= DAILY_LIMIT:
             return False
 
         item["count"] += 1
@@ -395,6 +398,7 @@ def yemot_download(
     ext,
     file_name
 ):
+
     if not YEMOT_TOKEN:
         raise RuntimeError(
             "YEMOT_TOKEN is missing"
@@ -406,11 +410,7 @@ def yemot_download(
         + urllib.parse.urlencode({
             "token": YEMOT_TOKEN,
             "path": (
-                "ivr2:/%s/%s.wav"
-                % (
-                    ext,
-                    file_name
-                )
+                f"ivr2:/{ext}/{file_name}.wav"
             ),
         })
     )
@@ -445,6 +445,7 @@ def yemot_delete(
     ext,
     file_name
 ):
+
     if not YEMOT_TOKEN:
         return
 
@@ -457,11 +458,7 @@ def yemot_delete(
                 "token": YEMOT_TOKEN,
                 "action": "delete",
                 "what": (
-                    "ivr2:/%s/%s.wav"
-                    % (
-                        ext,
-                        file_name
-                    )
+                    f"ivr2:/{ext}/{file_name}.wav"
                 ),
             })
         )
@@ -483,6 +480,7 @@ def delete_audio_async(
     ext,
     file_name
 ):
+
     threading.Thread(
         target=yemot_delete,
         args=(
@@ -494,13 +492,15 @@ def delete_audio_async(
 
 
 # ============================================================
-# קריאת קובץ טקסט
-# תיקון: 404 = קובץ עדיין לא קיים
+# קבצי טקסט קבועים
+#
+# 404 אינו שגיאה אם הקובץ עדיין לא קיים.
 # ============================================================
 
 def yemot_read_text(
     file_name
 ):
+
     if not YEMOT_TOKEN:
         return None
 
@@ -512,11 +512,7 @@ def yemot_read_text(
             + urllib.parse.urlencode({
                 "token": YEMOT_TOKEN,
                 "path": (
-                    "ivr2:/%s/%s"
-                    % (
-                        DATA_EXT,
-                        file_name
-                    )
+                    f"ivr2:/{DATA_EXT}/{file_name}"
                 ),
             })
         )
@@ -542,8 +538,6 @@ def yemot_read_text(
 
     except urllib.error.HTTPError as exc:
 
-        # קובץ לא קיים:
-        # לא מדובר בתקלה של המערכת.
         if exc.code == 404:
             return None
 
@@ -565,14 +559,11 @@ def yemot_read_text(
         return None
 
 
-# ============================================================
-# כתיבת קובץ טקסט
-# ============================================================
-
 def yemot_write_text(
     file_name,
     text
 ):
+
     if not YEMOT_TOKEN:
         return False
 
@@ -581,11 +572,7 @@ def yemot_write_text(
         body = urllib.parse.urlencode({
             "token": YEMOT_TOKEN,
             "what": (
-                "ivr2:/%s/%s"
-                % (
-                    DATA_EXT,
-                    file_name
-                )
+                f"ivr2:/{DATA_EXT}/{file_name}"
             ),
             "contents": text,
         }).encode(
@@ -639,7 +626,7 @@ def save_names():
 
 
 # ============================================================
-# שמירת הגדרות עוזרים בלבד
+# שמירת הגדרות עוזרים
 # ============================================================
 
 def save_personas():
@@ -684,6 +671,7 @@ def load_names():
         )
 
     except Exception:
+
         return
 
     if not isinstance(
@@ -696,21 +684,20 @@ def load_names():
 
         for phone, name in data.items():
 
-            phone = normalize_phone(
-                phone
-            )
-
             name = clean_for_tts(
                 name,
                 30
             )
 
-            if phone and name:
-                names[phone] = name
+            if name:
+
+                names[
+                    normalize_phone(phone)
+                ] = name
 
 
 # ============================================================
-# טעינת פרסונות
+# טעינת עוזרים
 # ============================================================
 
 def load_personas():
@@ -729,6 +716,7 @@ def load_personas():
         )
 
     except Exception:
+
         return
 
     if not isinstance(
@@ -783,12 +771,13 @@ def load_personas():
 
 
 if YEMOT_TOKEN:
+
     load_names()
     load_personas()
 
 
 # ============================================================
-# Gemini Client
+# Gemini
 # ============================================================
 
 def get_client():
@@ -817,110 +806,81 @@ def get_client():
 
 
 # ============================================================
-# פרומפט פרסונה
+# פרומפט AI
 # ============================================================
 
-def get_persona_prompt(
+def ai_system(
     persona_key
 ):
 
     with state_lock:
 
-        return persona_prompts.get(
+        persona = persona_prompts.get(
             persona_key,
             persona_prompts["1"]
         )
 
+    now = il_now()
+
+    return (
+        persona
+        + GENERAL_RULES
+        + (
+            f" [תאריך בישראל: {now:%d/%m/%Y}; "
+            f"שעה: {now:%H:%M}] "
+        )
+        + """
+ אתה מקבל הקלטה קולית של משתמש בטלפון.
+
+ הבן מה המשתמש אמר וענה לו בתשובה טבעית וקצרה.
+
+ אם המשתמש מבקש מידע עדכני או מידע שיכול להשתנות,
+ השתמש ב-Google Search.
+ אם אין צורך במידע עדכני, אל תבצע חיפוש מיותר.
+
+ פקודות מיוחדות:
+
+ החלף קול / תחליף קול / שנה קול
+ החזר:
+ COMMAND|CHANGE_VOICE
+
+ תפריט / חזרה
+ החזר:
+ COMMAND|MENU
+
+ סיים / ביי / להתראות
+ החזר:
+ COMMAND|HANGUP
+
+ בכל שאלה רגילה החזר בדיוק:
+
+ TRANSCRIPT|הטקסט שהמשתמש אמר
+ ANSWER|התשובה שלך
+
+ אל תוסיף שום דבר אחר.
+
+ התשובה חייבת להיות קצרה ומתאימה להשמעה בטלפון.
+ אין כוכביות.
+ אין רשימות.
+ אין אימוג'ים.
+ """
+    )
+
 
 # ============================================================
-# AI קולית
-#
-# קריאה אחת:
-# WAV + היסטוריה -> תשובה
+# קריאת AI אחת לכל הודעה
 # ============================================================
 
 def ai_audio_turn(
     persona_key,
     history,
-    audio_bytes
+    audio
 ):
 
-    now = il_now()
-
-    current_date = now.strftime(
-        "%d/%m/%Y"
+    contents = list(
+        history
     )
 
-    current_time = now.strftime(
-        "%H:%M"
-    )
-
-    persona = get_persona_prompt(
-        persona_key
-    )
-
-    system_instruction = (
-        persona
-        + GENERAL_RULES
-        + (
-            f" [תאריך בישראל: {current_date}; "
-            f"שעה: {current_time}]"
-        )
-        + """
- אתה מקבל הקלטה קולית של משתמש בשיחת טלפון.
-
- המטרה היא להבין את ההקלטה ולתת תשובה מהירה וטבעית.
-
- אם המשתמש ביקש מידע עדכני או מידע שיכול להשתנות,
- השתמש ב-Google Search.
- אחרת אל תבצע חיפוש מיותר.
-
- יש שלוש פקודות מיוחדות:
-
- אם המשתמש אומר:
- החלף קול / תחליף קול / שנה קול
-
- החזר בדיוק:
- COMMAND|CHANGE_VOICE
-
- אם המשתמש אומר:
- תפריט / חזרה
-
- החזר בדיוק:
- COMMAND|MENU
-
- אם המשתמש אומר:
- סיים / ביי / להתראות
-
- החזר בדיוק:
- COMMAND|HANGUP
-
- עבור שאלה רגילה החזר בדיוק:
-
- TRANSCRIPT|הטקסט שהמשתמש אמר
- ANSWER|התשובה למשתמש
-
- אין להחזיר שורות אחרות.
-
- התשובה צריכה להתאים להשמעה בטלפון.
- היה קצר וברור.
- אל תשתמש בכוכביות.
- אל תשתמש ברשימות.
- אל תשתמש באימוג'ים.
- """
-    )
-
-    contents = []
-
-    # ההיסטוריה קיימת רק בזיכרון
-    # במהלך השיחה
-    for item in history:
-
-        contents.append(
-            item
-        )
-
-    # אודיו חדש
     contents.append({
 
         "role": "user",
@@ -928,14 +888,14 @@ def ai_audio_turn(
         "parts": [
 
             types.Part.from_bytes(
-                data=audio_bytes,
+                data=audio,
                 mime_type="audio/wav"
             ),
 
             types.Part.from_text(
                 text=(
-                    "האזן להקלטה ופעל "
-                    "לפי ההוראות."
+                    "האזן להקלטה "
+                    "ופעל לפי ההוראות."
                 )
             ),
 
@@ -943,44 +903,36 @@ def ai_audio_turn(
 
     })
 
-    for model_name in AI_MODELS:
+    for model in AI_MODELS:
 
         try:
 
-            config_args = {
+            config = types.GenerateContentConfig(
 
-                "system_instruction":
-                    system_instruction,
+                system_instruction=
+                    ai_system(
+                        persona_key
+                    ),
 
-                "max_output_tokens":
-                    220,
+                max_output_tokens=180,
 
-                # Google Search זמין למודל
-                "tools": [
+                # Google Search זמין
+                tools=[
                     types.Tool(
-                        google_search=types.GoogleSearch()
+                        google_search=
+                        types.GoogleSearch()
                     )
                 ],
-            }
 
-            # Gemini 3.x:
-            # מינימום חשיבה = תגובה מהירה יותר
-            if model_name.startswith(
-                "gemini-3."
-            ):
-
-                config_args[
-                    "thinking_config"
-                ] = types.ThinkingConfig(
-                    thinking_level="minimal"
-                )
-
-            config = types.GenerateContentConfig(
-                **config_args
+                # מקסימום מהירות ב-2.5
+                thinking_config=
+                    types.ThinkingConfig(
+                        thinking_budget=0
+                    ),
             )
 
             result = get_client().models.generate_content(
-                model=model_name,
+                model=model,
                 contents=contents,
                 config=config
             )
@@ -995,31 +947,29 @@ def ai_audio_turn(
 
                 print(
                     "Gemini success:",
-                    model_name
+                    model
                 )
 
                 return text.strip()
 
             print(
                 "Gemini empty response:",
-                model_name
+                model
             )
 
         except Exception as exc:
 
             print(
                 "Gemini error:",
-                model_name,
+                model,
                 repr(exc)
             )
-
-            continue
 
     return ""
 
 
 # ============================================================
-# פענוח תשובת AI
+# פענוח תוצאת Gemini
 # ============================================================
 
 def parse_ai_result(
@@ -1040,7 +990,6 @@ def parse_ai_result(
 
     upper = raw.upper()
 
-    # פקודת החלפת קול
     if (
         "COMMAND|CHANGE_VOICE"
         in upper
@@ -1052,7 +1001,6 @@ def parse_ai_result(
             "answer": "",
         }
 
-    # תפריט
     if (
         "COMMAND|MENU"
         in upper
@@ -1064,7 +1012,6 @@ def parse_ai_result(
             "answer": "",
         }
 
-    # סיום
     if (
         "COMMAND|HANGUP"
         in upper
@@ -1085,52 +1032,51 @@ def parse_ai_result(
     answer_match = re.search(
         r"ANSWER\|(.*)",
         raw,
-        re.IGNORECASE | re.DOTALL
+        re.IGNORECASE
+        | re.DOTALL
     )
 
     transcript = (
-        transcript_match.group(1).strip()
+        clean_for_tts(
+            transcript_match.group(1).strip(),
+            500
+        )
         if transcript_match
         else ""
     )
 
     answer = (
-        answer_match.group(1).strip()
+        clean_for_tts(
+            answer_match.group(1).strip(),
+            700
+        )
         if answer_match
         else ""
     )
 
-    # fallback אם Gemini לא שמר בדיוק
+    # fallback במקרה שהמודל לא שמר בדיוק
     # על הפורמט
     if not answer:
 
         lines = [
-            line.strip()
-            for line
-            in raw.splitlines()
-            if line.strip()
+            x.strip()
+            for x in raw.splitlines()
+            if x.strip()
         ]
 
         if lines:
 
-            answer = lines[-1]
-
             answer = re.sub(
                 r"^(ANSWER|TRANSCRIPT)\s*\|\s*",
                 "",
-                answer,
+                lines[-1],
                 flags=re.IGNORECASE
             )
 
-    transcript = clean_for_tts(
-        transcript,
-        500
-    )
-
-    answer = clean_for_tts(
-        answer,
-        700
-    )
+            answer = clean_for_tts(
+                answer,
+                700
+            )
 
     return {
         "type": (
@@ -1144,7 +1090,7 @@ def parse_ai_result(
 
 
 # ============================================================
-# טיפול ב-AI
+# טיפול בהודעת AI
 # ============================================================
 
 def ask_ai(
@@ -1164,7 +1110,7 @@ def ask_ai(
     except Exception as exc:
 
         print(
-            "Yemot download error:",
+            "download error:",
             repr(exc)
         )
 
@@ -1172,8 +1118,9 @@ def ask_ai(
             "type": "error",
             "transcript": "",
             "answer": (
-                "סליחה, לא הצלחתי לקבל "
-                "את ההקלטה. נסה שוב."
+                "סליחה, לא הצלחתי "
+                "לקבל את ההקלטה. "
+                "נסה שוב."
             ),
         }
 
@@ -1216,8 +1163,7 @@ def menu(
     state["n"] += 1
 
     state["wait"] = (
-        "choice_%d"
-        % state["n"]
+        f"choice_{state['n']}"
     )
 
     state["stage"] = "menu"
@@ -1236,22 +1182,32 @@ def menu(
     )
 
     read = build_read(
+
         [("text", text)],
+
         mode="tap",
+
         val_name=state["wait"],
+
         max_digits=1,
+
         min_digits=1,
+
         digits_allowed="12345679",
+
         sec_wait=10,
     )
 
     if prefix:
 
         return build_combined_action([
+
             build_id_list_message([
                 ("text", prefix)
             ]),
+
             read,
+
         ])
 
     return read
@@ -1263,7 +1219,6 @@ def menu(
 
 def record(
     state,
-    val_prefix,
     prompt,
     prefix=None
 ):
@@ -1271,51 +1226,55 @@ def record(
     state["n"] += 1
 
     state["wait"] = (
-        "%s_%d"
-        % (
-            val_prefix,
-            state["n"]
-        )
+        f"speech_{state['n']}"
     )
 
-    safe_call_id = re.sub(
-        r"[^0-9a-zA-Z_-]",
+    safe_id = re.sub(
+        r"[^0-9A-Za-z_-]",
         "",
         state["call_id"]
     )
 
-    if not safe_call_id:
-        safe_call_id = "call"
+    if not safe_id:
+        safe_id = "call"
 
     file_name = (
-        "ai_%s_%d"
-        % (
-            safe_call_id[-18:],
-            state["n"]
-        )
+        f"ai_{safe_id[-18:]}_{state['n']}"
     )
 
     state["file"] = file_name
 
     read = build_read(
+
         [("text", prompt)],
+
         mode="record",
+
         val_name=state["wait"],
+
         path="",
+
         file_name=file_name,
+
         no_confirm_menu="no",
+
         save_on_hangup="no",
+
         min_length="",
+
         max_length=MAX_AUDIO_SECONDS,
     )
 
     if prefix:
 
         return build_combined_action([
+
             build_id_list_message([
                 ("text", prefix)
             ]),
+
             read,
+
         ])
 
     return read
@@ -1336,25 +1295,24 @@ def listen(
     if first:
 
         return record(
+
             state,
-            "speech",
+
             (
-                (
-                    prefix + ". "
-                )
-                if prefix
-                else ""
-            )
-            + (
                 "דבר אחרי הצפצוף, "
                 "ובסיום הקש סולמית"
-            )
+            ),
+
+            prefix=prefix
         )
 
     return record(
+
         state,
-        "speech",
-        prefix or "אני מקשיב"
+
+        "אני מקשיב",
+
+        prefix=prefix
     )
 
 
@@ -1369,28 +1327,30 @@ def goodbye(
 
     with state_lock:
 
-        # כאן נמחק כל הזיכרון של השיחה
+        # מחיקת כל השיחה מהזיכרון
         calls.pop(
             call_id,
             None
         )
 
     return build_combined_action([
+
         build_id_list_message([
             (
                 "text",
-                "להתראות %s"
-                % name
+                f"להתראות {name}"
             )
         ]),
+
         build_go_to_folder(
             "hangup"
         ),
+
     ])
 
 
 # ============================================================
-# Endpoint של ימות המשיח
+# ENDPOINT ימות המשיח
 # ============================================================
 
 @app.route(
@@ -1458,10 +1418,7 @@ def yemot():
     if not ext:
         ext = VOICE_EXTS[0]
 
-    if (
-        VOICE_EXTS
-        and ext not in VOICE_EXTS
-    ):
+    if ext not in VOICE_EXTS:
         ext = VOICE_EXTS[0]
 
     with state_lock:
@@ -1472,9 +1429,16 @@ def yemot():
 
         if state is None:
 
+            # =================================================
+            # התיקון הקריטי:
+            #
+            # נכנסים ישר לתפריט.
+            # אין בקשת שם שחוסמת את הכניסה.
+            # =================================================
+
             state = {
 
-                "stage": "start",
+                "stage": "menu",
 
                 "n": 0,
 
@@ -1499,6 +1463,7 @@ def yemot():
 
                 "lock":
                     threading.Lock(),
+
             }
 
             calls[call_id] = state
@@ -1511,7 +1476,8 @@ def yemot():
 
             state["voice_ext"] = ext
 
-    # מניעת התנגשות בשיחה
+    # מניעת שתי בקשות במקביל
+    # לאותה שיחה
     with state["lock"]:
 
         return handle_call(
@@ -1523,7 +1489,7 @@ def yemot():
 
 
 # ============================================================
-# טיפול בבקשת שיחה
+# טיפול בשיחה
 # ============================================================
 
 def handle_call(
@@ -1540,6 +1506,7 @@ def handle_call(
     )
 
     value = (
+
         (
             params.get(
                 state["wait"],
@@ -1547,7 +1514,9 @@ def handle_call(
             )
             or ""
         ).strip()
+
         if has_value
+
         else ""
     )
 
@@ -1556,12 +1525,13 @@ def handle_call(
 
     with state_lock:
 
-        name = names.get(
-            phone
+        name = (
+            names.get(phone)
+            or "אורח"
         )
 
     # ========================================================
-    # חזרה לאחר החלפת קול
+    # חזרה אחרי החלפת קול
     # ========================================================
 
     if state.get("resume"):
@@ -1573,235 +1543,33 @@ def handle_call(
         if mode == "chat":
 
             return Response(
+
                 listen(
                     state,
                     prefix="הקול הוחלף"
                 ),
+
                 mimetype=(
                     "text/plain; "
                     "charset=utf-8"
                 ),
+
             )
 
         return Response(
+
             menu(
                 state,
-                name or "אורח",
+                name,
                 prefix="הקול הוחלף"
             ),
+
             mimetype=(
                 "text/plain; "
                 "charset=utf-8"
             ),
+
         )
-
-    # ========================================================
-    # התחלת שיחה
-    # ========================================================
-
-    if state["stage"] == "start":
-
-        if name:
-
-            return Response(
-                menu(
-                    state,
-                    name
-                ),
-                mimetype=(
-                    "text/plain; "
-                    "charset=utf-8"
-                ),
-            )
-
-        state["stage"] = "ask_name"
-
-        return Response(
-            record(
-                state,
-                "name",
-                (
-                    "שלום, זו הפעם הראשונה שלך בקו. "
-                    "אמור את שמך הפרטי, "
-                    "ובסיום הקש סולמית"
-                )
-            ),
-            mimetype=(
-                "text/plain; "
-                "charset=utf-8"
-            ),
-        )
-
-    # ========================================================
-    # קבלת שם
-    # ========================================================
-
-    if state["stage"] == "ask_name":
-
-        if not has_value:
-
-            return Response(
-                record(
-                    state,
-                    "name",
-                    (
-                        "אמור את שמך הפרטי, "
-                        "ובסיום הקש סולמית"
-                    )
-                ),
-                mimetype=(
-                    "text/plain; "
-                    "charset=utf-8"
-                ),
-            )
-
-        try:
-
-            audio = yemot_download(
-                ext,
-                state["file"]
-            )
-
-        except Exception as exc:
-
-            print(
-                "name download error:",
-                repr(exc)
-            )
-
-            return Response(
-                record(
-                    state,
-                    "name",
-                    (
-                        "לא הצלחתי לקבל את ההקלטה. "
-                        "אמור שוב את שמך הפרטי, "
-                        "ובסיום הקש סולמית"
-                    )
-                ),
-                mimetype=(
-                    "text/plain; "
-                    "charset=utf-8"
-                ),
-            )
-
-        delete_audio_async(
-            ext,
-            state["file"]
-        )
-
-        name_prompt = (
-            "החזר רק את השם הפרטי "
-            "שנאמר בהקלטה. "
-            "בלי הסברים ובלי מילים נוספות."
-        )
-
-        try:
-
-            config = types.GenerateContentConfig(
-                system_instruction=name_prompt,
-                max_output_tokens=20,
-                thinking_config=types.ThinkingConfig(
-                    thinking_level="minimal"
-                ),
-            )
-
-            result = get_client().models.generate_content(
-                model="gemini-3.5-flash-lite",
-                contents=[
-                    types.Part.from_bytes(
-                        data=audio,
-                        mime_type="audio/wav"
-                    )
-                ],
-                config=config
-            )
-
-            new_name = clean_for_tts(
-                getattr(
-                    result,
-                    "text",
-                    ""
-                ),
-                30
-            )
-
-        except Exception as exc:
-
-            print(
-                "name AI error:",
-                repr(exc)
-            )
-
-            # fallback אחד פשוט
-            try:
-
-                result = get_client().models.generate_content(
-                    model="gemini-3.1-flash-lite",
-                    contents=[
-                        types.Part.from_bytes(
-                            data=audio,
-                            mime_type="audio/wav"
-                        )
-                    ],
-                    config=types.GenerateContentConfig(
-                        system_instruction=name_prompt,
-                        max_output_tokens=20,
-                        thinking_config=types.ThinkingConfig(
-                            thinking_level="minimal"
-                        ),
-                    )
-                )
-
-                new_name = clean_for_tts(
-                    getattr(
-                        result,
-                        "text",
-                        ""
-                    ),
-                    30
-                )
-
-            except Exception as fallback_exc:
-
-                print(
-                    "name fallback error:",
-                    repr(fallback_exc)
-                )
-
-                new_name = ""
-
-        new_name = re.sub(
-            r"[^\u0590-\u05FF\- ]",
-            "",
-            new_name or ""
-        ).strip()
-
-        if not new_name:
-            new_name = "אורח"
-
-        with state_lock:
-            names[phone] = new_name
-
-        save_names()
-
-        return Response(
-            menu(
-                state,
-                new_name,
-                prefix=(
-                    "נעים להכיר %s, "
-                    "השם נשמר"
-                    % new_name
-                )
-            ),
-            mimetype=(
-                "text/plain; "
-                "charset=utf-8"
-            ),
-        )
-
-    name = name or "אורח"
 
     # ========================================================
     # MENU
@@ -1812,53 +1580,58 @@ def handle_call(
         if value == "9":
 
             return Response(
+
                 goodbye(
                     state["call_id"],
                     name
                 ),
+
                 mimetype=(
                     "text/plain; "
                     "charset=utf-8"
                 ),
+
             )
 
         if value in persona_names:
 
             state["persona"] = value
+
             state["history"] = []
+
             state["message_count"] = 0
 
-            with state_lock:
-                persona = persona_names[value]
+            persona = persona_names[value]
 
             return Response(
+
                 listen(
                     state,
                     prefix=(
-                        "אתה עכשיו עם %s. "
-                        "אמור החלף קול "
-                        "כדי להחליף קול, "
-                        "תפריט כדי לחזור, "
-                        "או סיים כדי לסיים"
-                    )
-                    % persona,
+                        f"אתה עכשיו עם {persona}"
+                    ),
                     first=True
                 ),
+
                 mimetype=(
                     "text/plain; "
                     "charset=utf-8"
                 ),
+
             )
 
         return Response(
+
             menu(
                 state,
                 name
             ),
+
             mimetype=(
                 "text/plain; "
                 "charset=utf-8"
             ),
+
         )
 
     # ========================================================
@@ -1870,14 +1643,17 @@ def handle_call(
         if not has_value:
 
             return Response(
+
                 listen(
                     state,
                     prefix="לא שמעתי אותך"
                 ),
+
                 mimetype=(
                     "text/plain; "
                     "charset=utf-8"
                 ),
+
             )
 
         if over_limit(phone):
@@ -1889,7 +1665,10 @@ def handle_call(
                     state["file"]
                 )
 
+            state["stage"] = "menu"
+
             return Response(
+
                 menu(
                     state,
                     name,
@@ -1899,10 +1678,12 @@ def handle_call(
                         "אפשר לנסות שוב מחר"
                     )
                 ),
+
                 mimetype=(
                     "text/plain; "
                     "charset=utf-8"
                 ),
+
             )
 
         if not consume_message(phone):
@@ -1914,7 +1695,10 @@ def handle_call(
                     state["file"]
                 )
 
+            state["stage"] = "menu"
+
             return Response(
+
                 menu(
                     state,
                     name,
@@ -1924,17 +1708,24 @@ def handle_call(
                         "אפשר לנסות שוב מחר"
                     )
                 ),
+
                 mimetype=(
                     "text/plain; "
                     "charset=utf-8"
                 ),
+
             )
 
         result = ask_ai(
+
             state["persona"],
+
             state["history"],
+
             ext,
+
             state["file"]
+
         )
 
         result_type = result.get(
@@ -1960,17 +1751,20 @@ def handle_call(
             if len(VOICE_EXTS) < 2:
 
                 return Response(
+
                     listen(
                         state,
                         prefix=(
-                            "אין קולות נוספים "
-                            "להחלפה"
+                            "אין קולות "
+                            "נוספים להחלפה"
                         )
                     ),
+
                     mimetype=(
                         "text/plain; "
                         "charset=utf-8"
                     ),
+
                 )
 
             current = (
@@ -1980,6 +1774,7 @@ def handle_call(
             )
 
             next_ext = VOICE_EXTS[
+
                 (
                     VOICE_EXTS.index(
                         current
@@ -1987,20 +1782,26 @@ def handle_call(
                     + 1
                 )
                 % len(VOICE_EXTS)
+
             ]
 
             state["resume"] = "chat"
+
             state["wait"] = None
+
             state["voice_ext"] = next_ext
 
             return Response(
+
                 build_go_to_folder(
                     "/" + next_ext
                 ),
+
                 mimetype=(
                     "text/plain; "
                     "charset=utf-8"
                 ),
+
             )
 
         # ====================================================
@@ -2009,15 +1810,20 @@ def handle_call(
 
         if result_type == "menu":
 
+            state["stage"] = "menu"
+
             return Response(
+
                 menu(
                     state,
                     name
                 ),
+
                 mimetype=(
                     "text/plain; "
                     "charset=utf-8"
                 ),
+
             )
 
         # ====================================================
@@ -2027,14 +1833,17 @@ def handle_call(
         if result_type == "hangup":
 
             return Response(
+
                 goodbye(
                     state["call_id"],
                     name
                 ),
+
                 mimetype=(
                     "text/plain; "
                     "charset=utf-8"
                 ),
+
             )
 
         # ====================================================
@@ -2045,7 +1854,8 @@ def handle_call(
 
             answer = (
                 "סליחה, לא הצלחתי "
-                "להכין תשובה. נסה שוב."
+                "להכין תשובה. "
+                "נסה שוב."
             )
 
         # היסטוריה זמנית בלבד
@@ -2075,40 +1885,52 @@ def handle_call(
 
             })
 
-            state["history"] = state[
-                "history"
-            ][
-                -(
-                    MAX_HISTORY_MESSAGES * 2
-                ):
-            ]
+            state["history"] = (
+
+                state["history"]
+
+                [
+                    -(
+                        MAX_HISTORY_PAIRS * 2
+                    ):
+                ]
+
+            )
 
         state["message_count"] += 1
 
         return Response(
+
             listen(
                 state,
                 prefix=answer
             ),
+
             mimetype=(
                 "text/plain; "
                 "charset=utf-8"
             ),
+
         )
 
     # ========================================================
-    # fallback
+    # FALLBACK
     # ========================================================
 
+    state["stage"] = "menu"
+
     return Response(
+
         menu(
             state,
             name
         ),
+
         mimetype=(
             "text/plain; "
             "charset=utf-8"
         ),
+
     )
 
 
@@ -2187,20 +2009,24 @@ button{
 .note{
     background:#fff8d9;
     border-radius:8px;
-    padding:12px;
+    padding:12px
 }
 </style>
 """
 
 
-def admin_session_token():
+def admin_token():
 
     return hmac.new(
+
         ADMIN_KEY.encode(
             "utf-8"
         ),
-        b"yby-ai-session-v3",
+
+        b"yby-ai-admin-v4",
+
         hashlib.sha256
+
     ).hexdigest()
 
 
@@ -2214,72 +2040,75 @@ def is_admin():
         ""
     )
 
-    expected = admin_session_token()
-
     return (
+
         bool(supplied)
+
         and hmac.compare_digest(
             supplied,
-            expected
+            admin_token()
         )
+
     )
 
 
 def admin_login_page(
-    message=""
+    msg=""
 ):
 
-    page = (
-        ADMIN_CSS
-        + """
-        <div class="wrap"
-             style="max-width:400px;
-                    margin-top:80px">
+    page = ADMIN_CSS + """
+    <div class='wrap'
+         style='max-width:400px;
+                margin-top:80px'>
 
-            <div class="card">
+        <div class='card'>
 
-                <h2>
-                    כניסה לניהול הקו
-                </h2>
+            <h2>
+                כניסה לניהול הקו
+            </h2>
 
-                %s
+            %s
 
-                <form
-                    method="post"
-                    action="/admin/login">
+            <form
+                method='post'
+                action='/admin/login'>
 
-                    <input
-                        type="password"
-                        name="key"
-                        placeholder="סיסמה"
-                        style="margin-bottom:10px">
+                <input
+                    type='password'
+                    name='key'
+                    placeholder='סיסמה'
+                    style='margin-bottom:10px'>
 
-                    <button>
-                        כניסה
-                    </button>
+                <button>
+                    כניסה
+                </button>
 
-                </form>
-
-            </div>
+            </form>
 
         </div>
-        """
-        % (
-            (
-                "<p style='color:#c0392b'>%s</p>"
-                % html.escape(message)
-            )
-            if message
-            else ""
+
+    </div>
+    """ % (
+
+        (
+            "<p style='color:#c0392b'>%s</p>"
+            % html.escape(msg)
         )
+
+        if msg
+
+        else ""
     )
 
     return Response(
+
         page,
+
         mimetype=(
             "text/html; "
             "charset=utf-8"
         ),
+
     )
 
 
@@ -2310,20 +2139,31 @@ def admin_login():
         )
 
     response = Response(
+
         "",
+
         status=302,
+
         headers={
             "Location": "/admin"
         },
+
     )
 
     response.set_cookie(
+
         "admin_session",
-        admin_session_token(),
+
+        admin_token(),
+
         max_age=24 * 60 * 60,
+
         httponly=True,
+
         samesite="Lax",
+
         secure=request.is_secure
+
     )
 
     return response
@@ -2341,49 +2181,55 @@ def admin():
 
     with state_lock:
 
-        names_snapshot = dict(
+        users = dict(
             names
         )
 
-        persona_names_snapshot = dict(
+        pnames = dict(
             persona_names
         )
 
-        persona_prompts_snapshot = dict(
+        pprompts = dict(
             persona_prompts
         )
 
-        active_calls = len(calls)
+        active = len(calls)
 
     user_rows = []
 
     for phone, name in sorted(
-        names_snapshot.items(),
-        key=lambda item: item[1]
+        users.items(),
+        key=lambda x: x[1]
     ):
 
         user_rows.append(
-            """
+
+            f"""
             <tr>
 
-                <td>%s</td>
-                <td>%s</td>
+                <td>
+                    {html.escape(name)}
+                </td>
+
+                <td>
+                    {html.escape(phone)}
+                </td>
 
                 <td>
 
                     <form
-                        method="post"
-                        action="/admin/rename">
+                        method='post'
+                        action='/admin/rename'>
 
                         <input
-                            type="hidden"
-                            name="phone"
-                            value="%s">
+                            type='hidden'
+                            name='phone'
+                            value='{html.escape(phone)}'>
 
                         <input
-                            type="text"
-                            name="name"
-                            value="%s">
+                            type='text'
+                            name='name'
+                            value='{html.escape(name)}'>
 
                         <button>
                             שמור
@@ -2392,17 +2238,18 @@ def admin():
                     </form>
 
                     <form
-                        method="post"
-                        action="/admin/delete"
-                        style="margin-top:6px"
-                        onsubmit="return confirm('למחוק את המשתמש?')">
+                        method='post'
+                        action='/admin/delete'
+                        style='margin-top:6px'
+                        onsubmit=
+                        "return confirm('למחוק את המשתמש?')">
 
                         <input
-                            type="hidden"
-                            name="phone"
-                            value="%s">
+                            type='hidden'
+                            name='phone'
+                            value='{html.escape(phone)}'>
 
-                        <button class="red">
+                        <button class='red'>
                             מחק
                         </button>
 
@@ -2412,13 +2259,6 @@ def admin():
 
             </tr>
             """
-            % (
-                html.escape(name),
-                html.escape(phone),
-                html.escape(phone),
-                html.escape(name),
-                html.escape(phone),
-            )
         )
 
     if not user_rows:
@@ -2426,7 +2266,7 @@ def admin():
         user_rows.append(
             """
             <tr>
-                <td colspan="3">
+                <td colspan='3'>
                     אין משתמשים רשומים
                 </td>
             </tr>
@@ -2436,147 +2276,141 @@ def admin():
     persona_rows = []
 
     for key in sorted(
-        persona_names_snapshot
+        pnames
     ):
 
         persona_rows.append(
-            """
+
+            f"""
             <tr>
 
-                <td>%s</td>
-
                 <td>
-                    <input
-                        type="text"
-                        name="name_%s"
-                        value="%s">
+                    {key}
                 </td>
 
                 <td>
+
+                    <input
+                        type='text'
+                        name='name_{key}'
+                        value='{html.escape(pnames[key])}'>
+
+                </td>
+
+                <td>
+
                     <textarea
-                        name="prompt_%s">%s</textarea>
+                        name='prompt_{key}'>{html.escape(pprompts[key])}</textarea>
+
                 </td>
 
             </tr>
             """
-            % (
-                key,
-                key,
-                html.escape(
-                    persona_names_snapshot[key]
-                ),
-                key,
-                html.escape(
-                    persona_prompts_snapshot[key]
-                ),
-            )
         )
 
-    page = (
-        ADMIN_CSS
-        + """
-        <div class="wrap">
+    page = ADMIN_CSS + f"""
+    <div class='wrap'>
 
-            <div class="card">
+        <div class='card'>
 
-                <h1>
-                    ניהול קו AI
-                </h1>
+            <h1>
+                ניהול קו AI
+            </h1>
 
-                <p>
-                    שיחות פעילות כרגע:
-                    <b>%d</b>
-                </p>
+            <p>
+                שיחות פעילות:
+                <b>{active}</b>
+            </p>
 
-                <div class="note">
-                    היסטוריית השיחות אינה נשמרת.
-                    היא קיימת רק בזיכרון בזמן
-                    השיחה הפעילה ונמחקת
-                    כשהשיחה מסתיימת או מתיישנת.
-                </div>
+            <div class='note'>
 
-            </div>
+                היסטוריית שאלות ותשובות
+                אינה נשמרת בקבצים.
 
-
-            <div class="card">
-
-                <h2>
-                    משתמשים ושמות
-                </h2>
-
-                <table>
-
-                    <tr>
-                        <th>שם</th>
-                        <th>טלפון</th>
-                        <th>פעולות</th>
-                    </tr>
-
-                    %s
-
-                </table>
-
-            </div>
-
-
-            <div class="card">
-
-                <h2>
-                    עוזרים
-                </h2>
-
-                <form
-                    method="post"
-                    action="/admin/personas">
-
-                    <table>
-
-                        <tr>
-                            <th>מספר</th>
-                            <th>שם</th>
-                            <th>אופי והנחיה</th>
-                        </tr>
-
-                        %s
-
-                    </table>
-
-                    <p>
-
-                        <button>
-                            שמור עוזרים
-                        </button>
-
-                    </p>
-
-                </form>
-
-            </div>
-
-
-            <div class="card">
-
-                <a href="/admin/logout">
-                    יציאה
-                </a>
+                היא קיימת רק בזיכרון
+                של השיחה הפעילה.
 
             </div>
 
         </div>
-        """
-        % (
-            active_calls,
-            "".join(user_rows),
-            "".join(persona_rows),
-        )
-    )
+
+
+        <div class='card'>
+
+            <h2>
+                משתמשים
+            </h2>
+
+            <table>
+
+                <tr>
+                    <th>שם</th>
+                    <th>טלפון</th>
+                    <th>פעולות</th>
+                </tr>
+
+                {''.join(user_rows)}
+
+            </table>
+
+        </div>
+
+
+        <div class='card'>
+
+            <h2>
+                עוזרים
+            </h2>
+
+            <form
+                method='post'
+                action='/admin/personas'>
+
+                <table>
+
+                    <tr>
+                        <th>מספר</th>
+                        <th>שם</th>
+                        <th>הנחיה</th>
+                    </tr>
+
+                    {''.join(persona_rows)}
+
+                </table>
+
+                <p>
+
+                    <button>
+                        שמור עוזרים
+                    </button>
+
+                </p>
+
+            </form>
+
+        </div>
+
+
+        <div class='card'>
+
+            <a href='/admin/logout'>
+                יציאה
+            </a>
+
+        </div>
+
+    </div>
+    """
 
     return Response(
+
         page,
+
         mimetype=(
             "text/html; "
             "charset=utf-8"
         ),
+
     )
 
 
@@ -2607,16 +2441,21 @@ def admin_rename():
     if phone and name:
 
         with state_lock:
+
             names[phone] = name
 
         save_names()
 
     return Response(
+
         "",
+
         status=302,
+
         headers={
             "Location": "/admin"
         },
+
     )
 
 
@@ -2646,11 +2485,15 @@ def admin_delete():
     save_names()
 
     return Response(
+
         "",
+
         status=302,
+
         headers={
             "Location": "/admin"
         },
+
     )
 
 
@@ -2684,19 +2527,25 @@ def admin_personas():
             )
 
             if name:
+
                 persona_names[key] = name
 
             if prompt:
+
                 persona_prompts[key] = prompt
 
     save_personas()
 
     return Response(
+
         "",
+
         status=302,
+
         headers={
             "Location": "/admin"
         },
+
     )
 
 
@@ -2706,27 +2555,38 @@ def admin_personas():
 def admin_logout():
 
     response = Response(
+
         "",
+
         status=302,
+
         headers={
             "Location": "/admin"
         },
+
     )
 
     response.set_cookie(
+
         "admin_session",
+
         "",
+
         max_age=0,
+
         httponly=True,
+
         samesite="Lax",
+
         secure=request.is_secure
+
     )
 
     return response
 
 
 # ============================================================
-# HEALTH CHECK
+# Health
 # ============================================================
 
 @app.route(
@@ -2736,11 +2596,14 @@ def admin_logout():
 def health():
 
     return Response(
+
         "ok",
+
         mimetype=(
             "text/plain; "
             "charset=utf-8"
         ),
+
     )
 
 
@@ -2752,17 +2615,21 @@ def health():
 def unexpected_error(exc):
 
     print(
-        "Unhandled exception:",
+        "Unhandled server error:",
         repr(exc)
     )
 
     return Response(
+
         "סליחה, אירעה תקלה זמנית במערכת. נסה שוב.",
+
         status=200,
+
         mimetype=(
             "text/plain; "
             "charset=utf-8"
         ),
+
     )
 
 
@@ -2780,7 +2647,11 @@ if __name__ == "__main__":
     )
 
     app.run(
+
         host="0.0.0.0",
+
         port=port,
+
         threaded=True
+
     )
