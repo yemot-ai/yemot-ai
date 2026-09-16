@@ -1,4 +1,3 @@
 flask
-yemot-flow
 google-genai
-gunicorn
+waitress
