@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 מערכת טלפונית לשיחה עם AI - ימות המשיח + Gemini
-גרסה מעודכנת: הגנה מפני קריסות בלולאות המתנה, ניווט קבצים מדויק, חיפוש גוגל פעיל.
+גרסה יציבה: ניווט מדויק לקבצים, חיפוש גוגל פעיל ומנגנון המתנה טבעי.
 """
 
 from flask import Flask, request, Response
@@ -451,25 +451,17 @@ def goodbye(call_id, name):
 
 def wait_response(state, ext):
     idx = state.get("polls", 0)
-    state["n"] += 1
-    state["wait"] = "poll_%d" % state["n"]
     
-    # השמעת הטקסט בסיבוב הראשון, ומנגינה (051) בסיבובים הבאים
     if idx == 0:
-        action_msg = [("text", "רגע אחד, אני בודק")]
+        action = build_id_list_message([("text", "רגע אחד, אני בודק")])
     else:
-        action_msg = [("file", "051")]
+        # הקובץ שלך תקין כעת ואכן קיים במערכת - זה ינגן אותו ויבצע השהיה טבעית
+        action = build_id_list_message([("file", "051")])
         
-    # שימוש ב-build_read יוצר השהיה אוטומטית שמונעת עומס ולולאות קריסה
-    return build_read(
-        action_msg,
-        mode="tap",
-        val_name=state["wait"],
-        max_digits=1,
-        min_digits=1,
-        sec_wait=3,  # המתנה של 3 שניות בין בדיקה לבדיקה, גם אם קובץ השמע חסר
-        digits_allowed=""
-    )
+    return build_combined_action([
+        action,
+        build_go_to_folder("/" + ext),
+    ])
 
 def start_job(state, persona, history, ext, file_name):
     job = {"done": False, "transcript": "", "answer": "", "error": None}
