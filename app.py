@@ -356,11 +356,11 @@ def gemini(system, contents, search=False):
 
 def transcribe_name(file_name):
     try:
-        audio = yemot_download(file_name)
+        audio = yemot_download(file_name + ".wav")
     except Exception as e:
         print("download error:", e)
         return ""
-    yemot_delete(file_name)
+    yemot_delete(file_name + ".wav")
     text = gemini("בהקלטה אדם אומר את שמו הפרטי בעברית. החזר רק את השם הפרטי, מילה אחת או שתיים, בלי שום תוספת.",
                   [types.Part.from_bytes(data=audio, mime_type="audio/wav")])
     return clean_for_tts(text or "")[:30]
@@ -372,11 +372,11 @@ ACTION_RE = re.compile(r"תמלול\s*:\s*(.*?)\s*\n\s*פעולה\s*:\s*(.*?)\s*
 def ask_ai(persona, history, file_name):
     """מחזיר (תמלול, פעולה, תשובה). פעולה: none / menu / end / voice / switch:N"""
     try:
-        audio = yemot_download(file_name)
+        audio = yemot_download(file_name + ".wav")
     except Exception as e:
         print("download error:", e)
         return "", "none", "סליחה, לא הצלחתי לשמוע את ההקלטה. נסה שוב."
-    yemot_delete(file_name)
+    yemot_delete(file_name + ".wav")
 
     others = ", ".join("%s = %s" % (k, PERSONA_NAMES[k]) for k in active_personas() if k != persona)
     system = PERSONAS.get(persona, PERSONAS["1"]) + GENERAL_RULES + (
