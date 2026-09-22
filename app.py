@@ -37,6 +37,7 @@ MAIL_PASS = os.environ.get("MAIL_PASS", "")
 MAIL_TO = os.environ.get("MAIL_TO", "") or MAIL_USER
 OWNER_PHONES = ["0527661756", "0527609296"]                 # תמיד בלי הגבלה
 
+# המהיר ראשון (מכסה חינמית גדולה יותר); הבאים הם גיבוי
 MODELS = ["gemini-3.1-flash-lite", "gemini-3-flash", "gemini-2.5-flash-lite", "gemini-2.5-flash"]
 
 # קולות גבר טבעיים (Edge TTS, חינם). הראשון הוא ברירת המחדל.
@@ -361,7 +362,8 @@ def transcribe_name(file_name):
         print("download error:", e)
         return ""
     yemot_delete(file_name + ".wav")
-    text = gemini("בהקלטה אדם אומר את שמו הפרטי בעברית. החזר רק את השם הפרטי, מילה אחת או שתיים, בלי שום תוספת.",
+    text = gemini("בהקלטה טלפונית באיכות נמוכה אדם אומר את שמו הפרטי בעברית (שם ישראלי או יהודי נפוץ). "
+                  "החזר רק את השם הפרטי, מילה אחת או שתיים, בלי שום תוספת.",
                   [types.Part.from_bytes(data=audio, mime_type="audio/wav")])
     return clean_for_tts(text or "")[:30]
 
@@ -380,7 +382,10 @@ def ask_ai(persona, history, file_name):
 
     others = ", ".join("%s = %s" % (k, PERSONA_NAMES[k]) for k in active_personas() if k != persona)
     system = PERSONAS.get(persona, PERSONAS["1"]) + GENERAL_RULES + (
-        " תקבל הקלטה של מה שהמשתמש אמר עכשיו. ענה בדיוק בפורמט הבא, שלוש שורות:\n"
+        " תקבל הקלטה של מה שהמשתמש אמר עכשיו. ההקלטה היא משיחת טלפון באיכות נמוכה (8 קילוהרץ), בעברית מדוברת,"
+        " לפעמים עם רעשי רקע. הקשב בתשומת לב מלאה, והשתמש בהקשר של השיחה ובתחום של העוזר כדי להשלים מילים לא ברורות"
+        " (שמות של זמרים, מלחינים, מקומות, מונחים). אם משהו באמת לא ברור, שאל בקצרה במקום לנחש."
+        " ענה בדיוק בפורמט הבא, שלוש שורות:\n"
         "תמלול: <תמלול מדויק של ההקלטה>\n"
         "פעולה: <אחת מהאפשרויות: none | menu | end | voice | switch:מספר>\n"
         "תשובה: <התשובה שלך למשתמש>\n"
