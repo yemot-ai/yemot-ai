@@ -47,12 +47,32 @@ SETTINGS = {
     "daily_limit": int(os.environ.get("DAILY_LIMIT", "40")),
     "unlimited_phones": ",".join(OWNER_PHONES),
     "blocked_phones": "",
-    "disabled": "",                 # עוזרים כבויים, למשל "3,6"
     "announcement": "",             # הודעה שמושמעת בתחילת כל שיחה
     "mail_hour": 21,
     "tts": "on",                    # קול טבעי: on / off
     "voices": DEFAULT_VOICES,
     "record_max": 25,               # שניות הקלטה מקסימום
+}
+
+# כל הנוסחים שהקו אומר - ניתנים לעריכה באתר הניהול. {name} = שם המתקשר, {assistant} = שם העוזר
+TEXTS = {
+    "first_time": "שלום, זו הפעם הראשונה שלך בקו. אמור את שמך הפרטי, ובסיום הקש סולמית",
+    "ask_name_again": "אמור את שמך הפרטי, ובסיום הקש סולמית",
+    "name_saved": "נעים להכיר {name}, השם נשמר",
+    "menu_hello": "שלום {name}.",
+    "menu_item": "הקש {digit} ל{assistant}.",
+    "menu_end": "הקש 9 לסיום.",
+    "enter": "אתה עם {assistant}. דבר אחרי הצפצוף, ובסיום הקש סולמית",
+    "listening": "אני מקשיב",
+    "not_heard": "לא שמעתי אותך",
+    "wait": "רק רגע, עוד רגע, רק שניה, כבר עונה, עוד שניה, רגע אחד",
+    "too_long": "סליחה, זה לוקח יותר מדי זמן. אפשר לנסות שוב",
+    "limit": "הגעת למכסת ההודעות היומית שלך. אפשר לנסות שוב מחר",
+    "blocked": "המספר שלך אינו מורשה להשתמש בקו",
+    "voice_changed": "הקול הוחלף",
+    "goodbye": "להתראות {name}",
+    "error": "סליחה, יש בעיה זמנית. נסה שוב",
+    "not_understood": "לא הבנתי, אפשר לחזור על זה?",
 }
 
 GENERAL_RULES = (
@@ -63,32 +83,35 @@ GENERAL_RULES = (
     " מחירים, חנויות, חדשות, מזג אוויר, שעות פתיחה, תוצאות, מה קורה עכשיו. אחרי חיפוש תן תשובה מדויקת עם המספרים והשמות שמצאת."
 )
 
-PERSONAS = {
-    "1": "אתה עוזר כללי ידידותי ומועיל.",
-    "2": "אתה עוזר תורני. ענה בסגנון תורני מכובד, וציין מקורות כשאפשר.",
-    "3": "אתה עוזר חוצפני וסרקסטי עם הומור. ענה בחוצפה משעשעת אבל בלי להעליב באמת.",
-    "4": "אתה עוזר יצירתי. ספר סיפורים קצרים, כתוב שירים, בדיחות ורעיונות יצירתיים.",
-    "5": "אתה עוזר טכני. הסבר דברים טכניים בפשטות: מחשבים, אינטרנט, טלפונים.",
-    "6": "אתה מדבר כמו ערס ישראלי מגניב: סלנג רחוב (אחי, וואלה, סבבה, יא מלך, בקטנה), ביטחון עצמי, חוצפה וקטע של מגניבות. "
-         "עונה לעניין אבל בסטייל. בלי קללות ובלי להעליב באמת.",
-    "7": "אתה מומחה למוזיקה חסידית וישראלית: זמרים, מלחינים, אלבומים, ניגונים, היסטוריה, וגם תיאוריה מוזיקלית - סולמות, אקורדים, "
-         "מבנה שירים, מעברים. כששואלים על אקורדים או סולם של שיר, תן את הסולם ואת סדר האקורדים לפי חלקי השיר. "
-         "אל תצטט מילים של שירים - אפשר לתאר על מה השיר ומי כתב והלחין.",
-}
-PERSONA_NAMES = {"1": "העוזר הכללי", "2": "העוזר התורני", "3": "העוזר החוצפן", "4": "העוזר היצירתי",
-                 "5": "העוזר הטכני", "6": "הערס", "7": "המומחה למוזיקה"}
-# מילים שלפיהן מזהים בקשה לעבור לעוזר אחר
-PERSONA_KEYWORDS = {"1": ["כללי"], "2": ["תורני", "רב"], "3": ["חוצפן", "חוצפני"], "4": ["יצירתי"],
-                    "5": ["טכני"], "6": ["ערס"], "7": ["מוזיקה", "מוזיקלי", "מוסיקה"]}
+# העוזרים: רשימה מסודרת (הסדר = מספר ההקשה בתפריט). ניתן להוסיף, למחוק ולסדר באתר הניהול.
+ASSISTANTS = [
+    {"id": "general", "name": "העוזר הכללי", "on": True, "keywords": "כללי",
+     "prompt": "אתה עוזר כללי ידידותי ומועיל."},
+    {"id": "torah", "name": "העוזר התורני", "on": True, "keywords": "תורני, רב",
+     "prompt": "אתה עוזר תורני. ענה בסגנון תורני מכובד, וציין מקורות כשאפשר."},
+    {"id": "sassy", "name": "העוזר החוצפן", "on": True, "keywords": "חוצפן, חוצפני",
+     "prompt": "אתה עוזר חוצפני וסרקסטי עם הומור. ענה בחוצפה משעשעת אבל בלי להעליב באמת."},
+    {"id": "creative", "name": "העוזר היצירתי", "on": True, "keywords": "יצירתי",
+     "prompt": "אתה עוזר יצירתי. ספר סיפורים קצרים, כתוב שירים, בדיחות ורעיונות יצירתיים."},
+    {"id": "tech", "name": "העוזר הטכני", "on": True, "keywords": "טכני",
+     "prompt": "אתה עוזר טכני. הסבר דברים טכניים בפשטות: מחשבים, אינטרנט, טלפונים."},
+    {"id": "ars", "name": "הערס", "on": True, "keywords": "ערס",
+     "prompt": "אתה מדבר כמו ערס ישראלי מגניב: סלנג רחוב (אחי, וואלה, סבבה, יא מלך, בקטנה), ביטחון עצמי, חוצפה וקטע של מגניבות. "
+               "עונה לעניין אבל בסטייל. בלי קללות ובלי להעליב באמת."},
+    {"id": "music", "name": "המומחה למוזיקה", "on": True, "keywords": "מוזיקה, מוזיקלי, מוסיקה",
+     "prompt": "אתה מומחה למוזיקה חסידית וישראלית: זמרים, מלחינים, אלבומים, ניגונים, היסטוריה, וגם תיאוריה מוזיקלית - סולמות, אקורדים, "
+               "מבנה שירים, מעברים. כששואלים על אקורדים או סולם של שיר, תן את הסולם ואת סדר האקורדים לפי חלקי השיר. "
+               "אל תצטט מילים של שירים - אפשר לתאר על מה השיר ומי כתב והלחין."},
+]
 
 names = {}        # טלפון -> שם
 voices = {}       # טלפון -> מספר קול מועדף
+notes = {}        # טלפון -> הודעה אישית לשיחה הבאה
 LOG = []          # מה נאמר
 CALLS = []        # שיחות
 calls = {}        # מצב של שיחות פעילות (לפי ApiCallId)
-LOG_MAX = 1500
+LOG_MAX = 2000
 _lock = threading.Lock()
-WAIT_PHRASES = ["רק רגע", "עוד רגע", "רק שניה", "כבר עונה", "עוד שניה", "רגע אחד"]
 
 _client = None
 
@@ -124,9 +147,29 @@ def csv_list(s):
     return [x.strip() for x in (s or "").split(",") if x.strip()]
 
 
-def active_personas():
-    off = csv_list(SETTINGS.get("disabled", ""))
-    return [k for k in sorted(PERSONAS) if k not in off]
+def T(key, **kw):
+    """נוסח מהרשימה הניתנת לעריכה"""
+    t = TEXTS.get(key, "")
+    try:
+        return t.format(**kw)
+    except Exception:
+        return t
+
+
+def active_assistants():
+    """העוזרים הפעילים עם מספר ההקשה שלהם (עד 8)"""
+    out = []
+    for a in ASSISTANTS:
+        if a.get("on", True) and len(out) < 8:
+            out.append((str(len(out) + 1), a))
+    return out
+
+
+def assistant_by_id(aid):
+    for a in ASSISTANTS:
+        if a["id"] == aid:
+            return a
+    return ASSISTANTS[0] if ASSISTANTS else {"id": "x", "name": "העוזר", "prompt": "אתה עוזר ידידותי.", "on": True, "keywords": ""}
 
 
 # ============================================================ ימות המשיח
@@ -201,7 +244,7 @@ def _bg(fn, *a):
 
 def save_names():
     with _lock:
-        data = json.dumps({"names": names, "voices": voices}, ensure_ascii=False)
+        data = json.dumps({"names": names, "voices": voices, "notes": notes}, ensure_ascii=False)
     _bg(yemot_write_text, "ai_names.txt", data)
 
 
@@ -216,8 +259,12 @@ def save_settings():
     _bg(yemot_write_text, "ai_settings.txt", json.dumps(SETTINGS, ensure_ascii=False))
 
 
-def save_personas():
-    _bg(yemot_write_text, "ai_personas.txt", json.dumps({"names": PERSONA_NAMES, "prompts": PERSONAS}, ensure_ascii=False))
+def save_assistants():
+    _bg(yemot_write_text, "ai_assistants.txt", json.dumps(ASSISTANTS, ensure_ascii=False))
+
+
+def save_texts():
+    _bg(yemot_write_text, "ai_texts.txt", json.dumps(TEXTS, ensure_ascii=False))
 
 
 def load_all():
@@ -230,6 +277,7 @@ def load_all():
             if "names" in d and isinstance(d["names"], dict):
                 names.update(d["names"])
                 voices.update({k: int(v) for k, v in d.get("voices", {}).items()})
+                notes.update(d.get("notes", {}))
             else:
                 names.update(d)
     except Exception as e:
@@ -262,18 +310,23 @@ def load_all():
     except Exception as e:
         print("load settings error:", e)
     try:
-        t = yemot_read_text("ai_personas.txt")
+        t = yemot_read_text("ai_assistants.txt")
         if t:
             d = json.loads(t)
-            for k, v in d.get("names", {}).items():
-                if k in PERSONA_NAMES and v:
-                    PERSONA_NAMES[k] = v
-            for k, v in d.get("prompts", {}).items():
-                if k in PERSONAS and v:
-                    PERSONAS[k] = v.replace(GENERAL_RULES, "")
+            if isinstance(d, list) and d:
+                ASSISTANTS[:] = [a for a in d if a.get("id") and a.get("name")]
     except Exception as e:
-        print("load personas error:", e)
-    print("loaded: %d names, %d log, %d calls" % (len(names), len(LOG), len(CALLS)))
+        print("load assistants error:", e)
+    try:
+        t = yemot_read_text("ai_texts.txt")
+        if t:
+            d = json.loads(t)
+            for k in TEXTS:
+                if d.get(k):
+                    TEXTS[k] = str(d[k])
+    except Exception as e:
+        print("load texts error:", e)
+    print("loaded: %d names, %d log, %d calls, %d assistants" % (len(names), len(LOG), len(CALLS), len(ASSISTANTS)))
 
 
 load_all()
@@ -281,8 +334,7 @@ load_all()
 
 # ============================================================ קול טבעי
 def voice_list():
-    v = csv_list(SETTINGS.get("voices", "")) or csv_list(DEFAULT_VOICES)
-    return v
+    return csv_list(SETTINGS.get("voices", "")) or csv_list(DEFAULT_VOICES)
 
 
 def make_tts(text, voice_name):
@@ -316,8 +368,7 @@ def speak_file(text, voice_idx, call_id):
         return None
     try:
         vl = voice_list()
-        voice_name = vl[voice_idx % len(vl)]
-        wav = make_tts(text, voice_name)
+        wav = make_tts(text, vl[voice_idx % len(vl)])
         if not wav:
             return None
         fname = "ai_tts_%s_%s" % (re.sub(r"[^0-9a-zA-Z]", "", call_id)[-10:], uuid.uuid4().hex[:6])
@@ -371,8 +422,8 @@ def transcribe_name(file_name):
 ACTION_RE = re.compile(r"תמלול\s*:\s*(.*?)\s*\n\s*פעולה\s*:\s*(.*?)\s*\n\s*תשובה\s*:\s*(.*)", re.S)
 
 
-def ask_ai(persona, history, file_name):
-    """מחזיר (תמלול, פעולה, תשובה). פעולה: none / menu / end / voice / switch:N"""
+def ask_ai(assistant, history, file_name):
+    """מחזיר (תמלול, פעולה, תשובה). פעולה: none / menu / end / voice / switch:id"""
     try:
         audio = yemot_download(file_name + ".wav")
     except Exception as e:
@@ -380,17 +431,17 @@ def ask_ai(persona, history, file_name):
         return "", "none", "סליחה, לא הצלחתי לשמוע את ההקלטה. נסה שוב."
     _bg(yemot_delete, file_name + ".wav")
 
-    others = ", ".join("%s = %s" % (k, PERSONA_NAMES[k]) for k in active_personas() if k != persona)
-    system = PERSONAS.get(persona, PERSONAS["1"]) + GENERAL_RULES + (
+    others = "; ".join("%s = %s (מילים: %s)" % (a["id"], a["name"], a.get("keywords", "")) for _, a in active_assistants() if a["id"] != assistant["id"])
+    system = assistant["prompt"] + GENERAL_RULES + (
         " תקבל הקלטה של מה שהמשתמש אמר עכשיו. ההקלטה היא משיחת טלפון באיכות נמוכה (8 קילוהרץ), בעברית מדוברת,"
         " לפעמים עם רעשי רקע. הקשב בתשומת לב מלאה, והשתמש בהקשר של השיחה ובתחום של העוזר כדי להשלים מילים לא ברורות"
         " (שמות של זמרים, מלחינים, מקומות, מונחים). אם משהו באמת לא ברור, שאל בקצרה במקום לנחש."
         " ענה בדיוק בפורמט הבא, שלוש שורות:\n"
         "תמלול: <תמלול מדויק של ההקלטה>\n"
-        "פעולה: <אחת מהאפשרויות: none | menu | end | voice | switch:מספר>\n"
+        "פעולה: <אחת מהאפשרויות: none | menu | end | voice | switch:מזהה>\n"
         "תשובה: <התשובה שלך למשתמש>\n"
         "כללי הפעולה: menu אם ביקש לחזור לתפריט. end אם ביקש לסיים או להתנתק או אמר להתראות. "
-        "voice אם ביקש להחליף קול. switch:מספר אם ביקש לעבור לעוזר אחר מהרשימה: " + others + ". "
+        "voice אם ביקש להחליף קול. switch:מזהה אם ביקש לעבור לעוזר אחר מהרשימה: " + others + ". "
         "אחרת none. כשהפעולה אינה none, כתוב בתשובה משפט קצר מתאים (למשל: בטח, מעביר אותך)."
     )
     contents = list(history) + [{
@@ -399,14 +450,13 @@ def ask_ai(persona, history, file_name):
     }]
     raw = gemini(system, contents, search=True)
     if not raw:
-        return "", "none", "סליחה, יש בעיה זמנית. נסה שוב."
+        return "", "none", T("error")
     m = ACTION_RE.search(raw)
     if m:
         transcript, action, answer = m.group(1).strip(), m.group(2).strip().lower(), m.group(3).strip()
     else:
         transcript, action = "", "none"
         answer = re.sub(r"^(תמלול|פעולה|תשובה)\s*:\s*", "", raw.strip())
-    # גיבוי לפי מילים
     low = transcript.lower()
     if action == "none":
         if "החלף קול" in low or "תחליף קול" in low or "שנה קול" in low:
@@ -415,11 +465,17 @@ def ask_ai(persona, history, file_name):
             action = "menu"
         elif low.strip() in ("סיים", "ביי", "להתראות", "סיים.", "ביי.", "להתראות."):
             action = "end"
+        else:
+            for _, a in active_assistants():
+                if a["id"] != assistant["id"] and any(k and ("ל" + k in low or "את ה" + k in low) for k in csv_list(a.get("keywords", ""))):
+                    if any(w in low for w in ("תעביר", "עבור", "תחליף", "רוצה", "תן לי")):
+                        action = "switch:" + a["id"]
+                        break
     if action.startswith("switch"):
-        num = re.sub(r"[^0-9]", "", action)
-        action = "switch:" + num if num in PERSONAS else "none"
+        aid = action.split(":", 1)[1].strip() if ":" in action else ""
+        action = "switch:" + aid if any(a["id"] == aid for _, a in active_assistants()) else "none"
     if not answer:
-        answer = "לא הבנתי, אפשר לחזור על זה?"
+        answer = T("not_understood")
     return transcript, action, clean_for_tts(answer)
 
 
@@ -447,7 +503,6 @@ def R(text):
 
 
 def msg_part(state, text):
-    """הודעה להשמעה: קובץ קול טבעי אם יש, אחרת הקראה של ימות"""
     f = state.pop("tts_file", None)
     if f:
         return ("file", f)
@@ -458,14 +513,14 @@ def menu(state, name, prefix=None):
     state["n"] += 1
     state["wait"] = "choice_%d" % state["n"]
     state["stage"] = "menu"
-    items = ["שלום %s." % name]
+    items = [T("menu_hello", name=name)]
     allowed = ""
-    for k in active_personas():
-        nm = PERSONA_NAMES[k]
+    for digit, a in active_assistants():
+        nm = a["name"]
         nm = nm[1:] if nm.startswith("ה") else nm
-        items.append("הקש %s ל%s." % (k, nm))
-        allowed += k
-    items.append("הקש 9 לסיום.")
+        items.append(T("menu_item", digit=digit, assistant=nm))
+        allowed += digit
+    items.append(T("menu_end"))
     read = build_read([("text", " ".join(items))], mode="tap", val_name=state["wait"], max_digits=1, min_digits=1,
                       digits_allowed=allowed + "9", sec_wait=10)
     if prefix:
@@ -487,31 +542,31 @@ def record(state, val_prefix, message, prefix=None):
 
 
 def listen(state, text=None, first=False):
-    """הקשבה. התשובה (text) מושמעת כהודעת ההקלטה - בקול טבעי אם יש"""
     state["stage"] = "chat"
     if first:
-        return record(state, "speech", ("text", (text + ". " if text else "") + "דבר אחרי הצפצוף, ובסיום הקש סולמית"))
-    return record(state, "speech", msg_part(state, text or "אני מקשיב"))
+        return record(state, "speech", ("text", text))
+    return record(state, "speech", msg_part(state, text or T("listening")))
 
 
 def wait_message(state):
+    phrases = csv_list(TEXTS.get("wait", "")) or ["רק רגע"]
     i = state.get("wait_i", 0)
     state["wait_i"] = i + 1
     state["n"] += 1
-    return build_read([("text", WAIT_PHRASES[i % len(WAIT_PHRASES)])], mode="tap", val_name="w_%d" % state["n"],
+    return build_read([("text", phrases[i % len(phrases)])], mode="tap", val_name="w_%d" % state["n"],
                       max_digits=1, min_digits=1, sec_wait=2, amount_attempts=1, allow_empty="Ok", empty_val="None")
 
 
 def goodbye(call_id, name, state=None):
-    part = msg_part(state, "להתראות %s" % name) if state else ("text", "להתראות %s" % name)
+    part = msg_part(state, T("goodbye", name=name)) if state else ("text", T("goodbye", name=name))
     with _lock:
         calls.pop(call_id, None)
     return build_combined_action([build_id_list_message([part]), build_go_to_folder("hangup")])
 
 
-def ai_worker(pending, state, persona, history, file_name, call_id, voice_idx):
+def ai_worker(pending, state, assistant, history, file_name, call_id, voice_idx):
     try:
-        transcript, action, answer = ask_ai(persona, history, file_name)
+        transcript, action, answer = ask_ai(assistant, history, file_name)
         tts = None
         if action in ("none", "voice") or action.startswith("switch"):
             v = voice_idx + 1 if action == "voice" else voice_idx
@@ -519,7 +574,7 @@ def ai_worker(pending, state, persona, history, file_name, call_id, voice_idx):
         pending["result"] = (transcript, action, answer, tts)
     except Exception as e:
         print("worker error:", e)
-        pending["result"] = ("", "none", "סליחה, יש בעיה זמנית. נסה שוב.", None)
+        pending["result"] = ("", "none", T("error"), None)
     finally:
         pending["done"] = True
         pending["event"].set()
@@ -560,11 +615,11 @@ def yemot():
         state = calls.get(call_id)
         new_call = state is None
         if new_call:
-            state = {"stage": "start", "n": 0, "wait": None, "persona": None, "history": [], "call_id": call_id,
+            state = {"stage": "start", "n": 0, "wait": None, "assistant": None, "history": [], "call_id": call_id,
                      "file": None, "pending": None, "wait_i": 0, "phone": phone, "started": time.time(),
                      "voice": voices.get(phone, 0), "last_q": "", "tts_file": None, "played": []}
             calls[call_id] = state
-            CALLS.append({"time": now_str(), "phone": phone, "name": names.get(phone, "")})
+            CALLS.append({"time": now_str(), "phone": phone, "name": names.get(phone, ""), "call": call_id})
             del CALLS[:-LOG_MAX]
         state["last"] = time.time()
     if new_call:
@@ -572,10 +627,8 @@ def yemot():
         if is_blocked(phone):
             with _lock:
                 calls.pop(call_id, None)
-            return R(build_combined_action([build_id_list_message([("text", "המספר שלך אינו מורשה להשתמש בקו")]),
-                                            build_go_to_folder("hangup")]))
+            return R(build_combined_action([build_id_list_message([("text", T("blocked"))]), build_go_to_folder("hangup")]))
 
-    # מחיקת קובץ קול שכבר הושמע
     if state["played"]:
         for f in state["played"]:
             _bg(yemot_delete, f + ".wav")
@@ -589,21 +642,24 @@ def yemot():
 
     # ---- התחלה
     if state["stage"] == "start":
-        ann = SETTINGS.get("announcement", "").strip()
+        note = notes.pop(phone, None)
+        if note:
+            save_names()
+        parts = [p for p in [SETTINGS.get("announcement", "").strip(), note] if p]
+        ann = ". ".join(parts) if parts else None
         if name:
-            return R(menu(state, name, prefix=ann or None))
+            return R(menu(state, name, prefix=ann))
         state["stage"] = "ask_name"
-        return R(record(state, "name", ("text", "שלום, זו הפעם הראשונה שלך בקו. אמור את שמך הפרטי, ובסיום הקש סולמית"),
-                        prefix=("text", ann) if ann else None))
+        return R(record(state, "name", ("text", T("first_time")), prefix=("text", ann) if ann else None))
 
     # ---- קבלת שם
     if state["stage"] == "ask_name":
         if not has_value:
-            return R(record(state, "name", ("text", "אמור את שמך הפרטי, ובסיום הקש סולמית")))
+            return R(record(state, "name", ("text", T("ask_name_again"))))
         name = transcribe_name(state["file"]) or "אורח"
         names[phone] = name
         save_names()
-        return R(menu(state, name, prefix="נעים להכיר %s, השם נשמר" % name))
+        return R(menu(state, name, prefix=T("name_saved", name=name)))
 
     name = name or "אורח"
 
@@ -611,33 +667,33 @@ def yemot():
     if state["stage"] == "menu":
         if value == "9":
             return R(goodbye(call_id, name, state))
-        if value in active_personas():
-            state["persona"] = value
-            state["history"] = []
-            return R(listen(state, "אתה עם %s" % PERSONA_NAMES[value], first=True))
+        for digit, a in active_assistants():
+            if value == digit:
+                state["assistant"] = a["id"]
+                state["history"] = []
+                return R(listen(state, T("enter", assistant=a["name"], name=name), first=True))
         return R(menu(state, name))
 
     # ---- שיחה
     if state["stage"] == "chat":
+        assistant = assistant_by_id(state["assistant"])
         pending = state.get("pending")
         if pending is None:
             if not has_value:
-                return R(listen(state, "לא שמעתי אותך"))
+                return R(listen(state, T("not_heard")))
             if over_limit(phone):
                 _bg(yemot_delete, state["file"] + ".wav")
-                return R(menu(state, name, prefix="הגעת למכסת ההודעות היומית שלך. אפשר לנסות שוב מחר"))
+                return R(menu(state, name, prefix=T("limit")))
             pending = {"done": False, "result": None, "started": time.time(), "event": threading.Event()}
             state["pending"] = pending
             state["wait_i"] = 0
-            _bg(ai_worker, pending, state, state["persona"], list(state["history"]), state["file"], call_id, state["voice"])
-            # מחכים עד 8 שניות בתוך הפנייה עצמה - ברוב המקרים התשובה מוכנה ואין "רק רגע" בכלל
+            _bg(ai_worker, pending, state, assistant, list(state["history"]), state["file"], call_id, state["voice"])
             pending["event"].wait(8)
 
         if not pending["done"]:
-            # עדיין לא מוכן: משמיעים "רק רגע" (ימות חוזרים אלינו אחרי ~3 שניות) ומחכים שוב
             if time.time() - pending["started"] > 75:
                 state["pending"] = None
-                return R(listen(state, "סליחה, זה לוקח יותר מדי זמן. אפשר לנסות שוב"))
+                return R(listen(state, T("too_long")))
             if state["wait_i"] > 0:
                 pending["event"].wait(6)
             if not pending["done"]:
@@ -655,8 +711,8 @@ def yemot():
             state["history"].append({"role": "model", "parts": [{"text": answer}]})
             state["history"] = state["history"][-12:]
             with _lock:
-                LOG.append({"time": now_str(), "phone": phone, "name": name,
-                            "persona": PERSONA_NAMES.get(state["persona"], ""), "q": transcript, "a": answer})
+                LOG.append({"time": now_str(), "phone": phone, "name": name, "call": call_id,
+                            "persona": assistant["name"], "q": transcript, "a": answer})
                 del LOG[:-LOG_MAX]
             save_log()
 
@@ -672,334 +728,21 @@ def yemot():
             save_names()
             if tts:
                 return R(listen(state, answer))
-            return R(listen(state, "הקול הוחלף. " + answer))
+            return R(listen(state, T("voice_changed") + ". " + answer))
         if action.startswith("switch:"):
-            new = action.split(":")[1]
-            if new in active_personas():
-                state["persona"] = new
-                return R(listen(state, answer))
+            state["assistant"] = action.split(":", 1)[1]
+            return R(listen(state, answer))
         return R(listen(state, answer))
 
     return R(menu(state, name))
 
 
-# ============================================================ אתר ניהול
-CSS = """<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>
-body{font-family:Arial,sans-serif;direction:rtl;background:#f4f6f9;margin:0;color:#222}
-.wrap{max-width:1150px;margin:0 auto;padding:14px}
-h1{margin:6px 0 12px}h2{margin:22px 0 8px;font-size:19px;color:#2d3e50}
-.cards{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px}
-.card{background:#fff;border-radius:10px;padding:12px 16px;box-shadow:0 1px 3px #0002;min-width:130px;flex:1}
-.card b{font-size:26px;display:block}.card small{color:#777}
-table{width:100%;border-collapse:collapse;background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 1px 3px #0002;margin-bottom:14px}
-th,td{padding:7px 9px;border-bottom:1px solid #eee;text-align:right;vertical-align:top;font-size:14px}
-th{background:#2d3e50;color:#fff}
-input[type=text],input[type=password],select{padding:5px;border:1px solid #ccc;border-radius:6px}
-button{padding:5px 10px;border:0;border-radius:6px;background:#2d3e50;color:#fff;cursor:pointer}
-button.red{background:#c0392b}button.green{background:#27ae60}form.inline{display:inline}
-.q{color:#1a5fb4}.a{color:#333}textarea{width:100%;height:60px;padding:6px;border:1px solid #ccc;border-radius:6px;font-family:inherit}
-.top{display:flex;justify-content:space-between;align-items:center}a{color:#1a5fb4}
-.live{background:#e8f8ee;border-radius:10px;padding:10px 14px;margin-bottom:12px}
-.dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:#27ae60;margin-left:6px;animation:b 1.2s infinite}
-@keyframes b{50%{opacity:.3}}.charts{display:flex;gap:12px;flex-wrap:wrap}.chart{background:#fff;border-radius:10px;padding:10px;box-shadow:0 1px 3px #0002;flex:1;min-width:300px}
-.ok{color:#27ae60}.bad{color:#c0392b}.note{font-size:12px;color:#666}
-</style>"""
-
-
-def is_admin():
-    if not ADMIN_KEY:
-        return False
-    return (request.values.get("key") or request.cookies.get("admin_key")) == ADMIN_KEY
-
-
-def login_page(msg=""):
-    return Response(CSS + """<div class="wrap" style="max-width:380px;margin-top:80px"><div class="card"><h2>כניסה לניהול הקו</h2>%s
-    <form method="post" action="/admin/login"><input type="password" name="key" placeholder="סיסמה" style="width:100%%;box-sizing:border-box;margin-bottom:8px;padding:8px">
-    <button style="width:100%%;padding:8px">כניסה</button></form></div></div>""" % (
-        "<p class='bad'>%s</p>" % msg if msg else ""), mimetype="text/html; charset=utf-8")
-
-
-def redirect(to="/admin"):
-    return Response("", status=302, headers={"Location": to})
-
-
-def guard():
-    return None if is_admin() else login_page()
-
-
+# ============================================================ מייל יומי
 def snapshot():
     with _lock:
         return dict(names), list(LOG), list(CALLS), {k: dict(v) for k, v in calls.items()}
 
 
-def live_data():
-    users, log, cl, active = snapshot()
-    today = today_str()
-    act = []
-    for cid, st in sorted(active.items(), key=lambda x: -x[1].get("started", 0)):
-        act.append({"phone": st.get("phone", ""), "name": users.get(st.get("phone", ""), "לא רשום"),
-                    "persona": PERSONA_NAMES.get(st.get("persona") or "", "בתפריט"),
-                    "since": datetime.datetime.utcfromtimestamp(st.get("started", 0) + 3 * 3600).strftime("%H:%M"),
-                    "last_q": st.get("last_q", ""),
-                    "state": "מחכה לתשובה" if st.get("pending") else ("מדבר" if st.get("stage") == "chat" else st.get("stage", ""))})
-    return {"active": act, "calls_today": sum(1 for c in cl if c["time"].startswith(today)),
-            "msgs_today": sum(1 for l in log if l["time"].startswith(today)), "users": len(users),
-            "calls_total": len(cl), "msgs_total": len(log), "time": now_str()}
-
-
-def bar_chart(title, pairs, color="#2d3e50"):
-    """גרף עמודות SVG פשוט (בלי ספריות חיצוניות)"""
-    h = html.escape
-    if not pairs:
-        return '<div class="chart"><b>%s</b><p class="note">אין נתונים עדיין</p></div>' % h(title)
-    mx = max(v for _, v in pairs) or 1
-    w = max(320, 30 * len(pairs) + 40)
-    out = ['<div class="chart"><b>%s</b><svg viewBox="0 0 %d 190" width="100%%" style="max-height:220px">' % (h(title), w)]
-    for i, (lab, v) in enumerate(pairs):
-        x = 20 + i * 30
-        bh = int(140 * v / mx)
-        out.append('<rect x="%d" y="%d" width="22" height="%d" rx="3" fill="%s"/>' % (x, 155 - bh, bh, color))
-        out.append('<text x="%d" y="%d" font-size="11" text-anchor="middle">%s</text>' % (x + 11, 150 - bh, v))
-        out.append('<text x="%d" y="175" font-size="9" text-anchor="middle">%s</text>' % (x + 11, h(str(lab))[:12]))
-    out.append('</svg></div>')
-    return "".join(out)
-
-
-@app.route("/admin/login", methods=["POST"])
-def admin_login():
-    if not ADMIN_KEY:
-        return login_page("לא הוגדרה סיסמה (ADMIN_KEY) בשרת")
-    if request.form.get("key", "") != ADMIN_KEY:
-        return login_page("סיסמה שגויה")
-    resp = redirect()
-    resp.set_cookie("admin_key", ADMIN_KEY, max_age=60 * 60 * 24 * 180, httponly=True)
-    return resp
-
-
-@app.route("/admin/logout")
-def admin_logout():
-    resp = redirect()
-    resp.set_cookie("admin_key", "", max_age=0)
-    return resp
-
-
-@app.route("/admin/data")
-def admin_data():
-    if not is_admin():
-        return Response("{}", status=403, mimetype="application/json")
-    return Response(json.dumps(live_data(), ensure_ascii=False), mimetype="application/json; charset=utf-8")
-
-
-@app.route("/admin")
-def admin():
-    g = guard()
-    if g:
-        return g
-    h = html.escape
-    users, log, cl, active = snapshot()
-    filt = request.args.get("phone", "").strip()
-    search = request.args.get("q", "").strip()
-    ld = live_data()
-
-    # גרפים
-    days = [(il_now() - datetime.timedelta(days=i)).strftime("%d/%m/%Y") for i in range(13, -1, -1)]
-    per_day = [(d[:5], sum(1 for c in cl if c["time"].startswith(d))) for d in days]
-    per_persona = {}
-    for l in log:
-        per_persona[l["persona"]] = per_persona.get(l["persona"], 0) + 1
-    per_persona = sorted(per_persona.items(), key=lambda x: -x[1])[:8]
-    per_user = {}
-    for l in log:
-        per_user[l["phone"]] = per_user.get(l["phone"], 0) + 1
-    top_users = [(users.get(p, p[-4:]), n) for p, n in sorted(per_user.items(), key=lambda x: -x[1])[:10]]
-
-    o = [CSS, '<div class="wrap"><div class="top"><h1>ניהול הקו</h1><span class="note" id="clock">%s</span></div>' % h(ld["time"])]
-
-    # חי
-    o.append('<div class="live"><b><span class="dot"></span>עכשיו בקו</b> <span class="note">(מתעדכן לבד כל 5 שניות)</span>'
-             '<div class="cards" style="margin-top:8px">'
-             '<div class="card">שיחות פעילות<b id="c_active">%d</b></div>'
-             '<div class="card">שיחות היום<b id="c_calls">%d</b></div>'
-             '<div class="card">הודעות היום<b id="c_msgs">%d</b></div>'
-             '<div class="card">משתמשים רשומים<b id="c_users">%d</b></div>'
-             '<div class="card">סה"כ שיחות<b id="c_ct">%d</b></div></div>'
-             '<table id="active"><tr><th>מי</th><th>טלפון</th><th>עוזר</th><th>מצב</th><th>מאז</th><th>שאלה אחרונה</th></tr>'
-             '<tr><td colspan="6" class="note">אין שיחות פעילות</td></tr></table></div>' % (
-                 len(ld["active"]), ld["calls_today"], ld["msgs_today"], ld["users"], ld["calls_total"]))
-
-    o.append('<div class="charts">%s%s%s</div>' % (bar_chart("שיחות ב-14 הימים האחרונים", per_day),
-                                                    bar_chart("הודעות לפי עוזר", per_persona, "#1a5fb4"),
-                                                    bar_chart("המשתמשים הפעילים", top_users, "#27ae60")))
-
-    # משתמשים
-    blocked = csv_list(SETTINGS.get("blocked_phones", ""))
-    o.append('<h2>משתמשים רשומים (%d)</h2><table><tr><th>שם</th><th>טלפון</th><th>שיחות</th><th>הודעות</th><th>היום</th><th>פעולות</th></tr>' % len(users))
-    for phone, nm in sorted(users.items(), key=lambda x: x[1]):
-        n_calls = sum(1 for c in cl if c["phone"] == phone)
-        n_msgs = per_user.get(phone, 0)
-        n_today = messages_today(phone)
-        bl = phone in blocked
-        o.append('<tr%s><td>%s%s</td><td>%s</td><td>%d</td><td>%d</td><td>%d</td><td>'
-                 '<form class="inline" method="post" action="/admin/rename"><input type="hidden" name="phone" value="%s">'
-                 '<input type="text" name="name" value="%s" style="width:110px"> <button>שנה שם</button></form> '
-                 '<form class="inline" method="post" action="/admin/block"><input type="hidden" name="phone" value="%s"><button class="%s">%s</button></form> '
-                 '<form class="inline" method="post" action="/admin/delete" onsubmit="return confirm(\'למחוק? בשיחה הבאה יירשם מחדש\')">'
-                 '<input type="hidden" name="phone" value="%s"><button class="red">מחק</button></form> '
-                 '<a href="/admin?phone=%s#log">שיחות</a></td></tr>' % (
-                     ' style="background:#fdecea"' if bl else "", h(nm), " (חסום)" if bl else "", h(phone), n_calls, n_msgs, n_today,
-                     h(phone), h(nm), h(phone), "green" if bl else "red", "בטל חסימה" if bl else "חסום", h(phone), h(phone)))
-    if not users:
-        o.append('<tr><td colspan="6">עדיין אין משתמשים</td></tr>')
-    o.append('</table>')
-
-    # יומן
-    shown = [l for l in log if (not filt or l["phone"] == filt) and (not search or search in l["q"] or search in l["a"] or search in l["name"])][::-1][:300]
-    o.append('<h2 id="log">מה דיברו עם הקו%s</h2>' % (" - " + h(filt) + ' (<a href="/admin#log">הצג הכל</a>)' if filt else ""))
-    o.append('<form class="inline" method="get" action="/admin"><input type="text" name="q" value="%s" placeholder="חיפוש ביומן"> <button>חפש</button></form> '
-             '<form class="inline" method="post" action="/admin/clear" onsubmit="return confirm(\'למחוק את כל היומן?\')"><button class="red">נקה יומן</button></form>' % h(search))
-    o.append('<table><tr><th>זמן</th><th>מי</th><th>עוזר</th><th>מה נאמר</th></tr>')
-    for l in shown:
-        o.append('<tr><td>%s</td><td>%s<br><small>%s</small></td><td>%s</td><td><div class="q">שאל: %s</div><div class="a">ענה: %s</div></td></tr>' % (
-            h(l["time"]), h(l["name"]), h(l["phone"]), h(l["persona"]), h(l["q"]), h(l["a"])))
-    if not shown:
-        o.append('<tr><td colspan="4">אין הודעות</td></tr>')
-    o.append('</table>')
-
-    # עוזרים
-    off = csv_list(SETTINGS.get("disabled", ""))
-    o.append('<h2>העוזרים</h2><form method="post" action="/admin/personas"><table><tr><th style="width:40px">מס</th><th style="width:60px">פעיל</th><th style="width:170px">שם</th><th>ההנחיה ל-AI</th></tr>')
-    for k in sorted(PERSONAS):
-        o.append('<tr><td>%s</td><td><input type="checkbox" name="on_%s" %s></td><td><input type="text" name="name_%s" value="%s" style="width:150px"></td>'
-                 '<td><textarea name="prompt_%s">%s</textarea></td></tr>' % (k, k, "" if k in off else "checked", k, h(PERSONA_NAMES[k]), k, h(PERSONAS[k])))
-    o.append('</table><button>שמור עוזרים</button> <span class="note">עוזר לא פעיל לא מופיע בתפריט. הכללים הקבועים (טלפון, עברית, צניעות, חיפוש) מתווספים אוטומטית.</span></form>')
-
-    # הגדרות
-    S = SETTINGS
-    o.append('<h2>הגדרות</h2><form method="post" action="/admin/settings"><table><tr><th style="width:280px">הגדרה</th><th>ערך</th></tr>')
-    o.append('<tr><td>הודעה בתחילת כל שיחה (ריק = בלי)</td><td><input type="text" name="announcement" value="%s" style="width:95%%"></td></tr>' % h(S["announcement"]))
-    o.append('<tr><td>קול טבעי (Edge)</td><td><select name="tts"><option value="on" %s>פעיל</option><option value="off" %s>כבוי - הקראה של ימות</option></select></td></tr>' % (
-        "selected" if S["tts"] == "on" else "", "selected" if S["tts"] != "on" else ""))
-    o.append('<tr><td>רשימת קולות (מופרדים בפסיק, הראשון ברירת מחדל)</td><td><input type="text" name="voices" value="%s" style="width:95%%"></td></tr>' % h(S["voices"]))
-    o.append('<tr><td>הודעות ליום לכל משתמש (0 = בלי הגבלה)</td><td><input type="text" name="daily_limit" value="%d"></td></tr>' % S["daily_limit"])
-    o.append('<tr><td>מספרים ללא הגבלה</td><td><input type="text" name="unlimited_phones" value="%s" style="width:95%%"></td></tr>' % h(S["unlimited_phones"]))
-    o.append('<tr><td>מספרים חסומים</td><td><input type="text" name="blocked_phones" value="%s" style="width:95%%"></td></tr>' % h(S["blocked_phones"]))
-    o.append('<tr><td>אורך הקלטה מקסימלי (שניות)</td><td><input type="text" name="record_max" value="%d"></td></tr>' % S["record_max"])
-    o.append('<tr><td>שעת הסיכום היומי למייל (0-23)</td><td><input type="text" name="mail_hour" value="%d"></td></tr>' % S["mail_hour"])
-    o.append('</table><button>שמור הגדרות</button></form>')
-    mail_state = ("<span class='ok'>מוגדר, נשלח אל %s</span>" % h(MAIL_TO)) if (MAIL_USER and MAIL_PASS) else "<span class='bad'>לא מוגדר (MAIL_USER ו-MAIL_PASS ב-Render)</span>"
-    o.append('<p>סיכום יומי למייל: %s <form class="inline" method="post" action="/admin/sendmail"><button>שלח סיכום של היום עכשיו</button></form> <b class="ok">%s</b></p>' % (
-        mail_state, h(request.args.get("mail", ""))))
-    o.append('<p><a href="/admin/logout">יציאה</a></p></div>')
-
-    o.append("""<script>
-function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
-async function tick(){try{const r=await fetch('/admin/data');const d=await r.json();
-document.getElementById('c_active').textContent=d.active.length;document.getElementById('c_calls').textContent=d.calls_today;
-document.getElementById('c_msgs').textContent=d.msgs_today;document.getElementById('c_users').textContent=d.users;
-document.getElementById('c_ct').textContent=d.calls_total;document.getElementById('clock').textContent=d.time;
-let t='<tr><th>מי</th><th>טלפון</th><th>עוזר</th><th>מצב</th><th>מאז</th><th>שאלה אחרונה</th></tr>';
-if(!d.active.length)t+='<tr><td colspan="6" class="note">אין שיחות פעילות</td></tr>';
-for(const a of d.active)t+='<tr><td>'+esc(a.name)+'</td><td>'+esc(a.phone)+'</td><td>'+esc(a.persona)+'</td><td>'+esc(a.state)+'</td><td>'+esc(a.since)+'</td><td>'+esc(a.last_q)+'</td></tr>';
-document.getElementById('active').innerHTML=t;}catch(e){}}
-tick();setInterval(tick,5000);</script>""")
-    return Response("".join(o), mimetype="text/html; charset=utf-8")
-
-
-@app.route("/admin/rename", methods=["POST"])
-def admin_rename():
-    g = guard()
-    if g:
-        return g
-    phone, nm = request.form.get("phone", ""), clean_for_tts(request.form.get("name", ""))[:30]
-    if phone in names and nm:
-        names[phone] = nm
-        save_names()
-    return redirect()
-
-
-@app.route("/admin/delete", methods=["POST"])
-def admin_delete():
-    g = guard()
-    if g:
-        return g
-    names.pop(request.form.get("phone", ""), None)
-    save_names()
-    return redirect()
-
-
-@app.route("/admin/block", methods=["POST"])
-def admin_block():
-    g = guard()
-    if g:
-        return g
-    phone = request.form.get("phone", "")
-    bl = csv_list(SETTINGS["blocked_phones"])
-    if phone in bl:
-        bl.remove(phone)
-    elif phone and phone not in OWNER_PHONES:
-        bl.append(phone)
-    SETTINGS["blocked_phones"] = ",".join(bl)
-    save_settings()
-    return redirect()
-
-
-@app.route("/admin/clear", methods=["POST"])
-def admin_clear():
-    g = guard()
-    if g:
-        return g
-    with _lock:
-        LOG.clear()
-    save_log()
-    return redirect()
-
-
-@app.route("/admin/personas", methods=["POST"])
-def admin_personas():
-    g = guard()
-    if g:
-        return g
-    off = []
-    for k in list(PERSONAS):
-        nm = request.form.get("name_" + k, "").strip()
-        pr = request.form.get("prompt_" + k, "").strip()
-        if nm:
-            PERSONA_NAMES[k] = nm[:40]
-        if pr:
-            PERSONAS[k] = pr
-        if not request.form.get("on_" + k):
-            off.append(k)
-    SETTINGS["disabled"] = ",".join(off)
-    save_personas()
-    save_settings()
-    return redirect()
-
-
-@app.route("/admin/settings", methods=["POST"])
-def admin_settings():
-    g = guard()
-    if g:
-        return g
-    f = request.form
-
-    def num(key, lo, hi, default):
-        try:
-            return min(hi, max(lo, int(f.get(key, default) or default)))
-        except ValueError:
-            return default
-    SETTINGS["daily_limit"] = num("daily_limit", 0, 100000, 40)
-    SETTINGS["mail_hour"] = num("mail_hour", 0, 23, 21)
-    SETTINGS["record_max"] = num("record_max", 5, 120, 25)
-    SETTINGS["unlimited_phones"] = re.sub(r"[^0-9,]", "", f.get("unlimited_phones", ""))
-    SETTINGS["blocked_phones"] = re.sub(r"[^0-9,]", "", f.get("blocked_phones", ""))
-    SETTINGS["announcement"] = clean_for_tts(f.get("announcement", ""))[:300]
-    SETTINGS["tts"] = "on" if f.get("tts") == "on" else "off"
-    SETTINGS["voices"] = ",".join(csv_list(f.get("voices", ""))) or DEFAULT_VOICES
-    save_settings()
-    return redirect()
-
-
-# ============================================================ מייל יומי
 def build_summary(day):
     h = html.escape
     users, log, cl, _ = snapshot()
@@ -1018,7 +761,7 @@ def build_summary(day):
         out.append("<h3>מה שאלו</h3><table border='1' cellpadding='5' style='border-collapse:collapse'><tr><th>שעה</th><th>מי</th><th>עוזר</th><th>שאלה</th><th>תשובה</th></tr>")
         for l in log[:150]:
             out.append("<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>" % (
-                h(l["time"][11:]), h(l["name"]), h(l["persona"]), h(l["q"]), h(l["a"][:200])))
+                h(l["time"][11:]), h(l["name"]), h(l.get("persona", "")), h(l["q"]), h(l["a"][:200])))
         out.append("</table>")
     else:
         out.append("<p>לא היו הודעות היום.</p>")
@@ -1042,15 +785,6 @@ def send_mail(subject, body_html):
         return "שגיאה בשליחה: %s" % e
 
 
-@app.route("/admin/sendmail", methods=["POST"])
-def admin_sendmail():
-    g = guard()
-    if g:
-        return g
-    day = today_str()
-    return redirect("/admin?mail=" + urllib.parse.quote(send_mail("סיכום הקו ליום " + day, build_summary(day))))
-
-
 _last_mail_day = [None]
 
 
@@ -1068,6 +802,370 @@ def daily_mail_loop():
 
 
 threading.Thread(target=daily_mail_loop, daemon=True).start()
+
+
+# ============================================================ אתר ניהול (API)
+def is_admin():
+    if not ADMIN_KEY:
+        return False
+    return (request.values.get("key") or request.cookies.get("admin_key")) == ADMIN_KEY
+
+
+def J(data, status=200):
+    return Response(json.dumps(data, ensure_ascii=False), status=status, mimetype="application/json; charset=utf-8")
+
+
+def api_guard():
+    if not is_admin():
+        return J({"error": "unauthorized"}, 403)
+    return None
+
+
+@app.route("/admin/login", methods=["POST"])
+def admin_login():
+    key = (request.get_json(silent=True) or {}).get("key") or request.form.get("key", "")
+    if not ADMIN_KEY:
+        return J({"ok": False, "error": "לא הוגדרה סיסמה (ADMIN_KEY) בשרת"})
+    if key != ADMIN_KEY:
+        return J({"ok": False, "error": "סיסמה שגויה"})
+    resp = J({"ok": True})
+    resp.set_cookie("admin_key", ADMIN_KEY, max_age=60 * 60 * 24 * 180, httponly=True)
+    return resp
+
+
+@app.route("/admin/logout")
+def admin_logout():
+    resp = Response("", status=302, headers={"Location": "/admin"})
+    resp.set_cookie("admin_key", "", max_age=0)
+    return resp
+
+
+def live_data():
+    users, log, cl, active = snapshot()
+    today = today_str()
+    act = []
+    for cid, st in sorted(active.items(), key=lambda x: -x[1].get("started", 0)):
+        a = assistant_by_id(st.get("assistant")) if st.get("assistant") else None
+        act.append({"phone": st.get("phone", ""), "name": users.get(st.get("phone", ""), "לא רשום"),
+                    "assistant": a["name"] if a else "בתפריט",
+                    "since": datetime.datetime.utcfromtimestamp(st.get("started", 0) + 3 * 3600).strftime("%H:%M"),
+                    "last_q": st.get("last_q", ""),
+                    "state": "מחכה לתשובה" if st.get("pending") else ("מדבר" if st.get("stage") == "chat" else "בתפריט")})
+    return {"active": act, "calls_today": sum(1 for c in cl if c["time"].startswith(today)),
+            "msgs_today": sum(1 for l in log if l["time"].startswith(today)), "users": len(users),
+            "calls_total": len(cl), "msgs_total": len(log), "time": now_str()}
+
+
+@app.route("/api/live")
+def api_live():
+    g = api_guard()
+    return g or J(live_data())
+
+
+@app.route("/api/state")
+def api_state():
+    g = api_guard()
+    if g:
+        return g
+    users, log, cl, _ = snapshot()
+    blocked, unlimited = csv_list(SETTINGS["blocked_phones"]), csv_list(SETTINGS["unlimited_phones"])
+    per_user = {}
+    for l in log:
+        per_user[l["phone"]] = per_user.get(l["phone"], 0) + 1
+    ulist = []
+    for ph, nm in users.items():
+        ulist.append({"phone": ph, "name": nm, "calls": sum(1 for c in cl if c["phone"] == ph), "msgs": per_user.get(ph, 0),
+                      "today": sum(1 for l in log if l["phone"] == ph and l["time"].startswith(today_str())),
+                      "blocked": ph in blocked, "unlimited": ph in unlimited or ph in OWNER_PHONES, "owner": ph in OWNER_PHONES,
+                      "note": notes.get(ph, ""), "voice": voices.get(ph, 0),
+                      "last": max([c["time"] for c in cl if c["phone"] == ph] or [""])})
+    days = [(il_now() - datetime.timedelta(days=i)).strftime("%d/%m/%Y") for i in range(13, -1, -1)]
+    per_day = [[d[:5], sum(1 for c in cl if c["time"].startswith(d))] for d in days]
+    per_a = {}
+    for l in log:
+        per_a[l.get("persona", "")] = per_a.get(l.get("persona", ""), 0) + 1
+    return J({
+        "settings": SETTINGS, "texts": TEXTS, "assistants": ASSISTANTS, "users": ulist,
+        "log": log[-600:][::-1], "calls": cl[-300:][::-1],
+        "charts": {"per_day": per_day, "per_assistant": sorted(per_a.items(), key=lambda x: -x[1])[:8],
+                   "top_users": [[users.get(p, p), n] for p, n in sorted(per_user.items(), key=lambda x: -x[1])[:10]]},
+        "voices": voice_list(), "mail": bool(MAIL_USER and MAIL_PASS), "mail_to": MAIL_TO, "owners": OWNER_PHONES,
+        "live": live_data(),
+    })
+
+
+@app.route("/api/assistants", methods=["POST"])
+def api_assistants():
+    g = api_guard()
+    if g:
+        return g
+    d = request.get_json(silent=True) or {}
+    lst = d.get("assistants")
+    if not isinstance(lst, list):
+        return J({"ok": False, "error": "bad data"})
+    out = []
+    for a in lst:
+        aid = re.sub(r"[^a-z0-9_]", "", str(a.get("id", "")).lower()) or ("a" + uuid.uuid4().hex[:6])
+        nm = str(a.get("name", "")).strip()[:40]
+        pr = str(a.get("prompt", "")).strip()[:2000]
+        if not nm or not pr:
+            continue
+        out.append({"id": aid, "name": nm, "prompt": pr, "on": bool(a.get("on", True)), "keywords": str(a.get("keywords", ""))[:200]})
+    if not out:
+        return J({"ok": False, "error": "חייב להישאר לפחות עוזר אחד"})
+    ASSISTANTS[:] = out
+    save_assistants()
+    return J({"ok": True})
+
+
+@app.route("/api/texts", methods=["POST"])
+def api_texts():
+    g = api_guard()
+    if g:
+        return g
+    d = request.get_json(silent=True) or {}
+    for k in TEXTS:
+        if k in d and str(d[k]).strip():
+            TEXTS[k] = clean_for_tts(str(d[k]))[:400] if k != "wait" else str(d[k])[:300]
+    save_texts()
+    return J({"ok": True})
+
+
+@app.route("/api/settings", methods=["POST"])
+def api_settings():
+    g = api_guard()
+    if g:
+        return g
+    d = request.get_json(silent=True) or {}
+
+    def num(key, lo, hi, default):
+        try:
+            return min(hi, max(lo, int(d.get(key, default) or 0)))
+        except (ValueError, TypeError):
+            return default
+    SETTINGS["daily_limit"] = num("daily_limit", 0, 100000, 40)
+    SETTINGS["mail_hour"] = num("mail_hour", 0, 23, 21)
+    SETTINGS["record_max"] = num("record_max", 5, 120, 25)
+    SETTINGS["unlimited_phones"] = re.sub(r"[^0-9,]", "", str(d.get("unlimited_phones", "")))
+    SETTINGS["blocked_phones"] = re.sub(r"[^0-9,]", "", str(d.get("blocked_phones", "")))
+    SETTINGS["announcement"] = clean_for_tts(str(d.get("announcement", "")))[:300]
+    SETTINGS["tts"] = "on" if d.get("tts") == "on" else "off"
+    SETTINGS["voices"] = ",".join(csv_list(str(d.get("voices", "")))) or DEFAULT_VOICES
+    save_settings()
+    return J({"ok": True})
+
+
+@app.route("/api/user", methods=["POST"])
+def api_user():
+    g = api_guard()
+    if g:
+        return g
+    d = request.get_json(silent=True) or {}
+    phone, action = str(d.get("phone", "")), d.get("action")
+    if action == "rename":
+        nm = clean_for_tts(str(d.get("name", "")))[:30]
+        if nm:
+            names[phone] = nm
+    elif action == "delete":
+        names.pop(phone, None)
+        notes.pop(phone, None)
+        voices.pop(phone, None)
+    elif action == "block":
+        bl = csv_list(SETTINGS["blocked_phones"])
+        if phone in bl:
+            bl.remove(phone)
+        elif phone not in OWNER_PHONES:
+            bl.append(phone)
+        SETTINGS["blocked_phones"] = ",".join(bl)
+        save_settings()
+    elif action == "unlimited":
+        ul = csv_list(SETTINGS["unlimited_phones"])
+        if phone in ul and phone not in OWNER_PHONES:
+            ul.remove(phone)
+        elif phone not in ul:
+            ul.append(phone)
+        SETTINGS["unlimited_phones"] = ",".join(ul)
+        save_settings()
+    elif action == "note":
+        txt = clean_for_tts(str(d.get("note", "")))[:300]
+        if txt:
+            notes[phone] = txt
+        else:
+            notes.pop(phone, None)
+    elif action == "voice":
+        try:
+            voices[phone] = int(d.get("voice", 0))
+        except (ValueError, TypeError):
+            pass
+    elif action == "add":
+        nm = clean_for_tts(str(d.get("name", "")))[:30]
+        ph = re.sub(r"[^0-9]", "", phone)
+        if nm and ph:
+            names[ph] = nm
+    save_names()
+    return J({"ok": True})
+
+
+@app.route("/api/clear", methods=["POST"])
+def api_clear():
+    g = api_guard()
+    if g:
+        return g
+    d = request.get_json(silent=True) or {}
+    with _lock:
+        if d.get("what") == "calls":
+            CALLS.clear()
+        else:
+            LOG.clear()
+    save_log()
+    return J({"ok": True})
+
+
+@app.route("/api/sendmail", methods=["POST"])
+def api_sendmail():
+    g = api_guard()
+    if g:
+        return g
+    day = today_str()
+    return J({"ok": True, "result": send_mail("סיכום הקו ליום " + day, build_summary(day))})
+
+
+@app.route("/api/test_tts", methods=["POST"])
+def api_test_tts():
+    """בדיקה שהקול הטבעי עובד (בלי להעלות לימות)"""
+    g = api_guard()
+    if g:
+        return g
+    d = request.get_json(silent=True) or {}
+    try:
+        wav = make_tts(str(d.get("text") or "שלום, זו בדיקה של הקול"), str(d.get("voice") or voice_list()[0]))
+        return J({"ok": bool(wav), "bytes": len(wav or b"")})
+    except Exception as e:
+        return J({"ok": False, "error": str(e)[:300]})
+
+
+@app.route("/admin")
+def admin():
+    return Response(ADMIN_HTML, mimetype="text/html; charset=utf-8")
+
+
+ADMIN_HTML = r"""<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ניהול הקו</title><style>
+:root{--bg:#f3f5f9;--card:#fff;--ink:#1f2937;--muted:#6b7280;--line:#e5e7eb;--brand:#1e3a5f;--brand2:#2563eb;--ok:#16a34a;--bad:#dc2626;--warn:#d97706}
+*{box-sizing:border-box}body{margin:0;font-family:Segoe UI,Arial,sans-serif;background:var(--bg);color:var(--ink);font-size:15px}
+.app{display:flex;min-height:100vh}.side{width:220px;background:var(--brand);color:#fff;padding:18px 0;position:sticky;top:0;height:100vh;flex-shrink:0}
+.side h1{font-size:18px;margin:0 18px 18px}.nav{display:flex;flex-direction:column}.nav a{color:#cbd5e1;text-decoration:none;padding:11px 18px;border-right:3px solid transparent;cursor:pointer}
+.nav a.on,.nav a:hover{color:#fff;background:#ffffff14;border-right-color:#60a5fa}.main{flex:1;padding:22px 26px;min-width:0}
+h2{margin:0 0 14px;font-size:22px}h3{margin:18px 0 8px;font-size:16px;color:var(--brand)}.sub{color:var(--muted);font-size:13px}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px}
+.card{background:var(--card);border-radius:12px;padding:14px 16px;box-shadow:0 1px 2px #0000000d}.card b{display:block;font-size:28px;margin-top:4px}
+.panel{background:var(--card);border-radius:12px;padding:16px;box-shadow:0 1px 2px #0000000d;margin-bottom:16px}
+table{width:100%;border-collapse:collapse}th,td{padding:8px 9px;border-bottom:1px solid var(--line);text-align:right;vertical-align:top;font-size:14px}th{color:var(--muted);font-weight:600;font-size:13px}
+tr:hover td{background:#f9fafb}input[type=text],input[type=number],input[type=password],select,textarea{padding:7px 9px;border:1px solid #cfd4dc;border-radius:8px;font:inherit;width:100%}
+textarea{min-height:64px;resize:vertical}.btn{padding:7px 13px;border:0;border-radius:8px;background:var(--brand2);color:#fff;cursor:pointer;font:inherit}
+.btn.sm{padding:4px 9px;font-size:13px}.btn.gray{background:#6b7280}.btn.red{background:var(--bad)}.btn.green{background:var(--ok)}.btn.line{background:#fff;color:var(--brand2);border:1px solid var(--brand2)}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.tag{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;background:#eef2ff;color:#3730a3;margin-left:4px}.tag.red{background:#fee2e2;color:#991b1b}.tag.green{background:#dcfce7;color:#166534}.tag.gold{background:#fef3c7;color:#92400e}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--ok);margin-left:6px;animation:b 1.2s infinite}@keyframes b{50%{opacity:.25}}
+.page{display:none}.page.on{display:block}.q{color:#1d4ed8}.a{color:#374151}.bubble{max-width:80%;padding:8px 12px;border-radius:14px;margin:4px 0;white-space:pre-wrap}
+.bubble.u{background:#dbeafe;margin-left:auto}.bubble.m{background:#f1f5f9}.chat{display:flex;flex-direction:column}
+.toast{position:fixed;bottom:20px;left:20px;background:#111827;color:#fff;padding:10px 16px;border-radius:10px;opacity:0;transition:.3s;pointer-events:none}.toast.on{opacity:1}
+.field{margin-bottom:10px}.field label{display:block;font-size:13px;color:var(--muted);margin-bottom:3px}.drag{cursor:grab;color:#9ca3af}
+.login{max-width:360px;margin:100px auto}svg text{font-family:inherit}.muted{color:var(--muted)}.pill{cursor:pointer}
+@media(max-width:800px){.side{display:none}.grid2,.grid3{grid-template-columns:1fr}}
+</style></head><body>
+<div id="loginBox" class="login" style="display:none"><div class="panel"><h2>כניסה לניהול הקו</h2><div class="field"><input type="password" id="pw" placeholder="סיסמה"></div><button class="btn" style="width:100%" onclick="login()">כניסה</button><p id="loginErr" style="color:var(--bad)"></p></div></div>
+<div class="app" id="app" style="display:none">
+<div class="side"><h1>ניהול הקו</h1><div class="nav">
+<a data-p="dash" class="on">לוח בקרה</a><a data-p="users">משתמשים</a><a data-p="conv">שיחות</a><a data-p="assist">עוזרים</a><a data-p="texts">נוסחים</a><a data-p="settings">הגדרות</a><a href="/admin/logout">יציאה</a></div>
+<p class="sub" style="margin:18px;color:#94a3b8" id="clock"></p></div>
+<div class="main">
+
+<div class="page on" id="p-dash"><h2><span class="dot"></span>לוח בקרה <span class="sub">מתעדכן כל 5 שניות</span></h2>
+<div class="cards"><div class="card">שיחות פעילות עכשיו<b id="l_active">0</b></div><div class="card">שיחות היום<b id="l_calls">0</b></div><div class="card">הודעות היום<b id="l_msgs">0</b></div><div class="card">משתמשים רשומים<b id="l_users">0</b></div><div class="card">סה"כ שיחות<b id="l_ct">0</b></div><div class="card">סה"כ הודעות<b id="l_mt">0</b></div></div>
+<div class="panel"><h3 style="margin-top:0">עכשיו בקו</h3><table id="activeT"></table></div>
+<div class="grid3" id="charts"></div></div>
+
+<div class="page" id="p-users"><h2>משתמשים</h2>
+<div class="panel"><div class="row"><input type="text" id="uSearch" placeholder="חיפוש לפי שם או טלפון" style="max-width:280px" oninput="renderUsers()">
+<span class="muted">|</span><input type="text" id="addPhone" placeholder="טלפון" style="max-width:150px"><input type="text" id="addName" placeholder="שם" style="max-width:150px"><button class="btn sm" onclick="addUser()">הוסף משתמש ידנית</button></div></div>
+<div class="panel"><table id="usersT"></table></div></div>
+
+<div class="page" id="p-conv"><h2>שיחות</h2>
+<div class="panel"><div class="row"><input type="text" id="cSearch" placeholder="חיפוש בתוכן השיחות" style="max-width:300px" oninput="renderConv()"><select id="cUser" style="max-width:220px" onchange="renderConv()"><option value="">כל המשתמשים</option></select>
+<button class="btn sm gray" onclick="clearLog()">נקה יומן</button></div></div>
+<div id="convList"></div></div>
+
+<div class="page" id="p-assist"><h2>עוזרים</h2><p class="sub">הסדר כאן = מספר ההקשה בתפריט (1 עד 8). עוזר כבוי לא מופיע בתפריט. "מילים" = איך המתקשר קורא לעוזר כשהוא מבקש לעבור אליו בדיבור.</p>
+<div id="assistList"></div><div class="row" style="margin:12px 0"><button class="btn line" onclick="addAssistant()">+ עוזר חדש</button><button class="btn" onclick="saveAssistants()">שמור עוזרים</button></div></div>
+
+<div class="page" id="p-texts"><h2>נוסחים</h2><p class="sub">כל מה שהקו אומר. אפשר להשתמש ב-{name} לשם המתקשר, ב-{assistant} לשם העוזר, וב-{digit} למספר ההקשה.</p>
+<div class="panel" id="textsList"></div><button class="btn" onclick="saveTexts()">שמור נוסחים</button></div>
+
+<div class="page" id="p-settings"><h2>הגדרות</h2><div class="panel" id="settingsBox"></div><button class="btn" onclick="saveSettings()">שמור הגדרות</button>
+<div class="panel" style="margin-top:16px"><h3 style="margin-top:0">סיכום יומי למייל</h3><p id="mailState"></p><button class="btn line" onclick="sendMail()">שלח סיכום של היום עכשיו</button> <span id="mailRes"></span></div>
+<div class="panel"><h3 style="margin-top:0">בדיקת קול טבעי</h3><div class="row"><select id="ttsVoice" style="max-width:300px"></select><button class="btn line" onclick="testTts()">בדוק</button><span id="ttsRes"></span></div><p class="sub">בודק שהשרת מצליח לייצר קול (בלי להעלות לימות).</p></div></div>
+
+</div></div><div class="toast" id="toast"></div>
+<script>
+let S=null;const $=id=>document.getElementById(id);const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function toast(m){const t=$('toast');t.textContent=m;t.classList.add('on');setTimeout(()=>t.classList.remove('on'),2200);}
+async function api(path,body){const r=await fetch(path,body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{});if(r.status===403){showLogin();throw new Error('auth');}return r.json();}
+function showLogin(){$('app').style.display='none';$('loginBox').style.display='block';}
+async function login(){const d=await api('/admin/login',{key:$('pw').value});if(d.ok){$('loginBox').style.display='none';boot();}else $('loginErr').textContent=d.error||'שגיאה';}
+$('pw')?.addEventListener('keydown',e=>{if(e.key==='Enter')login();});
+document.querySelectorAll('.nav a[data-p]').forEach(a=>a.onclick=()=>{document.querySelectorAll('.nav a').forEach(x=>x.classList.remove('on'));a.classList.add('on');document.querySelectorAll('.page').forEach(p=>p.classList.remove('on'));$('p-'+a.dataset.p).classList.add('on');});
+async function boot(){try{S=await api('/api/state');}catch(e){return;}$('app').style.display='flex';renderAll();tick();}
+function renderAll(){renderLive(S.live);renderCharts();renderUsers();renderConv();renderAssist();renderTexts();renderSettings();}
+async function tick(){try{const d=await api('/api/live');renderLive(d);}catch(e){}setTimeout(tick,5000);}
+function renderLive(d){$('l_active').textContent=d.active.length;$('l_calls').textContent=d.calls_today;$('l_msgs').textContent=d.msgs_today;$('l_users').textContent=d.users;$('l_ct').textContent=d.calls_total;$('l_mt').textContent=d.msgs_total;$('clock').textContent=d.time;
+let t='<tr><th>מי</th><th>טלפון</th><th>עוזר</th><th>מצב</th><th>מאז</th><th>שאלה אחרונה</th></tr>';if(!d.active.length)t+='<tr><td colspan="6" class="muted">אין שיחות פעילות כרגע</td></tr>';
+for(const a of d.active)t+=`<tr><td>${esc(a.name)}</td><td>${esc(a.phone)}</td><td>${esc(a.assistant)}</td><td>${esc(a.state)}</td><td>${esc(a.since)}</td><td>${esc(a.last_q)}</td></tr>`;$('activeT').innerHTML=t;}
+function bar(title,pairs,color){if(!pairs.length)return `<div class="panel"><b>${esc(title)}</b><p class="muted">אין נתונים עדיין</p></div>`;const mx=Math.max(...pairs.map(p=>p[1]))||1;const w=Math.max(300,pairs.length*32+30);let s=`<div class="panel"><b>${esc(title)}</b><svg viewBox="0 0 ${w} 180" width="100%">`;
+pairs.forEach((p,i)=>{const x=15+i*32,h=Math.round(130*p[1]/mx);s+=`<rect x="${x}" y="${150-h}" width="24" height="${h}" rx="4" fill="${color}"/><text x="${x+12}" y="${145-h}" font-size="11" text-anchor="middle">${p[1]}</text><text x="${x+12}" y="170" font-size="9" text-anchor="middle">${esc(String(p[0])).slice(0,10)}</text>`;});return s+'</svg></div>';}
+function renderCharts(){const c=S.charts;$('charts').innerHTML=bar('שיחות ב-14 הימים האחרונים',c.per_day,'#1e3a5f')+bar('הודעות לפי עוזר',c.per_assistant,'#2563eb')+bar('המשתמשים הפעילים',c.top_users,'#16a34a');}
+function renderUsers(){const q=($('uSearch').value||'').trim();let t='<tr><th>שם</th><th>טלפון</th><th>שיחות</th><th>הודעות</th><th>היום</th><th>שיחה אחרונה</th><th>סטטוס</th><th>הודעה לשיחה הבאה</th><th></th></tr>';
+const list=S.users.filter(u=>!q||u.name.includes(q)||u.phone.includes(q)).sort((a,b)=>b.last.localeCompare(a.last));
+for(const u of list){t+=`<tr><td><input type="text" value="${esc(u.name)}" style="width:120px" onchange="userAct('${u.phone}','rename',{name:this.value})"></td><td>${esc(u.phone)}${u.owner?' <span class="tag gold">בעלים</span>':''}</td><td>${u.calls}</td><td>${u.msgs}</td><td>${u.today}</td><td>${esc(u.last)}</td>
+<td>${u.blocked?'<span class="tag red">חסום</span>':''}${u.unlimited?'<span class="tag green">בלי הגבלה</span>':''}</td>
+<td><input type="text" value="${esc(u.note)}" placeholder="יושמע לו פעם אחת" style="width:180px" onchange="userAct('${u.phone}','note',{note:this.value})"></td>
+<td class="row"><button class="btn sm gray" onclick="showUser('${u.phone}')">שיחות</button><button class="btn sm ${u.blocked?'green':'red'}" onclick="userAct('${u.phone}','block')">${u.blocked?'בטל חסימה':'חסום'}</button>${u.owner?'':`<button class="btn sm line" onclick="userAct('${u.phone}','unlimited')">${u.unlimited?'הפעל הגבלה':'בלי הגבלה'}</button><button class="btn sm gray" onclick="if(confirm('למחוק? בשיחה הבאה יירשם מחדש'))userAct('${u.phone}','delete')">מחק</button>`}</td></tr>`;}
+if(!list.length)t+='<tr><td colspan="9" class="muted">אין משתמשים</td></tr>';$('usersT').innerHTML=t;
+const sel=$('cUser');const cur=sel.value;sel.innerHTML='<option value="">כל המשתמשים</option>'+S.users.map(u=>`<option value="${u.phone}">${esc(u.name)} (${u.phone})</option>`).join('');sel.value=cur;}
+async function userAct(phone,action,extra){await api('/api/user',{phone,action,...extra});await reload();toast('נשמר');}
+async function addUser(){const p=$('addPhone').value.trim(),n=$('addName').value.trim();if(!p||!n)return toast('צריך טלפון ושם');await api('/api/user',{phone:p,name:n,action:'add'});$('addPhone').value='';$('addName').value='';await reload();toast('נוסף');}
+function showUser(phone){$('cUser').value=phone;document.querySelector('.nav a[data-p=conv]').click();renderConv();}
+function renderConv(){const q=($('cSearch').value||'').trim(),ph=$('cUser').value;const groups={};const order=[];
+for(const l of S.log){if(ph&&l.phone!==ph)continue;if(q&&!(l.q.includes(q)||l.a.includes(q)||(l.name||'').includes(q)))continue;const k=l.call||(l.phone+'|'+l.time.slice(0,10));if(!groups[k]){groups[k]=[];order.push(k);}groups[k].push(l);}
+let s='';for(const k of order){const msgs=groups[k].slice().reverse();const f=msgs[0];s+=`<div class="panel"><div class="row" style="justify-content:space-between"><b>${esc(f.name)} <span class="muted">${esc(f.phone)}</span></b><span class="muted">${esc(f.time)} · ${msgs.length} הודעות</span></div><div class="chat">`;
+let last='';for(const m of msgs){if(m.persona!==last){s+=`<div class="muted" style="font-size:12px;margin:6px 0 2px">— ${esc(m.persona)} —</div>`;last=m.persona;}s+=`<div class="bubble u">${esc(m.q)}</div><div class="bubble m">${esc(m.a)}</div>`;}s+='</div></div>';}
+$('convList').innerHTML=s||'<div class="panel muted">אין שיחות</div>';}
+async function clearLog(){if(!confirm('למחוק את כל יומן השיחות?'))return;await api('/api/clear',{what:'log'});await reload();toast('היומן נוקה');}
+let A=[];function renderAssist(){A=JSON.parse(JSON.stringify(S.assistants));drawAssist();}
+function drawAssist(){let s='';A.forEach((a,i)=>{const digit=A.slice(0,i+1).filter(x=>x.on).length;s+=`<div class="panel"><div class="row" style="justify-content:space-between"><div class="row"><b>${a.on?'הקשה '+digit:'כבוי'}</b><span class="tag">${esc(a.id)}</span></div>
+<div class="row"><button class="btn sm gray" onclick="mv(${i},-1)">▲</button><button class="btn sm gray" onclick="mv(${i},1)">▼</button><label><input type="checkbox" ${a.on?'checked':''} onchange="A[${i}].on=this.checked;drawAssist()"> פעיל</label><button class="btn sm red" onclick="if(confirm('למחוק את העוזר?')){A.splice(${i},1);drawAssist();}">מחק</button></div></div>
+<div class="grid2" style="margin-top:8px"><div class="field"><label>שם העוזר (כפי שנשמע בתפריט)</label><input type="text" value="${esc(a.name)}" onchange="A[${i}].name=this.value"></div><div class="field"><label>מילים לזיהוי בדיבור (מופרדות בפסיק)</label><input type="text" value="${esc(a.keywords||'')}" onchange="A[${i}].keywords=this.value"></div></div>
+<div class="field"><label>ההנחיה ל-AI (האופי, התחום, איך לענות)</label><textarea onchange="A[${i}].prompt=this.value">${esc(a.prompt)}</textarea></div></div>`;});$('assistList').innerHTML=s;}
+function mv(i,d){const j=i+d;if(j<0||j>=A.length)return;[A[i],A[j]]=[A[j],A[i]];drawAssist();}
+function addAssistant(){A.push({id:'a'+Math.random().toString(36).slice(2,8),name:'עוזר חדש',prompt:'אתה עוזר ידידותי.',on:true,keywords:''});drawAssist();window.scrollTo(0,document.body.scrollHeight);}
+async function saveAssistants(){const d=await api('/api/assistants',{assistants:A});if(d.ok){await reload();toast('העוזרים נשמרו');}else toast(d.error||'שגיאה');}
+const TXT_LABELS={first_time:'פעם ראשונה - בקשת שם',ask_name_again:'בקשת שם חוזרת',name_saved:'אחרי שמירת השם',menu_hello:'פתיחת התפריט',menu_item:'שורה בתפריט (לכל עוזר)',menu_end:'סיום התפריט',enter:'כניסה לעוזר',listening:'הקשבה (כשאין תשובה להשמיע)',not_heard:'לא נקלטה הקלטה',wait:'הודעות המתנה (מופרדות בפסיק, מתחלפות)',too_long:'התשובה לוקחת יותר מדי זמן',limit:'הגעה למכסה היומית',blocked:'מספר חסום',voice_changed:'הקול הוחלף (כשאין קול טבעי)',goodbye:'פרידה',error:'תקלה זמנית',not_understood:'לא הובן'};
+function renderTexts(){let s='';for(const k in TXT_LABELS)s+=`<div class="field"><label>${esc(TXT_LABELS[k])}</label><input type="text" id="t_${k}" value="${esc(S.texts[k]||'')}"></div>`;$('textsList').innerHTML=s;}
+async function saveTexts(){const d={};for(const k in TXT_LABELS)d[k]=$('t_'+k).value;await api('/api/texts',d);await reload();toast('הנוסחים נשמרו');}
+function renderSettings(){const s=S.settings;$('settingsBox').innerHTML=`<div class="field"><label>הודעה בתחילת כל שיחה (ריק = בלי)</label><input type="text" id="s_announcement" value="${esc(s.announcement)}"></div>
+<div class="grid2"><div class="field"><label>קול טבעי</label><select id="s_tts"><option value="on" ${s.tts=='on'?'selected':''}>פעיל (Edge, קול גבר טבעי)</option><option value="off" ${s.tts!='on'?'selected':''}>כבוי - הקראה של ימות (מהיר יותר)</option></select></div>
+<div class="field"><label>רשימת קולות (מופרדים בפסיק, הראשון ברירת מחדל)</label><input type="text" id="s_voices" value="${esc(s.voices)}"></div>
+<div class="field"><label>הודעות ליום לכל משתמש (0 = בלי הגבלה)</label><input type="number" id="s_daily_limit" value="${s.daily_limit}"></div><div class="field"><label>אורך הקלטה מקסימלי (שניות)</label><input type="number" id="s_record_max" value="${s.record_max}"></div>
+<div class="field"><label>מספרים ללא הגבלה (מופרדים בפסיק)</label><input type="text" id="s_unlimited_phones" value="${esc(s.unlimited_phones)}"></div><div class="field"><label>מספרים חסומים</label><input type="text" id="s_blocked_phones" value="${esc(s.blocked_phones)}"></div>
+<div class="field"><label>שעת הסיכום היומי למייל (0-23)</label><input type="number" id="s_mail_hour" value="${s.mail_hour}"></div></div>`;
+$('mailState').innerHTML=S.mail?`<span style="color:var(--ok)">מוגדר, נשלח אל ${esc(S.mail_to)}</span>`:'<span style="color:var(--bad)">לא מוגדר - צריך MAIL_USER ו-MAIL_PASS ב-Render</span>';
+$('ttsVoice').innerHTML=S.voices.map(v=>`<option>${esc(v)}</option>`).join('');}
+async function saveSettings(){const d={};for(const k of ['announcement','tts','voices','daily_limit','record_max','unlimited_phones','blocked_phones','mail_hour'])d[k]=$('s_'+k).value;await api('/api/settings',d);await reload();toast('ההגדרות נשמרו');}
+async function sendMail(){$('mailRes').textContent='שולח...';const d=await api('/api/sendmail',{});$('mailRes').textContent=d.result;}
+async function testTts(){$('ttsRes').textContent='בודק...';const d=await api('/api/test_tts',{voice:$('ttsVoice').value});$('ttsRes').textContent=d.ok?'עובד ('+d.bytes+' בייט)':'נכשל: '+(d.error||'');}
+async function reload(){S=await api('/api/state');renderAll();}
+boot();
+</script></body></html>"""
 
 
 if __name__ == "__main__":
