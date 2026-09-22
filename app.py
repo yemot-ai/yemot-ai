@@ -361,7 +361,7 @@ def transcribe_name(file_name):
     except Exception as e:
         print("download error:", e)
         return ""
-    yemot_delete(file_name + ".wav")
+    _bg(yemot_delete, file_name + ".wav")
     text = gemini("בהקלטה טלפונית באיכות נמוכה אדם אומר את שמו הפרטי בעברית (שם ישראלי או יהודי נפוץ). "
                   "החזר רק את השם הפרטי, מילה אחת או שתיים, בלי שום תוספת.",
                   [types.Part.from_bytes(data=audio, mime_type="audio/wav")])
@@ -378,7 +378,7 @@ def ask_ai(persona, history, file_name):
     except Exception as e:
         print("download error:", e)
         return "", "none", "סליחה, לא הצלחתי לשמוע את ההקלטה. נסה שוב."
-    yemot_delete(file_name + ".wav")
+    _bg(yemot_delete, file_name + ".wav")
 
     others = ", ".join("%s = %s" % (k, PERSONA_NAMES[k]) for k in active_personas() if k != persona)
     system = PERSONAS.get(persona, PERSONAS["1"]) + GENERAL_RULES + (
@@ -522,6 +522,7 @@ def ai_worker(pending, state, persona, history, file_name, call_id, voice_idx):
         pending["result"] = ("", "none", "סליחה, יש בעיה זמנית. נסה שוב.", None)
     finally:
         pending["done"] = True
+        pending["event"].set()
 
 
 def cleanup_loop():
@@ -625,17 +626,22 @@ def yemot():
             if over_limit(phone):
                 _bg(yemot_delete, state["file"] + ".wav")
                 return R(menu(state, name, prefix="הגעת למכסת ההודעות היומית שלך. אפשר לנסות שוב מחר"))
-            pending = {"done": False, "result": None, "started": time.time()}
+            pending = {"done": False, "result": None, "started": time.time(), "event": threading.Event()}
             state["pending"] = pending
             state["wait_i"] = 0
             _bg(ai_worker, pending, state, state["persona"], list(state["history"]), state["file"], call_id, state["voice"])
-            return R(wait_message(state))
+            # מחכים עד 8 שניות בתוך הפנייה עצמה - ברוב המקרים התשובה מוכנה ואין "רק רגע" בכלל
+            pending["event"].wait(8)
 
         if not pending["done"]:
+            # עדיין לא מוכן: משמיעים "רק רגע" (ימות חוזרים אלינו אחרי ~3 שניות) ומחכים שוב
             if time.time() - pending["started"] > 75:
                 state["pending"] = None
                 return R(listen(state, "סליחה, זה לוקח יותר מדי זמן. אפשר לנסות שוב"))
-            return R(wait_message(state))
+            if state["wait_i"] > 0:
+                pending["event"].wait(6)
+            if not pending["done"]:
+                return R(wait_message(state))
 
         state["pending"] = None
         transcript, action, answer, tts = pending["result"]
