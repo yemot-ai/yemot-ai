@@ -131,7 +131,8 @@ _client = None
 def get_client():
     global _client
     if _client is None:
-        _client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY", ""))
+        _client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY", ""),
+                               http_options=types.HttpOptions(timeout=25000))
     return _client
 
 
@@ -380,8 +381,8 @@ def gemini(system, contents, schema=None, search=False):
     variants = []
     for model in MODELS:
         for use_search in ([True, False] if search else [False]):
-            for no_think in (True, False):
-                variants.append((model, use_search, no_think))
+            variants.append((model, use_search, True))
+        variants.append((model, False, False))
     for model, use_search, no_think in variants:
         try:
             kw = dict(system_instruction=system, max_output_tokens=600)
@@ -470,9 +471,8 @@ def wait_message(state):
         min_digits=1,
         sec_wait=2,
         amount_attempts=1,
-        allow_empty="yes",
+        allow_empty="Ok",
         empty_val="None",
-        block_change_keyboard="yes",
     )
 
 
@@ -728,7 +728,7 @@ def handle_call(params, call_id):
                 resp = menu(state, name, prefix="הגעת למכסת ההודעות היומית שלך. אפשר לנסות שוב מחר")
                 return Response(resp, mimetype="text/plain; charset=utf-8")
             # מתחילים לעבד ברקע ועונים לימות מיד עם הודעת המתנה
-            pending = {"done": False, "result": None}
+            pending = {"done": False, "result": None, "started": time.time()}
             state["pending"] = pending
             state["wait_i"] = 0
             threading.Thread(target=ai_worker,
@@ -737,6 +737,11 @@ def handle_call(params, call_id):
             return Response(wait_message(state), mimetype="text/plain; charset=utf-8")
 
         if not pending["done"]:
+            if time.time() - pending["started"] > 75:
+                # משהו נתקע - לא משאירים את המתקשר בלולאה
+                state["pending"] = None
+                resp = listen(state, prefix="סליחה, זה לוקח יותר מדי זמן. אפשר לנסות שוב")
+                return Response(resp, mimetype="text/plain; charset=utf-8")
             return Response(wait_message(state), mimetype="text/plain; charset=utf-8")
 
         # התשובה מוכנה
