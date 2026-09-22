@@ -12,6 +12,7 @@ import time
 import smtplib
 from email.mime.text import MIMEText
 import urllib.request
+import urllib.error
 import urllib.parse
 
 app = Flask(__name__)
@@ -174,6 +175,10 @@ def yemot_read_text(file_name):
         if data.lstrip().startswith("{\"responseStatus"):
             return None
         return data
+    except urllib.error.HTTPError as e:
+        if e.code != 404:
+            print("read text error:", e)
+        return None
     except Exception as e:
         print("read text error:", e)
         return None
@@ -197,9 +202,11 @@ def save_names():
 
 
 def save_log():
+    """כל שורה היא רשומה אחת - כך גם אם הקובץ נחתך, שאר השורות נטענות"""
     with _lock:
-        data = json.dumps({"log": LOG[-LOG_MAX:], "calls": CALLS[-LOG_MAX:]}, ensure_ascii=False)
-    threading.Thread(target=yemot_write_text, args=("ai_log.txt", data), daemon=True).start()
+        lines = [json.dumps({"t": "log", **l}, ensure_ascii=False) for l in LOG[-LOG_MAX:]]
+        lines += [json.dumps({"t": "call", **c}, ensure_ascii=False) for c in CALLS[-LOG_MAX:]]
+    threading.Thread(target=yemot_write_text, args=("ai_log.txt", "\n".join(lines)), daemon=True).start()
 
 
 def load_data():
@@ -212,9 +219,28 @@ def load_data():
             names.update(json.loads(t))
         t = yemot_read_text("ai_log.txt")
         if t:
-            d = json.loads(t)
-            LOG.extend(d.get("log", []))
-            CALLS.extend(d.get("calls", []))
+            bad = 0
+            if t.lstrip().startswith("{\"log\""):
+                # פורמט ישן
+                try:
+                    d = json.loads(t)
+                    LOG.extend(d.get("log", []))
+                    CALLS.extend(d.get("calls", []))
+                except Exception:
+                    bad += 1
+            else:
+                for line in t.splitlines():
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        d = json.loads(line)
+                        kind = d.pop("t", "log")
+                        (CALLS if kind == "call" else LOG).append(d)
+                    except Exception:
+                        bad += 1
+            if bad:
+                print("log: skipped %d broken lines" % bad)
         print("loaded %d names, %d log lines" % (len(names), len(LOG)))
     except Exception as e:
         print("load error:", e)
