@@ -456,10 +456,24 @@ WAIT_PHRASES = ["רק רגע", "עוד רגע", "רק שניה", "כבר עונ�
 
 
 def wait_message(state):
-    """הודעת המתנה קצרה. אחרי שהיא מושמעת ימות פונים שוב לשרת ובודקים אם התשובה מוכנה"""
+    """הודעת המתנה קצרה. בנויה כ-read עם המתנה של 2 שניות שמותר לה לחזור ריקה,
+    כי אחרי הודעה רגילה ימות לא פונים שוב לשרת אלא חוזרים לתפריט.
+    ככה ימות משמיעים את ההודעה, מחכים 2 שניות, ופונים שוב לשרת לבדוק אם התשובה מוכנה."""
     i = state.get("wait_i", 0)
     state["wait_i"] = i + 1
-    return build_id_list_message([("text", WAIT_PHRASES[i % len(WAIT_PHRASES)])])
+    state["n"] += 1
+    return build_read(
+        [("text", WAIT_PHRASES[i % len(WAIT_PHRASES)])],
+        mode="tap",
+        val_name="w_%d" % state["n"],
+        max_digits=1,
+        min_digits=1,
+        sec_wait=2,
+        amount_attempts=1,
+        allow_empty="yes",
+        empty_val="None",
+        block_change_keyboard="yes",
+    )
 
 
 def ai_worker(pending, persona, history, ext, file_name):
