@@ -1,5 +1,6 @@
-Flask>=3.0.0
-gunicorn>=21.2.0
-google-genai>=1.20.0
+flask
 yemot-flow
-tzdata
+google-genai
+gunicorn
+edge-tts
+imageio-ffmpeg
