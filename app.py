@@ -1046,7 +1046,13 @@ def api_test_tts():
 
 @app.route("/admin")
 def admin():
-    return Response(ADMIN_HTML, mimetype="text/html; charset=utf-8")
+    """אתר הניהול. אם יש קובץ admin.html ליד app.py - הוא זה שמוגש (כך אפשר לשדרג את האתר בלי לגעת בקוד של הקו)."""
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "admin.html")
+    try:
+        with open(path, encoding="utf-8") as f:
+            return Response(f.read(), mimetype="text/html; charset=utf-8")
+    except Exception:
+        return Response(ADMIN_HTML, mimetype="text/html; charset=utf-8")
 
 
 ADMIN_HTML = r"""<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
