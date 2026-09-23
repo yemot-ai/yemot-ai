@@ -95,6 +95,7 @@ SETTINGS = {
     "tts": "on",                    # קול טבעי: on / off
     "voices": DEFAULT_VOICES,
     "record_max": 25,               # שניות הקלטה מקסימום
+    "model": "",                    # מודל מועדף (ריק = אוטומטי: הראשון ברשימה)
 }
 
 # כל הנוסחים שהקו אומר - ניתנים לעריכה באתר הניהול. {name} = שם המתקשר, {assistant} = שם העוזר
@@ -431,7 +432,11 @@ def speak_file(text, voice_idx, call_id):
 def gemini(system, contents, search=False):
     last_error = None
     variants = []
-    for model in MODELS:
+    order = list(MODELS)
+    pref = SETTINGS.get("model", "")
+    if pref:
+        order = [pref] + [m for m in order if m != pref]
+    for model in order:
         if not model_ok(model):
             continue
         for think in ("level", "budget", None):
@@ -985,7 +990,8 @@ def api_state():
         "charts": {"per_day": per_day, "per_assistant": sorted(per_a.items(), key=lambda x: -x[1])[:8],
                    "top_users": [[users.get(p, p), n] for p, n in sorted(per_user.items(), key=lambda x: -x[1])[:10]]},
         "voices": voice_list(), "mail": bool(MAIL_USER and MAIL_PASS), "mail_to": MAIL_TO, "owners": OWNER_PHONES,
-        "models": [{"name": m, "ok": model_ok(m), "dead": bool(MODEL_STATUS.get(m, {}).get("dead"))} for m in MODELS],
+        "models": [{"name": m, "ok": model_ok(m), "dead": bool(MODEL_STATUS.get(m, {}).get("dead"))}
+                   for m in ([SETTINGS["model"]] if SETTINGS.get("model") else []) + [x for x in MODELS if x != SETTINGS.get("model")]],
         "live": live_data(),
     })
 
@@ -1047,6 +1053,7 @@ def api_settings():
     SETTINGS["announcement"] = clean_for_tts(str(d.get("announcement", "")))[:300]
     SETTINGS["tts"] = "on" if d.get("tts") == "on" else "off"
     SETTINGS["voices"] = ",".join(csv_list(str(d.get("voices", "")))) or DEFAULT_VOICES
+    SETTINGS["model"] = re.sub(r"[^a-z0-9.\-]", "", str(d.get("model", "")).lower())[:60]
     save_settings()
     return J({"ok": True})
 
