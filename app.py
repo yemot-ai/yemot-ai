@@ -27,6 +27,14 @@ import urllib.request
 import urllib.parse
 import urllib.error
 from email.mime.text import MIMEText
+import importlib.resources  # noqa: F401  (טעינה מוקדמת - מונע תקלת ייבוא מקבילית ב-threads)
+try:
+    import edge_tts  # noqa: F401
+    import imageio_ffmpeg  # noqa: F401
+    HAVE_TTS = True
+except Exception as _e:
+    print("tts libs missing:", _e)
+    HAVE_TTS = False
 
 app = Flask(__name__)
 
@@ -171,6 +179,34 @@ def get_client():
                                http_options=types.HttpOptions(timeout=15000,
                                                               retry_options=types.HttpRetryOptions(attempts=1)))
     return _client
+
+
+GEMINI_DEADLINE = 14   # שניות מקסימום לפנייה אחת. אחרי זה עוברים למודל הבא, גם אם גוגל עדיין "חושבים"
+
+
+class Deadline(Exception):
+    pass
+
+
+def call_with_deadline(fn, seconds):
+    """מריץ פנייה ברקע ומחכה לה עד X שניות - שמירה קשיחה גם אם ספריית גוגל לא מכבדת את ה-timeout שלה"""
+    box = {}
+
+    def run():
+        try:
+            box["r"] = fn()
+        except Exception as e:
+            box["e"] = e
+    t = threading.Thread(target=run, daemon=True)
+    t.start()
+    t.join(seconds)
+    if t.is_alive():
+        raise Deadline("no answer from Gemini within %ds (timed out)" % seconds)
+    if "e" in box:
+        raise box["e"]
+    return box["r"]
+
+
 
 
 def il_now():
@@ -379,6 +415,10 @@ def load_all():
 
 
 load_all()
+try:
+    get_client()  # יצירת הלקוח בתהליך הראשי, לפני שה-threads מתחילים
+except Exception as _e:
+    print('gemini client init error:', _e)
 threading.Thread(target=discover_models, daemon=True).start()
 
 
@@ -389,8 +429,8 @@ def voice_list():
 
 def make_tts(text, voice_name):
     """טקסט -> קובץ wav 8kHz מונו (Edge TTS + ffmpeg מובנה). מחזיר bytes או None"""
-    import edge_tts
-    import imageio_ffmpeg
+    if not HAVE_TTS:
+        return None
 
     async def gen():
         com = edge_tts.Communicate(text, voice_name, rate="+5%")
@@ -419,7 +459,7 @@ def speak_file(text, voice_idx, call_id):
     try:
         vl = voice_list()
         t0 = time.time()
-        wav = make_tts(text, vl[voice_idx % len(vl)])
+        wav = call_with_deadline(lambda: make_tts(text, vl[voice_idx % len(vl)]), 12)
         if not wav:
             return None
         t1 = time.time()
@@ -433,32 +473,6 @@ def speak_file(text, voice_idx, call_id):
 
 
 # ============================================================ Gemini
-GEMINI_DEADLINE = 14   # שניות מקסימום לפנייה אחת. אחרי זה עוברים למודל הבא, גם אם גוגל עדיין "חושבים"
-
-
-class Deadline(Exception):
-    pass
-
-
-def call_with_deadline(fn, seconds):
-    """מריץ פנייה ברקע ומחכה לה עד X שניות - שמירה קשיחה גם אם ספריית גוגל לא מכבדת את ה-timeout שלה"""
-    box = {}
-
-    def run():
-        try:
-            box["r"] = fn()
-        except Exception as e:
-            box["e"] = e
-    t = threading.Thread(target=run, daemon=True)
-    t.start()
-    t.join(seconds)
-    if t.is_alive():
-        raise Deadline("no answer from Gemini within %ds (timed out)" % seconds)
-    if "e" in box:
-        raise box["e"]
-    return box["r"]
-
-
 def gemini(system, contents, search=False):
     last_error = None
     variants = []
