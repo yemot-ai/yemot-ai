@@ -220,7 +220,7 @@ th{color:var(--mute);font-weight:500;font-size:13px}tbody tr:last-child td{borde
         <div>
           <div class="panel"><h3>קול טבעי</h3><div id="voiceBox"></div>
             <div class="row" style="margin-top:8px"><select id="ttsVoice" style="width:280px"></select><button class="btn sm ghost" onclick="testTts()">בדוק שהקול עובד</button><span id="ttsRes" class="small"></span></div></div>
-          <div class="panel"><h3>מודלים של Gemini</h3><div id="modelsBox" class="small"></div><p class="mute small">השרת בודק בעלייה אילו מודלים זמינים במפתח שלך ומשתמש בראשון שעובד. מודל שנגמרה לו המכסה נפסח למשך שתי דקות.</p></div>
+          <div class="panel"><h3>מודלים של Gemini</h3><div class="field"><label>מודל מועדף</label><select id="s_model"></select></div><div id="modelsBox" class="small"></div><p class="mute small">השרת בודק בעלייה אילו מודלים זמינים במפתח שלך ומשתמש בראשון שעובד. מודל שנגמרה לו המכסה נפסח למשך שתי דקות.</p></div>
           <div class="panel"><h3>סיכום יומי למייל</h3><p id="mailState" class="small"></p><div class="row"><button class="btn sm ghost" onclick="sendMail()">שלח סיכום של היום עכשיו</button><span id="mailRes" class="small"></span></div></div>
         </div>
       </div>
@@ -354,8 +354,9 @@ function renderSettings(){const s=S.settings;
   <div class="field"><label>רשימת הקולות, מופרדים בפסיק. הראשון ברירת מחדל, "החלף קול" עובר לבא</label><input type="text" id="s_voices" value="${esc(s.voices)}"></div>`;
   $('mailState').innerHTML=S.mail?`<span class="pill teal">מוגדר</span> נשלח כל יום אל ${esc(S.mail_to)}`:`<span class="pill coral">לא מוגדר</span> צריך להוסיף MAIL_USER ו-MAIL_PASS ב-Render`;
   $('ttsVoice').innerHTML=S.voices.map(v=>`<option>${esc(v)}</option>`).join('');
+  $('s_model').innerHTML='<option value="">אוטומטי (הראשון ברשימה)</option>'+(S.models||[]).map(m=>`<option value="${esc(m.name)}" ${S.settings.model===m.name?'selected':''}>${esc(m.name)}</option>`).join('');
   $('modelsBox').innerHTML=(S.models||[]).map((m,i)=>`<div class="row" style="margin-bottom:4px"><span class="pill ${m.dead?'coral':(m.ok?'teal':'amber')}">${m.dead?'לא קיים':(m.ok?'זמין':'מכסה נגמרה')}</span> ${esc(m.name)}${i===0&&m.ok?' <span class="mute">← בשימוש</span>':''}</div>`).join('')||'<span class="mute">עדיין לא נבדק</span>';}
-async function saveSettings(){const d={};for(const k of ['announcement','tts','voices','daily_limit','record_max','unlimited_phones','blocked_phones','mail_hour'])d[k]=$('s_'+k).value;await api('/api/settings',d);await reload();toast('ההגדרות נשמרו');}
+async function saveSettings(){const d={};for(const k of ['announcement','tts','voices','daily_limit','record_max','unlimited_phones','blocked_phones','mail_hour','model'])d[k]=$('s_'+k).value;await api('/api/settings',d);await reload();toast('ההגדרות נשמרו');}
 async function sendMail(){$('mailRes').textContent='שולח...';const d=await api('/api/sendmail',{});$('mailRes').textContent=d.result;}
 async function testTts(){$('ttsRes').textContent='בודק...';const d=await api('/api/test_tts',{voice:$('ttsVoice').value});$('ttsRes').textContent=d.ok?'הקול עובד':'נכשל: '+(d.error||'');}
 
