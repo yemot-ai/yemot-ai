@@ -363,6 +363,7 @@ async function runDiag(){$('diagBox').innerHTML='<span class="mute">בודק... 
   let s=`<table><tr><td>פייתון</td><td>${esc(d.python)} ${d.python.startsWith('3.12')||d.python.startsWith('3.11')?ok(1):'<span class="pill amber">מומלץ 3.12 (PYTHON_VERSION ב-Render)</span>'}</td></tr>`;
   s+=`<tr><td>Gemini</td><td>${ok(d.gemini.ok)} ${d.gemini.seconds} שנ' ${esc(d.gemini.answer||d.gemini.error||'')}</td></tr>`;
   s+=`<tr><td>קול טבעי</td><td>${ok(d.tts.ok)} ${d.tts.seconds} שנ' ${esc(d.tts.error||'')}${d.tts_libs?'':' (הספריות לא הותקנו)'}</td></tr>`;
+  s+=`<tr><td>חיפוש באינטרנט</td><td>${ok(d.search&&d.search.ok)} ${d.search?d.search.seconds||'':''} ${esc((d.search&&d.search.error)||'')}${d.search&&!d.search.libs?' (ספריית החיפוש לא הותקנה)':''}</td></tr>`;
   s+=`<tr><td>חיבור לימות</td><td>${ok(d.yemot.ok)} ${d.yemot.seconds||''} ${esc(d.yemot.error||'')}</td></tr>`;
   s+=`<tr><td>מפתחות</td><td>${Object.entries(d.env).map(([k,v])=>`${esc(k)}: ${v?(typeof v==='string'?esc(v):'יש'):'<b style="color:var(--coral)">חסר</b>'}`).join(' · ')}</td></tr>`;
   s+=`<tr><td>מודלים</td><td>${Object.entries(d.model_status).map(([k,v])=>`${esc(k)} <span class="pill ${v==='ok'?'teal':(v==='מכסה'?'amber':'coral')}">${esc(v)}</span>`).join(' ')}</td></tr></table>`;
