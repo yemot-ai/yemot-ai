@@ -477,9 +477,15 @@ def ask_ai(assistant, history, file_name):
         sys2 = assistant["prompt"] + GENERAL_RULES + " חפש באינטרנט וענה תשובה מדויקת עם המספרים והשמות שמצאת. תשובה קצרה, מתאימה להקראה בטלפון."
         contents2 = list(history) + [{"role": "user", "parts": [{"text": transcript}]}]
         found = gemini(sys2, contents2, search=True)
+        if not found:
+            # החיפוש נכשל - עונים מהידע, בלי להשאיר את המתקשר עם "מחפש"
+            sys3 = assistant["prompt"] + GENERAL_RULES + " החיפוש באינטרנט לא זמין כרגע. ענה כמיטב ידיעתך, וציין בקצרה שלא הצלחת לבדוק באינטרנט."
+            found = gemini(sys3, contents2)
         print("timing: gemini(search) %.1fs" % (time.time() - t0))
         if found:
             answer = re.sub(r"^(תמלול|פעולה|חיפוש|תשובה)\s*:\s*", "", found.strip())
+    if answer.strip() in ("מחפש", "מחפש.", "מחפש..."):
+        answer = T("error")
     low = transcript.lower()
     if action == "none":
         if "החלף קול" in low or "תחליף קול" in low or "שנה קול" in low:
