@@ -457,15 +457,18 @@ def make_tts(text, voice_name):
                 buf.write(chunk["data"])
         return buf.getvalue()
 
+    t0 = time.time()
     mp3 = asyncio.run(gen())
     if not mp3:
         return None
+    t1 = time.time()
     ff = imageio_ffmpeg.get_ffmpeg_exe()
     p = subprocess.run([ff, "-loglevel", "error", "-i", "pipe:0", "-ar", "8000", "-ac", "1",
                         "-acodec", "pcm_s16le", "-f", "wav", "pipe:1"],
                        input=mp3, capture_output=True, timeout=40)
     if p.returncode != 0 or len(p.stdout) < 100:
         raise RuntimeError("ffmpeg failed: " + p.stderr.decode("utf-8", "ignore")[:200])
+    print("timing: tts detail - edge %.1fs, convert %.1fs, %d chars, voice %s" % (t1 - t0, time.time() - t1, len(text), voice_name))
     return p.stdout
 
 
