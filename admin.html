@@ -1,117 +1,337 @@
-<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>ניהול הקו</title><style>
-:root{--bg:#f3f5f9;--card:#fff;--ink:#1f2937;--muted:#6b7280;--line:#e5e7eb;--brand:#1e3a5f;--brand2:#2563eb;--ok:#16a34a;--bad:#dc2626;--warn:#d97706}
-*{box-sizing:border-box}body{margin:0;font-family:Segoe UI,Arial,sans-serif;background:var(--bg);color:var(--ink);font-size:15px}
-.app{display:flex;min-height:100vh}.side{width:220px;background:var(--brand);color:#fff;padding:18px 0;position:sticky;top:0;height:100vh;flex-shrink:0}
-.side h1{font-size:18px;margin:0 18px 18px}.nav{display:flex;flex-direction:column}.nav a{color:#cbd5e1;text-decoration:none;padding:11px 18px;border-right:3px solid transparent;cursor:pointer}
-.nav a.on,.nav a:hover{color:#fff;background:#ffffff14;border-right-color:#60a5fa}.main{flex:1;padding:22px 26px;min-width:0}
-h2{margin:0 0 14px;font-size:22px}h3{margin:18px 0 8px;font-size:16px;color:var(--brand)}.sub{color:var(--muted);font-size:13px}
-.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px}
-.card{background:var(--card);border-radius:12px;padding:14px 16px;box-shadow:0 1px 2px #0000000d}.card b{display:block;font-size:28px;margin-top:4px}
-.panel{background:var(--card);border-radius:12px;padding:16px;box-shadow:0 1px 2px #0000000d;margin-bottom:16px}
-table{width:100%;border-collapse:collapse}th,td{padding:8px 9px;border-bottom:1px solid var(--line);text-align:right;vertical-align:top;font-size:14px}th{color:var(--muted);font-weight:600;font-size:13px}
-tr:hover td{background:#f9fafb}input[type=text],input[type=number],input[type=password],select,textarea{padding:7px 9px;border:1px solid #cfd4dc;border-radius:8px;font:inherit;width:100%}
-textarea{min-height:64px;resize:vertical}.btn{padding:7px 13px;border:0;border-radius:8px;background:var(--brand2);color:#fff;cursor:pointer;font:inherit}
-.btn.sm{padding:4px 9px;font-size:13px}.btn.gray{background:#6b7280}.btn.red{background:var(--bad)}.btn.green{background:var(--ok)}.btn.line{background:#fff;color:var(--brand2);border:1px solid var(--brand2)}
-.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
-.tag{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;background:#eef2ff;color:#3730a3;margin-left:4px}.tag.red{background:#fee2e2;color:#991b1b}.tag.green{background:#dcfce7;color:#166534}.tag.gold{background:#fef3c7;color:#92400e}
-.dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--ok);margin-left:6px;animation:b 1.2s infinite}@keyframes b{50%{opacity:.25}}
-.page{display:none}.page.on{display:block}.q{color:#1d4ed8}.a{color:#374151}.bubble{max-width:80%;padding:8px 12px;border-radius:14px;margin:4px 0;white-space:pre-wrap}
-.bubble.u{background:#dbeafe;margin-left:auto}.bubble.m{background:#f1f5f9}.chat{display:flex;flex-direction:column}
-.toast{position:fixed;bottom:20px;left:20px;background:#111827;color:#fff;padding:10px 16px;border-radius:10px;opacity:0;transition:.3s;pointer-events:none}.toast.on{opacity:1}
-.field{margin-bottom:10px}.field label{display:block;font-size:13px;color:var(--muted);margin-bottom:3px}.drag{cursor:grab;color:#9ca3af}
-.login{max-width:360px;margin:100px auto}svg text{font-family:inherit}.muted{color:var(--muted)}.pill{cursor:pointer}
-@media(max-width:800px){.side{display:none}.grid2,.grid3{grid-template-columns:1fr}}
-</style></head><body>
-<div id="loginBox" class="login" style="display:none"><div class="panel"><h2>כניסה לניהול הקו</h2><div class="field"><input type="password" id="pw" placeholder="סיסמה"></div><button class="btn" style="width:100%" onclick="login()">כניסה</button><p id="loginErr" style="color:var(--bad)"></p></div></div>
-<div class="app" id="app" style="display:none">
-<div class="side"><h1>ניהול הקו</h1><div class="nav">
-<a data-p="dash" class="on">לוח בקרה</a><a data-p="users">משתמשים</a><a data-p="conv">שיחות</a><a data-p="assist">עוזרים</a><a data-p="texts">נוסחים</a><a data-p="settings">הגדרות</a><a href="/admin/logout">יציאה</a></div>
-<p class="sub" style="margin:18px;color:#94a3b8" id="clock"></p></div>
-<div class="main">
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>חדר הבקרה של הקו</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;700&family=Heebo:wght@300;400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#F3F5F9;--paper:#FFFFFF;--ink:#172033;--mute:#6B7588;--line:#E3E7EE;
+  --navy:#14213D;--navy2:#1D2F55;--teal:#1FB2A6;--teal-soft:#DDF5F2;--amber:#F5A623;--amber-soft:#FEF1D6;
+  --coral:#E4572E;--coral-soft:#FBE3DB;--blue:#3A6FF2;--blue-soft:#E4ECFF;
+  --r:14px;--r-sm:9px;--shadow:0 1px 0 #0000000a,0 10px 30px -18px #14213d40;
+}
+[data-theme=dark]{
+  --bg:#0F1626;--paper:#172038;--ink:#EEF1F7;--mute:#9AA5BC;--line:#28324D;
+  --navy:#0B1120;--navy2:#141C30;--teal-soft:#123c39;--amber-soft:#3d2f14;--coral-soft:#3d1f18;--blue-soft:#1b2a52;
+  --shadow:0 1px 0 #00000030,0 10px 30px -18px #000c;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font-family:Heebo,Arial,sans-serif;font-size:15px;line-height:1.5}
+h1,h2,h3,.num,.key b{font-family:Rubik,Heebo,Arial,sans-serif}
+a{color:var(--blue)}
+button{font:inherit}
+input[type=text],input[type=number],input[type=password],select,textarea{
+  width:100%;padding:8px 11px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--paper);color:var(--ink);font:inherit}
+input:focus,select:focus,textarea:focus,button:focus-visible{outline:2px solid var(--teal);outline-offset:1px}
+textarea{min-height:72px;resize:vertical;line-height:1.55}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border:0;border-radius:var(--r-sm);background:var(--navy);color:#fff;cursor:pointer;transition:transform .08s,filter .15s;text-decoration:none}
+.btn:hover{filter:brightness(1.12)}.btn:active{transform:translateY(1px)}
+.btn.sm{padding:5px 10px;font-size:13px}.btn.teal{background:var(--teal)}.btn.amber{background:var(--amber);color:#3b2a00}.btn.coral{background:var(--coral)}
+.btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}.btn.blue{background:var(--blue)}
+.pill{display:inline-flex;align-items:center;gap:5px;padding:2px 9px;border-radius:999px;font-size:12px;font-weight:500;white-space:nowrap}
+.pill.teal{background:var(--teal-soft);color:#0f6d66}.pill.amber{background:var(--amber-soft);color:#7a4d00}.pill.coral{background:var(--coral-soft);color:#8a2a12}.pill.blue{background:var(--blue-soft);color:#1f46a8}.pill.gray{background:var(--line);color:var(--mute)}
+[data-theme=dark] .pill.teal{color:#7fe0d6}[data-theme=dark] .pill.amber{color:#ffd27a}[data-theme=dark] .pill.coral{color:#ff9f83}[data-theme=dark] .pill.blue{color:#9db7ff}
+.mute{color:var(--mute)}.small{font-size:13px}
 
-<div class="page on" id="p-dash"><h2><span class="dot"></span>לוח בקרה <span class="sub">מתעדכן כל 5 שניות</span></h2>
-<div class="cards"><div class="card">שיחות פעילות עכשיו<b id="l_active">0</b></div><div class="card">שיחות היום<b id="l_calls">0</b></div><div class="card">הודעות היום<b id="l_msgs">0</b></div><div class="card">משתמשים רשומים<b id="l_users">0</b></div><div class="card">סה"כ שיחות<b id="l_ct">0</b></div><div class="card">סה"כ הודעות<b id="l_mt">0</b></div></div>
-<div class="panel"><h3 style="margin-top:0">עכשיו בקו</h3><table id="activeT"></table></div>
-<div class="grid3" id="charts"></div></div>
+/* ---------- shell */
+.shell{display:grid;grid-template-columns:236px 1fr;min-height:100vh}
+.side{background:linear-gradient(180deg,var(--navy) 0%,var(--navy2) 100%);color:#fff;padding:22px 0;position:sticky;top:0;height:100vh;display:flex;flex-direction:column}
+.brand{display:flex;align-items:center;gap:10px;padding:0 20px 22px;border-bottom:1px solid #ffffff14;margin-bottom:10px}
+.brand svg{width:34px;height:34px;flex-shrink:0}
+.brand h1{font-size:17px;margin:0;font-weight:500;letter-spacing:.2px}.brand .small{color:#9fb0d0}
+.nav{display:flex;flex-direction:column;padding:6px 10px;gap:2px}
+.nav a{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;color:#c7d2e8;text-decoration:none;cursor:pointer;font-weight:400}
+.nav a svg{width:18px;height:18px;opacity:.85}
+.nav a:hover{background:#ffffff10;color:#fff}.nav a.on{background:#ffffff1c;color:#fff;font-weight:500}
+.side .foot{margin-top:auto;padding:14px 20px 0;border-top:1px solid #ffffff14;color:#9fb0d0;font-size:12px;display:flex;justify-content:space-between;align-items:center}
+.main{padding:26px 30px 60px;min-width:0}
+.topbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:22px;gap:12px;flex-wrap:wrap}
+.topbar h2{margin:0;font-size:24px;font-weight:500}
+.live-badge{display:inline-flex;align-items:center;gap:8px;background:var(--paper);border:1px solid var(--line);border-radius:999px;padding:5px 12px 5px 8px;font-size:13px;box-shadow:var(--shadow)}
+.live-badge i{width:9px;height:9px;border-radius:50%;background:var(--teal);animation:ring 1.8s infinite}
+@keyframes ring{0%{box-shadow:0 0 0 0 #1fb2a666}70%{box-shadow:0 0 0 8px #1fb2a600}100%{box-shadow:0 0 0 0 #1fb2a600}}
+.page{display:none}.page.on{display:block}
 
-<div class="page" id="p-users"><h2>משתמשים</h2>
-<div class="panel"><div class="row"><input type="text" id="uSearch" placeholder="חיפוש לפי שם או טלפון" style="max-width:280px" oninput="renderUsers()">
-<span class="muted">|</span><input type="text" id="addPhone" placeholder="טלפון" style="max-width:150px"><input type="text" id="addName" placeholder="שם" style="max-width:150px"><button class="btn sm" onclick="addUser()">הוסף משתמש ידנית</button></div></div>
-<div class="panel"><table id="usersT"></table></div></div>
+/* ---------- board (hero) */
+.board{background:var(--navy);color:#fff;border-radius:18px;padding:22px 24px;box-shadow:var(--shadow);margin-bottom:18px;position:relative;overflow:hidden}
+.board:before{content:"";position:absolute;inset:0;background:radial-gradient(600px 220px at 85% -10%,#1fb2a633,transparent 60%);pointer-events:none}
+.board .head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:14px}
+.board h3{margin:0;font-size:17px;font-weight:500}.board .head .mute{color:#9fb0d0}
+.stats{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:16px}
+.stat{background:#ffffff0f;border:1px solid #ffffff14;border-radius:12px;padding:10px 12px}
+.stat .num{font-size:30px;font-weight:500;line-height:1.1}.stat .small{color:#9fb0d0}
+.stat.hot .num{color:#5ee6d8}
+.lines{display:flex;flex-direction:column;gap:6px}
+.lineRow{display:grid;grid-template-columns:38px 1.2fr 1fr 1fr 1fr 2fr;gap:10px;align-items:center;background:#ffffff0a;border-radius:10px;padding:8px 12px;font-size:14px}
+.lineRow .mute{color:#9fb0d0}
+.wave{display:flex;align-items:flex-end;gap:2px;height:22px;width:34px}
+.wave i{width:4px;background:#5ee6d8;border-radius:2px;animation:wv .9s ease-in-out infinite;height:30%}
+.wave i:nth-child(2){animation-delay:.15s}.wave i:nth-child(3){animation-delay:.3s}.wave i:nth-child(4){animation-delay:.45s}.wave i:nth-child(5){animation-delay:.6s}
+@keyframes wv{0%,100%{height:30%}50%{height:100%}}
+.wave.wait i{background:var(--amber);animation:blink 1.2s infinite}.wave.menu i{background:#9fb0d0;animation:none;height:35%}
+@keyframes blink{50%{opacity:.25}}
+.empty{color:#9fb0d0;padding:14px;text-align:center;background:#ffffff08;border-radius:10px;border:1px dashed #ffffff22}
+@media (prefers-reduced-motion:reduce){.wave i,.live-badge i{animation:none}}
 
-<div class="page" id="p-conv"><h2>שיחות</h2>
-<div class="panel"><div class="row"><input type="text" id="cSearch" placeholder="חיפוש בתוכן השיחות" style="max-width:300px" oninput="renderConv()"><select id="cUser" style="max-width:220px" onchange="renderConv()"><option value="">כל המשתמשים</option></select>
-<button class="btn sm gray" onclick="clearLog()">נקה יומן</button></div></div>
-<div id="convList"></div></div>
+/* ---------- panels */
+.panel{background:var(--paper);border-radius:var(--r);padding:18px 20px;box-shadow:var(--shadow);margin-bottom:16px;border:1px solid var(--line)}
+.panel h3{margin:0 0 12px;font-size:16px;font-weight:500}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.between{justify-content:space-between}
+table{width:100%;border-collapse:collapse}th,td{padding:9px 10px;border-bottom:1px solid var(--line);text-align:right;vertical-align:middle;font-size:14px}
+th{color:var(--mute);font-weight:500;font-size:13px}tbody tr:last-child td{border-bottom:0}tbody tr:hover td{background:#00000006}
+[data-theme=dark] tbody tr:hover td{background:#ffffff08}
+.avatar{display:inline-flex;width:32px;height:32px;border-radius:50%;align-items:center;justify-content:center;color:#fff;font-weight:500;font-size:14px;margin-left:8px;flex-shrink:0}
+.field{margin-bottom:12px}.field label{display:block;font-size:13px;color:var(--mute);margin-bottom:4px}
+.chart svg{width:100%;height:auto}.chart .bar{fill:var(--navy)}[data-theme=dark] .chart .bar{fill:#5ee6d8}
+.chart text{fill:var(--mute);font-size:11px}
 
-<div class="page" id="p-assist"><h2>עוזרים</h2><p class="sub">הסדר כאן = מספר ההקשה בתפריט (1 עד 8). עוזר כבוי לא מופיע בתפריט. "מילים" = איך המתקשר קורא לעוזר כשהוא מבקש לעבור אליו בדיבור.</p>
-<div id="assistList"></div><div class="row" style="margin:12px 0"><button class="btn line" onclick="addAssistant()">+ עוזר חדש</button><button class="btn" onclick="saveAssistants()">שמור עוזרים</button></div></div>
+/* ---------- keypad */
+.keypadWrap{display:grid;grid-template-columns:360px 1fr;gap:18px;align-items:start}
+.keypad{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.key{aspect-ratio:1/1;border-radius:18px;background:var(--paper);border:1px solid var(--line);box-shadow:var(--shadow);cursor:pointer;display:flex;flex-direction:column;justify-content:center;align-items:center;padding:8px;text-align:center;transition:transform .08s,border-color .15s;position:relative}
+.key b{font-size:34px;font-weight:500;line-height:1}.key span{font-size:13px;color:var(--mute);margin-top:6px;line-height:1.25}
+.key:hover{transform:translateY(-2px)}.key.sel{border-color:var(--teal);box-shadow:0 0 0 3px var(--teal-soft),var(--shadow)}
+.key.off{opacity:.45}.key.end{background:var(--coral-soft);border-color:transparent}.key.end b{color:#8a2a12}[data-theme=dark] .key.end b{color:#ff9f83}
+.key.add{border-style:dashed;background:transparent;box-shadow:none}.key.add b{color:var(--mute);font-size:28px}
+.key .dot{position:absolute;top:10px;left:10px;width:8px;height:8px;border-radius:50%;background:var(--teal)}.key.off .dot{background:var(--mute)}
 
-<div class="page" id="p-texts"><h2>נוסחים</h2><p class="sub">כל מה שהקו אומר. אפשר להשתמש ב-{name} לשם המתקשר, ב-{assistant} לשם העוזר, וב-{digit} למספר ההקשה.</p>
-<div class="panel" id="textsList"></div><button class="btn" onclick="saveTexts()">שמור נוסחים</button></div>
+/* ---------- chat */
+.thread{display:flex;flex-direction:column;gap:6px}
+.msg{max-width:78%;padding:9px 13px;border-radius:16px;white-space:pre-wrap;line-height:1.5}
+.msg.u{background:var(--blue-soft);margin-left:auto;border-bottom-right-radius:5px}.msg.a{background:var(--bg);border-bottom-left-radius:5px}
+.who{font-size:12px;color:var(--mute);margin:8px 0 2px}
 
-<div class="page" id="p-settings"><h2>הגדרות</h2><div class="panel" id="settingsBox"></div><button class="btn" onclick="saveSettings()">שמור הגדרות</button>
-<div class="panel" style="margin-top:16px"><h3 style="margin-top:0">סיכום יומי למייל</h3><p id="mailState"></p><button class="btn line" onclick="sendMail()">שלח סיכום של היום עכשיו</button> <span id="mailRes"></span></div>
-<div class="panel"><h3 style="margin-top:0">בדיקת קול טבעי</h3><div class="row"><select id="ttsVoice" style="max-width:300px"></select><button class="btn line" onclick="testTts()">בדוק</button><span id="ttsRes"></span></div><p class="sub">בודק שהשרת מצליח לייצר קול (בלי להעלות לימות).</p></div></div>
+/* ---------- misc */
+.toast{position:fixed;bottom:22px;left:22px;background:var(--navy);color:#fff;padding:10px 16px;border-radius:12px;opacity:0;transform:translateY(8px);transition:.25s;pointer-events:none;box-shadow:var(--shadow)}
+.toast.on{opacity:1;transform:none}
+.login{min-height:100vh;display:grid;place-items:center;background:var(--navy)}
+.login .box{background:var(--paper);border-radius:18px;padding:28px 28px 22px;width:360px;box-shadow:0 30px 60px -20px #000a}
+.login h2{margin:8px 0 18px;font-weight:500}
+.toggle{background:transparent;border:1px solid #ffffff2a;color:#c7d2e8;border-radius:8px;padding:4px 8px;cursor:pointer;font-size:12px}
+@media (max-width:980px){.shell{grid-template-columns:1fr}.side{position:static;height:auto}.stats{grid-template-columns:repeat(3,1fr)}.keypadWrap,.grid2,.grid3{grid-template-columns:1fr}.lineRow{grid-template-columns:38px 1fr 1fr;font-size:13px}.lineRow .hideS{display:none}}
+</style>
+</head>
+<body>
 
-</div></div><div class="toast" id="toast"></div>
+<div id="loginBox" class="login" style="display:none">
+  <div class="box">
+    <div class="row"><svg viewBox="0 0 40 40" width="34" height="34"><circle cx="20" cy="20" r="18" fill="#14213D"/><g fill="#5ee6d8"><circle cx="13" cy="13" r="3"/><circle cx="20" cy="13" r="3"/><circle cx="27" cy="13" r="3"/><circle cx="13" cy="20" r="3"/><circle cx="20" cy="20" r="3"/><circle cx="27" cy="20" r="3"/><circle cx="13" cy="27" r="3"/><circle cx="20" cy="27" r="3"/><circle cx="27" cy="27" r="3"/></g></svg><span class="mute">חדר הבקרה</span></div>
+    <h2>כניסה לניהול הקו</h2>
+    <div class="field"><input type="password" id="pw" placeholder="סיסמה"></div>
+    <button class="btn teal" style="width:100%;justify-content:center" onclick="login()">כניסה</button>
+    <p id="loginErr" style="color:var(--coral);margin:12px 0 0"></p>
+  </div>
+</div>
+
+<div class="shell" id="app" style="display:none">
+  <aside class="side">
+    <div class="brand">
+      <svg viewBox="0 0 40 40"><circle cx="20" cy="20" r="19" fill="#ffffff12"/><g fill="#5ee6d8"><circle cx="13" cy="13" r="2.6"/><circle cx="20" cy="13" r="2.6"/><circle cx="27" cy="13" r="2.6"/><circle cx="13" cy="20" r="2.6"/><circle cx="20" cy="20" r="2.6"/><circle cx="27" cy="20" r="2.6"/><circle cx="13" cy="27" r="2.6"/><circle cx="20" cy="27" r="2.6"/><circle cx="27" cy="27" r="2.6"/></g></svg>
+      <div><h1>חדר הבקרה</h1><div class="small">הקו החכם</div></div>
+    </div>
+    <nav class="nav">
+      <a data-p="dash" class="on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="8" height="8" rx="2"/><rect x="13" y="3" width="8" height="5" rx="2"/><rect x="13" y="11" width="8" height="10" rx="2"/><rect x="3" y="14" width="8" height="7" rx="2"/></svg>לוח בקרה</a>
+      <a data-p="users"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="8" r="4"/><path d="M2 20c0-3.5 3-6 7-6s7 2.5 7 6"/><circle cx="17" cy="9" r="3"/><path d="M17 14c3 0 5 2 5 5"/></svg>משתמשים</a>
+      <a data-p="conv"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 5h16v11H8l-4 4z"/></svg>שיחות</a>
+      <a data-p="assist"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="5" y="2" width="14" height="20" rx="3"/><circle cx="9" cy="8" r="1.2"/><circle cx="12" cy="8" r="1.2"/><circle cx="15" cy="8" r="1.2"/><circle cx="9" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="15" cy="12" r="1.2"/><circle cx="9" cy="16" r="1.2"/><circle cx="12" cy="16" r="1.2"/><circle cx="15" cy="16" r="1.2"/></svg>עוזרים</a>
+      <a data-p="texts"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 6h16M4 12h10M4 18h13"/></svg>נוסחים</a>
+      <a data-p="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2"/></svg>הגדרות</a>
+    </nav>
+    <div class="foot"><span id="clock"></span><button class="toggle" onclick="toggleTheme()">כהה / בהיר</button></div>
+    <div style="padding:10px 20px 0"><a href="/admin/logout" style="color:#9fb0d0;font-size:13px;text-decoration:none">יציאה</a></div>
+  </aside>
+
+  <main class="main">
+
+    <section class="page on" id="p-dash">
+      <div class="topbar"><h2>לוח בקרה</h2><span class="live-badge"><i></i>מחובר לקו, מתעדכן כל 5 שניות</span></div>
+      <div class="board">
+        <div class="head"><h3>עכשיו בקו</h3><span class="mute" id="boardTime"></span></div>
+        <div class="stats">
+          <div class="stat hot"><div class="num" id="l_active">0</div><div class="small">מדברים עכשיו</div></div>
+          <div class="stat"><div class="num" id="l_calls">0</div><div class="small">שיחות היום</div></div>
+          <div class="stat"><div class="num" id="l_msgs">0</div><div class="small">שאלות היום</div></div>
+          <div class="stat"><div class="num" id="l_users">0</div><div class="small">משתמשים רשומים</div></div>
+          <div class="stat"><div class="num" id="l_ct">0</div><div class="small">שיחות מאז ההתחלה</div></div>
+          <div class="stat"><div class="num" id="l_mt">0</div><div class="small">שאלות מאז ההתחלה</div></div>
+        </div>
+        <div class="lines" id="lines"></div>
+      </div>
+      <div class="grid3" id="charts"></div>
+    </section>
+
+    <section class="page" id="p-users">
+      <div class="topbar"><h2>משתמשים</h2>
+        <div class="row"><input type="text" id="uSearch" placeholder="חיפוש לפי שם או טלפון" style="width:240px" oninput="renderUsers()"></div></div>
+      <div class="panel">
+        <div class="row"><input type="text" id="addPhone" placeholder="טלפון" style="width:160px"><input type="text" id="addName" placeholder="שם" style="width:160px"><button class="btn sm ghost" onclick="addUser()">הוסף משתמש ידנית</button><span class="mute small">מי שנוסף כאן לא יתבקש להירשם בקו</span></div>
+      </div>
+      <div class="panel" style="padding:0;overflow:hidden"><table id="usersT"></table></div>
+    </section>
+
+    <section class="page" id="p-conv">
+      <div class="topbar"><h2>שיחות</h2>
+        <div class="row"><input type="text" id="cSearch" placeholder="חיפוש בתוכן" style="width:220px" oninput="renderConv()"><select id="cUser" style="width:220px" onchange="renderConv()"><option value="">כל המשתמשים</option></select>
+        <a class="btn sm ghost" href="/api/export.csv">הורד לאקסל</a><button class="btn sm ghost" onclick="clearLog()">נקה יומן</button></div></div>
+      <div id="convList"></div>
+    </section>
+
+    <section class="page" id="p-assist">
+      <div class="topbar"><h2>עוזרים</h2><div class="row"><button class="btn ghost" onclick="addAssistant()">+ עוזר חדש</button><button class="btn teal" onclick="saveAssistants()">שמור שינויים</button></div></div>
+      <div class="keypadWrap">
+        <div>
+          <div class="keypad" id="keypad"></div>
+          <p class="mute small" style="margin-top:12px">כך נשמע התפריט למתקשר: כל מקש הוא עוזר. לחיצה על מקש פותחת אותו לעריכה. 9 תמיד סיום.</p>
+        </div>
+        <div class="panel" id="editor"><p class="mute">בחר מקש כדי לערוך עוזר</p></div>
+      </div>
+    </section>
+
+    <section class="page" id="p-texts">
+      <div class="topbar"><h2>נוסחים</h2><button class="btn teal" onclick="saveTexts()">שמור נוסחים</button></div>
+      <p class="mute small">כל משפט שהקו אומר. {name} = שם המתקשר, {assistant} = שם העוזר, {digit} = מספר ההקשה.</p>
+      <div class="grid2" id="textsList"></div>
+    </section>
+
+    <section class="page" id="p-settings">
+      <div class="topbar"><h2>הגדרות</h2><button class="btn teal" onclick="saveSettings()">שמור הגדרות</button></div>
+      <div class="grid2">
+        <div class="panel" id="settingsBox"></div>
+        <div>
+          <div class="panel"><h3>קול טבעי</h3><div id="voiceBox"></div>
+            <div class="row" style="margin-top:8px"><select id="ttsVoice" style="width:280px"></select><button class="btn sm ghost" onclick="testTts()">בדוק שהקול עובד</button><span id="ttsRes" class="small"></span></div></div>
+          <div class="panel"><h3>סיכום יומי למייל</h3><p id="mailState" class="small"></p><div class="row"><button class="btn sm ghost" onclick="sendMail()">שלח סיכום של היום עכשיו</button><span id="mailRes" class="small"></span></div></div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+<div class="toast" id="toast"></div>
+
 <script>
-let S=null;const $=id=>document.getElementById(id);const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+let S=null;
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 function toast(m){const t=$('toast');t.textContent=m;t.classList.add('on');setTimeout(()=>t.classList.remove('on'),2200);}
 async function api(path,body){const r=await fetch(path,body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{});if(r.status===403){showLogin();throw new Error('auth');}return r.json();}
-function showLogin(){$('app').style.display='none';$('loginBox').style.display='block';}
+function showLogin(){$('app').style.display='none';$('loginBox').style.display='grid';setTimeout(()=>$('pw').focus(),50);}
 async function login(){const d=await api('/admin/login',{key:$('pw').value});if(d.ok){$('loginBox').style.display='none';boot();}else $('loginErr').textContent=d.error||'שגיאה';}
-$('pw')?.addEventListener('keydown',e=>{if(e.key==='Enter')login();});
-document.querySelectorAll('.nav a[data-p]').forEach(a=>a.onclick=()=>{document.querySelectorAll('.nav a').forEach(x=>x.classList.remove('on'));a.classList.add('on');document.querySelectorAll('.page').forEach(p=>p.classList.remove('on'));$('p-'+a.dataset.p).classList.add('on');});
-async function boot(){try{S=await api('/api/state');}catch(e){return;}$('app').style.display='flex';renderAll();tick();}
+$('pw').addEventListener('keydown',e=>{if(e.key==='Enter')login();});
+document.querySelectorAll('.nav a[data-p]').forEach(a=>a.onclick=()=>{document.querySelectorAll('.nav a').forEach(x=>x.classList.remove('on'));a.classList.add('on');document.querySelectorAll('.page').forEach(p=>p.classList.remove('on'));$('p-'+a.dataset.p).classList.add('on');window.scrollTo(0,0);});
+function toggleTheme(){const d=document.documentElement;const n=d.dataset.theme==='dark'?'light':'dark';d.dataset.theme=n;try{localStorage.setItem('theme',n);}catch(e){}}
+try{const t=localStorage.getItem('theme');if(t)document.documentElement.dataset.theme=t;}catch(e){}
+
+async function boot(){try{S=await api('/api/state');}catch(e){return;}$('app').style.display='grid';renderAll();tick();}
+async function reload(){S=await api('/api/state');renderAll();}
 function renderAll(){renderLive(S.live);renderCharts();renderUsers();renderConv();renderAssist();renderTexts();renderSettings();}
-async function tick(){try{const d=await api('/api/live');renderLive(d);}catch(e){}setTimeout(tick,5000);}
-function renderLive(d){$('l_active').textContent=d.active.length;$('l_calls').textContent=d.calls_today;$('l_msgs').textContent=d.msgs_today;$('l_users').textContent=d.users;$('l_ct').textContent=d.calls_total;$('l_mt').textContent=d.msgs_total;$('clock').textContent=d.time;
-let t='<tr><th>מי</th><th>טלפון</th><th>עוזר</th><th>מצב</th><th>מאז</th><th>שאלה אחרונה</th></tr>';if(!d.active.length)t+='<tr><td colspan="6" class="muted">אין שיחות פעילות כרגע</td></tr>';
-for(const a of d.active)t+=`<tr><td>${esc(a.name)}</td><td>${esc(a.phone)}</td><td>${esc(a.assistant)}</td><td>${esc(a.state)}</td><td>${esc(a.since)}</td><td>${esc(a.last_q)}</td></tr>`;$('activeT').innerHTML=t;}
-function bar(title,pairs,color){if(!pairs.length)return `<div class="panel"><b>${esc(title)}</b><p class="muted">אין נתונים עדיין</p></div>`;const mx=Math.max(...pairs.map(p=>p[1]))||1;const w=Math.max(300,pairs.length*32+30);let s=`<div class="panel"><b>${esc(title)}</b><svg viewBox="0 0 ${w} 180" width="100%">`;
-pairs.forEach((p,i)=>{const x=15+i*32,h=Math.round(130*p[1]/mx);s+=`<rect x="${x}" y="${150-h}" width="24" height="${h}" rx="4" fill="${color}"/><text x="${x+12}" y="${145-h}" font-size="11" text-anchor="middle">${p[1]}</text><text x="${x+12}" y="170" font-size="9" text-anchor="middle">${esc(String(p[0])).slice(0,10)}</text>`;});return s+'</svg></div>';}
-function renderCharts(){const c=S.charts;$('charts').innerHTML=bar('שיחות ב-14 הימים האחרונים',c.per_day,'#1e3a5f')+bar('הודעות לפי עוזר',c.per_assistant,'#2563eb')+bar('המשתמשים הפעילים',c.top_users,'#16a34a');}
-function renderUsers(){const q=($('uSearch').value||'').trim();let t='<tr><th>שם</th><th>טלפון</th><th>שיחות</th><th>הודעות</th><th>היום</th><th>שיחה אחרונה</th><th>סטטוס</th><th>הודעה לשיחה הבאה</th><th></th></tr>';
-const list=S.users.filter(u=>!q||u.name.includes(q)||u.phone.includes(q)).sort((a,b)=>b.last.localeCompare(a.last));
-for(const u of list){t+=`<tr><td><input type="text" value="${esc(u.name)}" style="width:120px" onchange="userAct('${u.phone}','rename',{name:this.value})"></td><td>${esc(u.phone)}${u.owner?' <span class="tag gold">בעלים</span>':''}</td><td>${u.calls}</td><td>${u.msgs}</td><td>${u.today}</td><td>${esc(u.last)}</td>
-<td>${u.blocked?'<span class="tag red">חסום</span>':''}${u.unlimited?'<span class="tag green">בלי הגבלה</span>':''}</td>
-<td><input type="text" value="${esc(u.note)}" placeholder="יושמע לו פעם אחת" style="width:180px" onchange="userAct('${u.phone}','note',{note:this.value})"></td>
-<td class="row"><button class="btn sm gray" onclick="showUser('${u.phone}')">שיחות</button><button class="btn sm ${u.blocked?'green':'red'}" onclick="userAct('${u.phone}','block')">${u.blocked?'בטל חסימה':'חסום'}</button>${u.owner?'':`<button class="btn sm line" onclick="userAct('${u.phone}','unlimited')">${u.unlimited?'הפעל הגבלה':'בלי הגבלה'}</button><button class="btn sm gray" onclick="if(confirm('למחוק? בשיחה הבאה יירשם מחדש'))userAct('${u.phone}','delete')">מחק</button>`}</td></tr>`;}
-if(!list.length)t+='<tr><td colspan="9" class="muted">אין משתמשים</td></tr>';$('usersT').innerHTML=t;
-const sel=$('cUser');const cur=sel.value;sel.innerHTML='<option value="">כל המשתמשים</option>'+S.users.map(u=>`<option value="${u.phone}">${esc(u.name)} (${u.phone})</option>`).join('');sel.value=cur;}
+async function tick(){try{renderLive(await api('/api/live'));}catch(e){}setTimeout(tick,5000);}
+
+/* ---------- dashboard */
+function renderLive(d){
+  for(const [k,v] of Object.entries({l_active:d.active.length,l_calls:d.calls_today,l_msgs:d.msgs_today,l_users:d.users,l_ct:d.calls_total,l_mt:d.msgs_total}))$(k).textContent=v;
+  $('clock').textContent=d.time;$('boardTime').textContent='עודכן '+d.time.slice(11);
+  if(!d.active.length){$('lines').innerHTML='<div class="empty">השקט שלפני השיחה הבאה. כשמישהו יתקשר הוא יופיע כאן.</div>';return;}
+  $('lines').innerHTML=d.active.map(a=>{const cls=a.state==='מחכה לתשובה'?'wait':(a.state==='מדבר'?'':'menu');
+    return `<div class="lineRow"><div class="wave ${cls}"><i></i><i></i><i></i><i></i><i></i></div><div>${esc(a.name)}<div class="mute small">${esc(a.phone)}</div></div><div class="hideS">${esc(a.assistant)}</div><div>${esc(a.state)}</div><div class="mute hideS">מ-${esc(a.since)}</div><div class="hideS mute">${esc(a.last_q)||'—'}</div></div>`;}).join('');
+}
+function bar(title,pairs){
+  if(!pairs.length)return `<div class="panel chart"><h3>${esc(title)}</h3><p class="mute small">עדיין אין נתונים. ברגע שיהיו שיחות הגרף יתמלא.</p></div>`;
+  const mx=Math.max(...pairs.map(p=>p[1]))||1,w=Math.max(300,pairs.length*32+24);
+  let s=`<div class="panel chart"><h3>${esc(title)}</h3><svg viewBox="0 0 ${w} 170">`;
+  pairs.forEach((p,i)=>{const x=12+i*32,h=Math.round(120*p[1]/mx);s+=`<rect class="bar" x="${x}" y="${140-h}" width="22" height="${h}" rx="5"/><text x="${x+11}" y="${134-h}" text-anchor="middle">${p[1]}</text><text x="${x+11}" y="160" text-anchor="middle">${esc(String(p[0])).slice(0,9)}</text>`;});
+  return s+'</svg></div>';
+}
+function renderCharts(){const c=S.charts;$('charts').innerHTML=bar('שיחות ב-14 הימים האחרונים',c.per_day)+bar('שאלות לפי עוזר',c.per_assistant)+bar('המשתמשים הפעילים',c.top_users);}
+
+/* ---------- users */
+const COLORS=['#3A6FF2','#1FB2A6','#F5A623','#E4572E','#7C4DFF','#0E9F6E','#D6336C'];
+const avatar=n=>{const i=[...(n||'?')].reduce((a,c)=>a+c.charCodeAt(0),0)%COLORS.length;return `<span class="avatar" style="background:${COLORS[i]}">${esc((n||'?')[0])}</span>`;};
+function noteCell(u){
+  if(!u.note)return `<input type="text" placeholder="משפט שיישמע לו פעם אחת" style="width:210px" onchange="userAct('${u.phone}','note',{note:this.value})">`;
+  const st=u.note.heard?`<span class="pill teal">נשמע ${esc(u.note.heard)}</span>`:`<span class="pill amber">ממתין לשיחה הבאה</span>`;
+  return `<div style="max-width:300px"><div class="small">${esc(u.note.text)}</div><div class="row" style="margin-top:4px">${st}${u.note.heard?`<button class="btn sm ghost" onclick="userAct('${u.phone}','note_again')">השמע שוב</button>`:''}<button class="btn sm ghost" onclick="userAct('${u.phone}','note',{note:''})">מחק</button></div></div>`;
+}
+function renderUsers(){
+  const q=($('uSearch').value||'').trim();
+  const list=S.users.filter(u=>!q||u.name.includes(q)||u.phone.includes(q)).sort((a,b)=>(b.last||'').localeCompare(a.last||''));
+  let t='<thead><tr><th>מי</th><th>שיחות</th><th>שאלות</th><th>היום</th><th>שיחה אחרונה</th><th>סטטוס</th><th>הודעה חד-פעמית</th><th></th></tr></thead><tbody>';
+  for(const u of list){t+=`<tr><td><div class="row" style="flex-wrap:nowrap">${avatar(u.name)}<div><input type="text" value="${esc(u.name)}" style="width:130px;padding:4px 8px" onchange="userAct('${u.phone}','rename',{name:this.value})"><div class="mute small">${esc(u.phone)}${u.owner?' <span class="pill blue">בעלים</span>':''}</div></div></div></td>
+    <td>${u.calls}</td><td>${u.msgs}</td><td>${u.today}</td><td class="small">${esc(u.last||'—')}</td>
+    <td>${u.blocked?'<span class="pill coral">חסום</span> ':''}${u.unlimited?'<span class="pill teal">בלי הגבלה</span>':'<span class="pill gray">מכסה רגילה</span>'}</td>
+    <td>${noteCell(u)}</td>
+    <td><div class="row" style="flex-wrap:nowrap"><button class="btn sm ghost" onclick="showUser('${u.phone}')">שיחות</button>${u.owner?'':`<button class="btn sm ${u.blocked?'teal':'coral'}" onclick="userAct('${u.phone}','block')">${u.blocked?'בטל חסימה':'חסום'}</button><button class="btn sm ghost" onclick="userAct('${u.phone}','unlimited')">${u.unlimited?'הפעל מכסה':'בלי הגבלה'}</button><button class="btn sm ghost" onclick="if(confirm('למחוק את המשתמש? בשיחה הבאה הוא יתבקש להירשם מחדש'))userAct('${u.phone}','delete')">מחק</button>`}</div></td></tr>`;}
+  if(!list.length)t+='<tr><td colspan="8" class="mute" style="text-align:center;padding:26px">אין משתמשים שתואמים לחיפוש</td></tr>';
+  $('usersT').innerHTML=t+'</tbody>';
+  const sel=$('cUser'),cur=sel.value;sel.innerHTML='<option value="">כל המשתמשים</option>'+S.users.map(u=>`<option value="${u.phone}">${esc(u.name)} (${u.phone})</option>`).join('');sel.value=cur;
+}
 async function userAct(phone,action,extra){await api('/api/user',{phone,action,...extra});await reload();toast('נשמר');}
-async function addUser(){const p=$('addPhone').value.trim(),n=$('addName').value.trim();if(!p||!n)return toast('צריך טלפון ושם');await api('/api/user',{phone:p,name:n,action:'add'});$('addPhone').value='';$('addName').value='';await reload();toast('נוסף');}
+async function addUser(){const p=$('addPhone').value.trim(),n=$('addName').value.trim();if(!p||!n)return toast('צריך גם טלפון וגם שם');await api('/api/user',{phone:p,name:n,action:'add'});$('addPhone').value='';$('addName').value='';await reload();toast('המשתמש נוסף');}
 function showUser(phone){$('cUser').value=phone;document.querySelector('.nav a[data-p=conv]').click();renderConv();}
-function renderConv(){const q=($('cSearch').value||'').trim(),ph=$('cUser').value;const groups={};const order=[];
-for(const l of S.log){if(ph&&l.phone!==ph)continue;if(q&&!(l.q.includes(q)||l.a.includes(q)||(l.name||'').includes(q)))continue;const k=l.call||(l.phone+'|'+l.time.slice(0,10));if(!groups[k]){groups[k]=[];order.push(k);}groups[k].push(l);}
-let s='';for(const k of order){const msgs=groups[k].slice().reverse();const f=msgs[0];s+=`<div class="panel"><div class="row" style="justify-content:space-between"><b>${esc(f.name)} <span class="muted">${esc(f.phone)}</span></b><span class="muted">${esc(f.time)} · ${msgs.length} הודעות</span></div><div class="chat">`;
-let last='';for(const m of msgs){if(m.persona!==last){s+=`<div class="muted" style="font-size:12px;margin:6px 0 2px">— ${esc(m.persona)} —</div>`;last=m.persona;}s+=`<div class="bubble u">${esc(m.q)}</div><div class="bubble m">${esc(m.a)}</div>`;}s+='</div></div>';}
-$('convList').innerHTML=s||'<div class="panel muted">אין שיחות</div>';}
-async function clearLog(){if(!confirm('למחוק את כל יומן השיחות?'))return;await api('/api/clear',{what:'log'});await reload();toast('היומן נוקה');}
-let A=[];function renderAssist(){A=JSON.parse(JSON.stringify(S.assistants));drawAssist();}
-function drawAssist(){let s='';A.forEach((a,i)=>{const digit=A.slice(0,i+1).filter(x=>x.on).length;s+=`<div class="panel"><div class="row" style="justify-content:space-between"><div class="row"><b>${a.on?'הקשה '+digit:'כבוי'}</b><span class="tag">${esc(a.id)}</span></div>
-<div class="row"><button class="btn sm gray" onclick="mv(${i},-1)">▲</button><button class="btn sm gray" onclick="mv(${i},1)">▼</button><label><input type="checkbox" ${a.on?'checked':''} onchange="A[${i}].on=this.checked;drawAssist()"> פעיל</label><button class="btn sm red" onclick="if(confirm('למחוק את העוזר?')){A.splice(${i},1);drawAssist();}">מחק</button></div></div>
-<div class="grid2" style="margin-top:8px"><div class="field"><label>שם העוזר (כפי שנשמע בתפריט)</label><input type="text" value="${esc(a.name)}" onchange="A[${i}].name=this.value"></div><div class="field"><label>מילים לזיהוי בדיבור (מופרדות בפסיק)</label><input type="text" value="${esc(a.keywords||'')}" onchange="A[${i}].keywords=this.value"></div></div>
-<div class="field"><label>ההנחיה ל-AI (האופי, התחום, איך לענות)</label><textarea onchange="A[${i}].prompt=this.value">${esc(a.prompt)}</textarea></div></div>`;});$('assistList').innerHTML=s;}
-function mv(i,d){const j=i+d;if(j<0||j>=A.length)return;[A[i],A[j]]=[A[j],A[i]];drawAssist();}
-function addAssistant(){A.push({id:'a'+Math.random().toString(36).slice(2,8),name:'עוזר חדש',prompt:'אתה עוזר ידידותי.',on:true,keywords:''});drawAssist();window.scrollTo(0,document.body.scrollHeight);}
-async function saveAssistants(){const d=await api('/api/assistants',{assistants:A});if(d.ok){await reload();toast('העוזרים נשמרו');}else toast(d.error||'שגיאה');}
-const TXT_LABELS={first_time:'פעם ראשונה - בקשת שם',ask_name_again:'בקשת שם חוזרת',name_saved:'אחרי שמירת השם',menu_hello:'פתיחת התפריט',menu_item:'שורה בתפריט (לכל עוזר)',menu_end:'סיום התפריט',enter:'כניסה לעוזר',listening:'הקשבה (כשאין תשובה להשמיע)',not_heard:'לא נקלטה הקלטה',wait:'הודעות המתנה (מופרדות בפסיק, מתחלפות)',too_long:'התשובה לוקחת יותר מדי זמן',limit:'הגעה למכסה היומית',blocked:'מספר חסום',voice_changed:'הקול הוחלף (כשאין קול טבעי)',goodbye:'פרידה',error:'תקלה זמנית',not_understood:'לא הובן'};
-function renderTexts(){let s='';for(const k in TXT_LABELS)s+=`<div class="field"><label>${esc(TXT_LABELS[k])}</label><input type="text" id="t_${k}" value="${esc(S.texts[k]||'')}"></div>`;$('textsList').innerHTML=s;}
-async function saveTexts(){const d={};for(const k in TXT_LABELS)d[k]=$('t_'+k).value;await api('/api/texts',d);await reload();toast('הנוסחים נשמרו');}
-function renderSettings(){const s=S.settings;$('settingsBox').innerHTML=`<div class="field"><label>הודעה בתחילת כל שיחה (ריק = בלי)</label><input type="text" id="s_announcement" value="${esc(s.announcement)}"></div>
-<div class="grid2"><div class="field"><label>קול טבעי</label><select id="s_tts"><option value="on" ${s.tts=='on'?'selected':''}>פעיל (Edge, קול גבר טבעי)</option><option value="off" ${s.tts!='on'?'selected':''}>כבוי - הקראה של ימות (מהיר יותר)</option></select></div>
-<div class="field"><label>רשימת קולות (מופרדים בפסיק, הראשון ברירת מחדל)</label><input type="text" id="s_voices" value="${esc(s.voices)}"></div>
-<div class="field"><label>הודעות ליום לכל משתמש (0 = בלי הגבלה)</label><input type="number" id="s_daily_limit" value="${s.daily_limit}"></div><div class="field"><label>אורך הקלטה מקסימלי (שניות)</label><input type="number" id="s_record_max" value="${s.record_max}"></div>
-<div class="field"><label>מספרים ללא הגבלה (מופרדים בפסיק)</label><input type="text" id="s_unlimited_phones" value="${esc(s.unlimited_phones)}"></div><div class="field"><label>מספרים חסומים</label><input type="text" id="s_blocked_phones" value="${esc(s.blocked_phones)}"></div>
-<div class="field"><label>שעת הסיכום היומי למייל (0-23)</label><input type="number" id="s_mail_hour" value="${s.mail_hour}"></div></div>`;
-$('mailState').innerHTML=S.mail?`<span style="color:var(--ok)">מוגדר, נשלח אל ${esc(S.mail_to)}</span>`:'<span style="color:var(--bad)">לא מוגדר - צריך MAIL_USER ו-MAIL_PASS ב-Render</span>';
-$('ttsVoice').innerHTML=S.voices.map(v=>`<option>${esc(v)}</option>`).join('');}
+
+/* ---------- conversations */
+function renderConv(){
+  const q=($('cSearch').value||'').trim(),ph=$('cUser').value,groups={},order=[];
+  for(const l of S.log){if(ph&&l.phone!==ph)continue;if(q&&!(l.q.includes(q)||l.a.includes(q)||(l.name||'').includes(q)))continue;const k=l.call||(l.phone+'|'+l.time.slice(0,10));if(!groups[k]){groups[k]=[];order.push(k);}groups[k].push(l);}
+  let s='';
+  for(const k of order){const msgs=groups[k].slice().reverse(),f=msgs[0];
+    s+=`<div class="panel"><div class="row between"><div class="row" style="flex-wrap:nowrap">${avatar(f.name)}<div><b>${esc(f.name)}</b><div class="mute small">${esc(f.phone)}</div></div></div><span class="mute small">${esc(f.time)} · ${msgs.length} שאלות</span></div><div class="thread" style="margin-top:10px">`;
+    let last='';for(const m of msgs){if(m.persona!==last){s+=`<div class="who">${esc(m.persona)}</div>`;last=m.persona;}s+=`<div class="msg u">${esc(m.q)}</div><div class="msg a">${esc(m.a)}</div>`;}
+    s+='</div></div>';}
+  $('convList').innerHTML=s||'<div class="panel mute">עדיין אין שיחות שתואמות. שיחות חדשות יופיעו כאן ברגע שיסתיימו.</div>';
+}
+async function clearLog(){if(!confirm('למחוק את כל יומן השיחות? זה בלתי הפיך.'))return;await api('/api/clear',{what:'log'});await reload();toast('היומן נוקה');}
+
+/* ---------- assistants (keypad) */
+let A=[],selIdx=-1;
+function renderAssist(){A=JSON.parse(JSON.stringify(S.assistants));selIdx=-1;drawKeypad();drawEditor();}
+function drawKeypad(){
+  const keys=[];let digit=0;
+  A.forEach((a,i)=>{const d=a.on?++digit:null;keys.push(`<div class="key ${selIdx===i?'sel':''} ${a.on?'':'off'}" onclick="selIdx=${i};drawKeypad();drawEditor()"><span class="dot"></span><b>${d??'–'}</b><span>${esc(a.name)}</span></div>`);});
+  if(A.length<8)keys.push(`<div class="key add" onclick="addAssistant()"><b>+</b><span>עוזר חדש</span></div>`);
+  while(keys.length<8)keys.push(`<div class="key off" style="cursor:default"><b>${keys.length+1}</b><span class="mute">פנוי</span></div>`);
+  keys.push(`<div class="key end"><b>9</b><span>סיום השיחה</span></div>`);
+  $('keypad').innerHTML=keys.join('');
+}
+function drawEditor(){
+  if(selIdx<0||!A[selIdx]){$('editor').innerHTML='<p class="mute">בחר מקש בלוח כדי לערוך את העוזר, או הוסף עוזר חדש.</p>';return;}
+  const a=A[selIdx];
+  $('editor').innerHTML=`<div class="row between"><h3 style="margin:0">${esc(a.name)}</h3><div class="row"><button class="btn sm ghost" onclick="mv(-1)">הזז למעלה</button><button class="btn sm ghost" onclick="mv(1)">הזז למטה</button><label class="row small"><input type="checkbox" ${a.on?'checked':''} onchange="A[selIdx].on=this.checked;drawKeypad();drawEditor()"> מופיע בתפריט</label><button class="btn sm coral" onclick="if(confirm('למחוק את העוזר?')){A.splice(selIdx,1);selIdx=-1;drawKeypad();drawEditor();}">מחק</button></div></div>
+  <div class="grid2" style="margin-top:12px"><div class="field"><label>השם כפי שנשמע בתפריט</label><input type="text" value="${esc(a.name)}" oninput="A[selIdx].name=this.value" onchange="drawKeypad()"></div>
+  <div class="field"><label>מילים לזיהוי בדיבור, מופרדות בפסיק</label><input type="text" value="${esc(a.keywords||'')}" onchange="A[selIdx].keywords=this.value"><div class="mute small">כשמתקשר אומר "תעביר אותי ל..." עם אחת המילים האלה</div></div></div>
+  <div class="field"><label>ההנחיה ל-AI: מי הוא, מה התחום שלו, איך הוא עונה</label><textarea style="min-height:150px" onchange="A[selIdx].prompt=this.value">${esc(a.prompt)}</textarea></div>
+  <p class="mute small">הכללים הקבועים (לענות קצר, בעברית, בכבוד, חיפוש באינטרנט כשצריך) מתווספים לבד לכל עוזר.</p>`;
+}
+function mv(d){const j=selIdx+d;if(j<0||j>=A.length)return;[A[selIdx],A[j]]=[A[j],A[selIdx]];selIdx=j;drawKeypad();drawEditor();}
+function addAssistant(){if(A.length>=8)return toast('יש מקום ל-8 עוזרים בתפריט');A.push({id:'a'+Math.random().toString(36).slice(2,8),name:'עוזר חדש',prompt:'אתה עוזר ידידותי ומועיל.',on:true,keywords:''});selIdx=A.length-1;drawKeypad();drawEditor();}
+async function saveAssistants(){const d=await api('/api/assistants',{assistants:A});if(d.ok){await reload();toast('העוזרים נשמרו. התפריט התעדכן');}else toast(d.error||'לא נשמר');}
+
+/* ---------- texts */
+const TXT={first_time:'פעם ראשונה: בקשת שם',ask_name_again:'בקשת שם חוזרת',name_saved:'אחרי שמירת השם',menu_hello:'פתיחת התפריט',menu_item:'שורה בתפריט, לכל עוזר',menu_end:'סיום התפריט',enter:'כניסה לעוזר',listening:'הקשבה כשאין תשובה להשמיע',not_heard:'לא נקלטה הקלטה',wait:'הודעות המתנה, מופרדות בפסיק',too_long:'התשובה לוקחת יותר מדי זמן',limit:'הגעה למכסה היומית',blocked:'מספר חסום',voice_changed:'הקול הוחלף',goodbye:'פרידה',error:'תקלה זמנית',not_understood:'לא הובן'};
+function renderTexts(){$('textsList').innerHTML=Object.keys(TXT).map(k=>`<div class="panel" style="margin:0"><div class="field" style="margin:0"><label>${esc(TXT[k])}</label><input type="text" id="t_${k}" value="${esc(S.texts[k]||'')}"></div></div>`).join('');}
+async function saveTexts(){const d={};for(const k in TXT)d[k]=$('t_'+k).value;await api('/api/texts',d);await reload();toast('הנוסחים נשמרו');}
+
+/* ---------- settings */
+function renderSettings(){const s=S.settings;
+  $('settingsBox').innerHTML=`<h3>הקו</h3>
+  <div class="field"><label>הודעה בתחילת כל שיחה, לכולם (ריק = בלי)</label><input type="text" id="s_announcement" value="${esc(s.announcement)}"></div>
+  <div class="grid2"><div class="field"><label>שאלות ליום לכל משתמש (0 = בלי הגבלה)</label><input type="number" id="s_daily_limit" value="${s.daily_limit}"></div><div class="field"><label>אורך הקלטה מקסימלי, שניות</label><input type="number" id="s_record_max" value="${s.record_max}"></div></div>
+  <div class="field"><label>מספרים בלי הגבלה, מופרדים בפסיק</label><input type="text" id="s_unlimited_phones" value="${esc(s.unlimited_phones)}"></div>
+  <div class="field"><label>מספרים חסומים</label><input type="text" id="s_blocked_phones" value="${esc(s.blocked_phones)}"></div>
+  <div class="field"><label>שעת הסיכום היומי למייל (0-23)</label><input type="number" id="s_mail_hour" value="${s.mail_hour}"></div>`;
+  $('voiceBox').innerHTML=`<div class="field"><label>מצב</label><select id="s_tts"><option value="on" ${s.tts=='on'?'selected':''}>פעיל: קול גבר טבעי</option><option value="off" ${s.tts!='on'?'selected':''}>כבוי: הקראה של ימות, מהירה יותר</option></select></div>
+  <div class="field"><label>רשימת הקולות, מופרדים בפסיק. הראשון ברירת מחדל, "החלף קול" עובר לבא</label><input type="text" id="s_voices" value="${esc(s.voices)}"></div>`;
+  $('mailState').innerHTML=S.mail?`<span class="pill teal">מוגדר</span> נשלח כל יום אל ${esc(S.mail_to)}`:`<span class="pill coral">לא מוגדר</span> צריך להוסיף MAIL_USER ו-MAIL_PASS ב-Render`;
+  $('ttsVoice').innerHTML=S.voices.map(v=>`<option>${esc(v)}</option>`).join('');}
 async function saveSettings(){const d={};for(const k of ['announcement','tts','voices','daily_limit','record_max','unlimited_phones','blocked_phones','mail_hour'])d[k]=$('s_'+k).value;await api('/api/settings',d);await reload();toast('ההגדרות נשמרו');}
 async function sendMail(){$('mailRes').textContent='שולח...';const d=await api('/api/sendmail',{});$('mailRes').textContent=d.result;}
-async function testTts(){$('ttsRes').textContent='בודק...';const d=await api('/api/test_tts',{voice:$('ttsVoice').value});$('ttsRes').textContent=d.ok?'עובד ('+d.bytes+' בייט)':'נכשל: '+(d.error||'');}
-async function reload(){S=await api('/api/state');renderAll();}
+async function testTts(){$('ttsRes').textContent='בודק...';const d=await api('/api/test_tts',{voice:$('ttsVoice').value});$('ttsRes').textContent=d.ok?'הקול עובד':'נכשל: '+(d.error||'');}
+
 boot();
-</script></body></html>
+</script>
+</body>
+</html>
