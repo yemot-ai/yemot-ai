@@ -10,6 +10,9 @@ from google import genai
 from google.genai import types
 import os
 import re
+import sys
+import functools
+print = functools.partial(print, flush=True)
 import io
 import json
 import html
@@ -165,7 +168,8 @@ def get_client():
     global _client
     if _client is None:
         _client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY", ""),
-                               http_options=types.HttpOptions(timeout=15000))
+                               http_options=types.HttpOptions(timeout=15000,
+                                                              retry_options=types.HttpRetryOptions(attempts=1)))
     return _client
 
 
@@ -429,6 +433,32 @@ def speak_file(text, voice_idx, call_id):
 
 
 # ============================================================ Gemini
+GEMINI_DEADLINE = 14   # שניות מקסימום לפנייה אחת. אחרי זה עוברים למודל הבא, גם אם גוגל עדיין "חושבים"
+
+
+class Deadline(Exception):
+    pass
+
+
+def call_with_deadline(fn, seconds):
+    """מריץ פנייה ברקע ומחכה לה עד X שניות - שמירה קשיחה גם אם ספריית גוגל לא מכבדת את ה-timeout שלה"""
+    box = {}
+
+    def run():
+        try:
+            box["r"] = fn()
+        except Exception as e:
+            box["e"] = e
+    t = threading.Thread(target=run, daemon=True)
+    t.start()
+    t.join(seconds)
+    if t.is_alive():
+        raise Deadline("no answer from Gemini within %ds (timed out)" % seconds)
+    if "e" in box:
+        raise box["e"]
+    return box["r"]
+
+
 def gemini(system, contents, search=False):
     last_error = None
     variants = []
@@ -455,8 +485,12 @@ def gemini(system, contents, search=False):
             elif think == "budget":
                 kw["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
             t0 = time.time()
-            response = get_client().models.generate_content(
-                model=model, contents=contents, config=types.GenerateContentConfig(**kw))
+            print("gemini: calling %s (search=%s think=%s)" % (model, use_search, think))
+            response = call_with_deadline(
+                lambda: get_client().models.generate_content(
+                    model=model, contents=contents, config=types.GenerateContentConfig(**kw)),
+                GEMINI_DEADLINE)
+            print("gemini: %s answered in %.1fs" % (model, time.time() - t0))
             if response.text:
                 return response.text
         except Exception as e:
