@@ -27,6 +27,7 @@ import urllib.request
 import urllib.parse
 import urllib.error
 from email.mime.text import MIMEText
+from zoneinfo import ZoneInfo
 import importlib.resources  # noqa: F401  (טעינה מוקדמת - מונע תקלת ייבוא מקבילית ב-threads)
 try:
     from ddgs import DDGS
@@ -227,7 +228,8 @@ def call_with_deadline(fn, seconds):
 
 
 def il_now():
-    return datetime.datetime.utcnow() + datetime.timedelta(hours=3)
+    """שעון ישראל, כולל מעבר אוטומטי בין שעון קיץ לחורף"""
+    return datetime.datetime.now(ZoneInfo("Asia/Jerusalem")).replace(tzinfo=None)
 
 
 def now_str():
@@ -1263,7 +1265,7 @@ def live_data():
         a = assistant_by_id(st.get("assistant")) if st.get("assistant") else None
         act.append({"phone": st.get("phone", ""), "name": users.get(st.get("phone", ""), "לא רשום"),
                     "assistant": a["name"] if a else "בתפריט",
-                    "since": datetime.datetime.utcfromtimestamp(st.get("started", 0) + 3 * 3600).strftime("%H:%M"),
+                    "since": datetime.datetime.fromtimestamp(st.get("started", 0), ZoneInfo("Asia/Jerusalem")).strftime("%H:%M"),
                     "last_q": st.get("last_q", ""),
                     "state": "מחכה לתשובה" if st.get("pending") else ("מדבר" if st.get("stage") == "chat" else "בתפריט")})
     return {"active": act, "calls_today": sum(1 for c in cl if c["time"].startswith(today)),
