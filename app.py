@@ -472,14 +472,34 @@ def make_tts(text, voice_name):
     return p.stdout
 
 
+VOICE_SLOW = {}   # קול -> זמן שעד אליו לא משתמשים בו (כי היה איטי מדי)
+TTS_DEADLINE = 7  # שניות מקסימום ליצירת קול; מעבר לזה עוברים לקול העברי המהיר
+
+
+def voice_ok(v):
+    return time.time() > VOICE_SLOW.get(v, 0)
+
+
 def speak_file(text, voice_idx, call_id):
     """מייצר קול טבעי ומעלה לימות. מחזיר שם קובץ (בלי סיומת) או None אם לא הצליח"""
     if SETTINGS.get("tts", "on") != "on" or not text:
         return None
     try:
         vl = voice_list()
+        chosen = vl[voice_idx % len(vl)]
+        candidates = [chosen] + [v for v in vl if v != chosen and "he-IL" in v] + [v for v in vl if v != chosen and "he-IL" not in v]
         t0 = time.time()
-        wav = call_with_deadline(lambda: make_tts(text, vl[voice_idx % len(vl)]), 12)
+        wav = None
+        for v in candidates[:2]:
+            if not voice_ok(v):
+                continue
+            try:
+                wav = call_with_deadline(lambda: make_tts(text, v), TTS_DEADLINE)
+                if wav:
+                    break
+            except Exception as e:
+                print("tts voice %s failed: %s" % (v, str(e)[:80]))
+                VOICE_SLOW[v] = time.time() + 1800   # חצי שעה בלי הקול הזה
         if not wav:
             return None
         t1 = time.time()
@@ -945,7 +965,14 @@ def ai_worker(pending, state, assistant, history, file_name, call_id, voice_idx)
         transcript, action, answer = ask_ai(assistant, history, file_name)
         tts = None
         if action in ("none", "voice") or action.startswith("switch"):
-            v = voice_idx + 1 if action == "voice" else voice_idx
+            v = voice_idx
+            if action == "voice":
+                vl = voice_list()
+                v = (voice_idx + 1) % max(1, len(vl))
+                for _ in range(len(vl)):
+                    if voice_ok(vl[v % len(vl)]):
+                        break
+                    v = (v + 1) % len(vl)
             tts = speak_file(answer, v, call_id)
         pending["result"] = (transcript, action, answer, tts)
     except Exception as e:
@@ -1105,7 +1132,13 @@ def yemot():
             state["tts_file"] = None
             return R(goodbye(call_id, name, state))
         if action == "voice":
-            state["voice"] = (state["voice"] + 1) % max(1, len(voice_list()))
+            vl = voice_list()
+            nxt = (state["voice"] + 1) % max(1, len(vl))
+            for _ in range(len(vl)):
+                if voice_ok(vl[nxt % len(vl)]):
+                    break
+                nxt = (nxt + 1) % len(vl)
+            state["voice"] = nxt
             voices[phone] = state["voice"]
             save_names()
             if tts:
