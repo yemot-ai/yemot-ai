@@ -55,8 +55,8 @@ MAIL_TO = os.environ.get("MAIL_TO", "") or MAIL_USER
 OWNER_PHONES = ["0527661756", "0527609296"]                 # תמיד בלי הגבלה
 
 # רשימת מודלים לניחוש ראשוני. בעליית השרת הרשימה מתעדכנת אוטומטית לפי המודלים שבאמת זמינים במפתח שלך
-MODELS = ["gemini-3.6-flash-lite", "gemini-3.6-flash", "gemini-3.1-flash-lite", "gemini-3.1-flash",
-          "gemini-3-flash-preview", "gemini-2.5-flash"]
+MODELS = ["gemini-3.5-flash-lite", "gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.6-flash",
+          "gemini-3.5-flash", "gemini-3.1-flash-lite", "gemini-3-flash-preview"]
 MODEL_STATUS = {}     # שם מודל -> {"dead": True} (לא קיים) או {"until": זמן} (מכסה נגמרה, לנסות שוב אחר כך)
 
 
@@ -97,7 +97,17 @@ def discover_models():
         else:
             print("models: list came back empty, keeping defaults")
     except Exception as e:
-        print("models: could not list (%s), keeping defaults" % str(e)[:120])
+        print("models: could not list (%s), keeping defaults, will retry" % str(e)[:120])
+        raise
+
+
+def discover_loop():
+    for _ in range(10):
+        try:
+            discover_models()
+            return
+        except Exception:
+            time.sleep(30)
 
 
 # קולות גבר טבעיים (Edge TTS, חינם). הראשון הוא ברירת המחדל.
@@ -207,7 +217,7 @@ def call_with_deadline(fn, seconds):
     t.start()
     t.join(seconds)
     if t.is_alive():
-        raise Deadline("no answer from Gemini within %ds (timed out)" % seconds)
+        raise Deadline("timed out after %ds" % seconds)
     if "e" in box:
         raise box["e"]
     return box["r"]
@@ -425,7 +435,7 @@ try:
     get_client()  # יצירת הלקוח בתהליך הראשי, לפני שה-threads מתחילים
 except Exception as _e:
     print('gemini client init error:', _e)
-threading.Thread(target=discover_models, daemon=True).start()
+threading.Thread(target=discover_loop, daemon=True).start()
 
 
 # ============================================================ קול טבעי
@@ -479,56 +489,83 @@ def speak_file(text, voice_idx, call_id):
 
 
 # ============================================================ Gemini
+def _one_call(model, system, contents, use_search, think):
+    kw = dict(system_instruction=system, max_output_tokens=400)
+    if use_search:
+        kw["tools"] = [types.Tool(google_search=types.GoogleSearch())]
+    if think == "level":
+        kw["thinking_config"] = types.ThinkingConfig(thinking_level="minimal")
+    elif think == "budget":
+        kw["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
+    r = get_client().models.generate_content(model=model, contents=contents, config=types.GenerateContentConfig(**kw))
+    return r.text
+
+
+def _note_failure(model, use_search, msg):
+    if "NOT_FOUND" in msg or "no longer available" in msg or "not found" in msg:
+        MODEL_STATUS[model] = {"dead": True}
+    elif "RESOURCE_EXHAUSTED" in msg or msg.startswith("429"):
+        if not use_search:
+            MODEL_STATUS[model] = {"until": time.time() + 120}
+
+
 def gemini(system, contents, search=False):
-    last_error = None
-    variants = []
+    """שולח את הפנייה לכמה מודלים במקביל ולוקח את התשובה הראשונה שחוזרת.
+    ככה מודל אחד איטי או תקוע לא מעכב את המתקשר."""
     order = list(MODELS)
     pref = SETTINGS.get("model", "")
     if pref:
         order = [pref] + [m for m in order if m != pref]
-    for model in order:
-        if not model_ok(model):
-            continue
+    order = [m for m in order if model_ok(m)]
+    if not order:
+        print("Gemini error: no available models")
+        return None
+    batch = order[:3]
+    t0 = time.time()
+    print("gemini: racing %s (search=%s)" % (", ".join(batch), search))
+    results = {}
+    lock = threading.Lock()
+    done = threading.Event()
+
+    def worker(model):
         for think in ("level", "budget", None):
-            variants.append((model, search, think))
-    skip_model = None
-    for model, use_search, think in variants:
-        if model == skip_model:
-            continue
-        no_think = think
-        try:
-            kw = dict(system_instruction=system, max_output_tokens=400)
-            if use_search:
-                kw["tools"] = [types.Tool(google_search=types.GoogleSearch())]
-            if think == "level":
-                kw["thinking_config"] = types.ThinkingConfig(thinking_level="minimal")
-            elif think == "budget":
-                kw["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
-            t0 = time.time()
-            print("gemini: calling %s (search=%s think=%s)" % (model, use_search, think))
-            response = call_with_deadline(
-                lambda: get_client().models.generate_content(
-                    model=model, contents=contents, config=types.GenerateContentConfig(**kw)),
-                GEMINI_DEADLINE)
-            print("gemini: %s answered in %.1fs" % (model, time.time() - t0))
-            if response.text:
-                return response.text
-        except Exception as e:
-            last_error = e
-            msg = str(e)
-            print("gemini variant failed (%s search=%s nothink=%s) after %.1fs: %s" % (
-                model, use_search, no_think, time.time() - t0, msg[:120]))
-            if "NOT_FOUND" in msg or "no longer available" in msg or "not found" in msg:
-                MODEL_STATUS[model] = {"dead": True}
-                skip_model = model
-            elif "RESOURCE_EXHAUSTED" in msg or "429" in msg[:20]:
-                if not use_search:
-                    MODEL_STATUS[model] = {"until": time.time() + 120}
-                skip_model = model
-            elif "timed out" in msg.lower():
-                skip_model = model
-            continue
-    print("Gemini error:", last_error)
+            try:
+                text = _one_call(model, system, contents, search, think)
+                with lock:
+                    if text and "winner" not in results:
+                        results["winner"] = (model, text)
+                        done.set()
+                return
+            except Exception as e:
+                msg = str(e)
+                print("gemini variant failed (%s search=%s think=%s) after %.1fs: %s" % (model, search, think, time.time() - t0, msg[:120]))
+                _note_failure(model, search, msg)
+                if "NOT_FOUND" in msg or "no longer available" in msg or "RESOURCE_EXHAUSTED" in msg or "429" in msg[:8]:
+                    return
+                if "thinking" not in msg.lower() and "level" not in msg.lower() and "budget" not in msg.lower():
+                    return
+        return
+    for m in batch:
+        threading.Thread(target=worker, args=(m,), daemon=True).start()
+    done.wait(GEMINI_DEADLINE)
+    if "winner" in results:
+        model, text = results["winner"]
+        print("gemini: %s answered in %.1fs" % (model, time.time() - t0))
+        return text
+    rest = order[3:]
+    if rest:
+        print("gemini: first batch failed, trying %s" % ", ".join(rest[:2]))
+        for m in rest[:2]:
+            try:
+                text = call_with_deadline(lambda: _one_call(m, system, contents, search, "level"), GEMINI_DEADLINE)
+                if text:
+                    print("gemini: %s answered in %.1fs" % (m, time.time() - t0))
+                    return text
+            except Exception as e:
+                msg = str(e)
+                print("gemini variant failed (%s) %s" % (m, msg[:120]))
+                _note_failure(m, search, msg)
+    print("Gemini error: no model answered within %.0fs" % (time.time() - t0))
     return None
 
 
@@ -545,12 +582,78 @@ def transcribe_name(file_name):
     return clean_for_tts(text or "")[:30]
 
 
+def http_json(url, timeout=8):
+    req = urllib.request.Request(url, headers={"User-Agent": "yemot-ai-line/1.0 (contact: admin)"})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return json.loads(r.read().decode("utf-8", "ignore"))
+
+
+WEATHER_CODES = {0: "בהיר", 1: "בהיר בעיקר", 2: "מעונן חלקית", 3: "מעונן", 45: "ערפל", 48: "ערפל", 51: "טפטוף קל", 53: "טפטוף",
+                 55: "טפטוף", 61: "גשם קל", 63: "גשם", 65: "גשם חזק", 71: "שלג קל", 73: "שלג", 75: "שלג כבד", 80: "ממטרים קלים",
+                 81: "ממטרים", 82: "ממטרים חזקים", 95: "סופת רעמים", 96: "סופת רעמים עם ברד", 99: "סופת רעמים עם ברד"}
+
+
+def weather_lookup(place):
+    """מזג אוויר חינמי ואמין (Open-Meteo, בלי מפתח). מחזיר טקסט או None"""
+    try:
+        g = http_json("https://geocoding-api.open-meteo.com/v1/search?" + urllib.parse.urlencode(
+            {"name": place, "count": 1, "language": "he"}))
+        res = (g.get("results") or [None])[0]
+        if not res:
+            return None
+        name = res.get("name", place)
+        f = http_json("https://api.open-meteo.com/v1/forecast?" + urllib.parse.urlencode({
+            "latitude": res["latitude"], "longitude": res["longitude"], "timezone": "Asia/Jerusalem", "forecast_days": 3,
+            "current": "temperature_2m,weather_code,wind_speed_10m",
+            "daily": "temperature_2m_max,temperature_2m_min,precipitation_probability_max,weather_code",
+            "hourly": "temperature_2m,weather_code"}))
+        cur = f.get("current", {})
+        lines = ["מיקום: %s" % name,
+                 "עכשיו: %s מעלות, %s, רוח %s קמ\"ש" % (round(cur.get("temperature_2m", 0)), WEATHER_CODES.get(cur.get("weather_code"), ""), round(cur.get("wind_speed_10m", 0)))]
+        d = f.get("daily", {})
+        labels = ["היום", "מחר", "מחרתיים"]
+        for i, day in enumerate(d.get("time", [])[:3]):
+            lines.append("%s (%s): %s עד %s מעלות, %s, סיכוי גשם %s%%" % (
+                labels[i], day[5:].replace("-", "/"), round(d["temperature_2m_min"][i]), round(d["temperature_2m_max"][i]),
+                WEATHER_CODES.get(d["weather_code"][i], ""), d["precipitation_probability_max"][i]))
+        h = f.get("hourly", {})
+        night = [(t, temp, code) for t, temp, code in zip(h.get("time", []), h.get("temperature_2m", []), h.get("weather_code", []))
+                 if t[:10] == d.get("time", [""])[0] and int(t[11:13]) in (21, 0)]
+        for t, temp, code in night:
+            lines.append("הלילה בשעה %s: %s מעלות, %s" % (t[11:16], round(temp), WEATHER_CODES.get(code, "")))
+        return "\n".join(lines)
+    except Exception as e:
+        print("weather error:", str(e)[:150])
+        return None
+
+
+def wiki_search(query):
+    """ויקיפדיה בעברית - חינמי ואמין, טוב לשאלות 'מי זה' ו'מה זה'"""
+    try:
+        r = http_json("https://he.wikipedia.org/w/api.php?" + urllib.parse.urlencode(
+            {"action": "query", "list": "search", "srsearch": query, "format": "json", "srlimit": 3}))
+        hits = r.get("query", {}).get("search", [])
+        if not hits:
+            return None
+        titles = "|".join(h["title"] for h in hits[:2])
+        r2 = http_json("https://he.wikipedia.org/w/api.php?" + urllib.parse.urlencode(
+            {"action": "query", "prop": "extracts", "exintro": 1, "explaintext": 1, "titles": titles, "format": "json", "exchars": 1200}))
+        out = []
+        for p in r2.get("query", {}).get("pages", {}).values():
+            if p.get("extract"):
+                out.append("- %s: %s" % (p.get("title", ""), p["extract"][:1200]))
+        return "\n".join(out) if out else None
+    except Exception as e:
+        print("wiki error:", str(e)[:150])
+        return None
+
+
 def web_search(query, max_results=6):
     """חיפוש חינמי (DuckDuckGo) - מחזיר טקסט של תוצאות או None"""
     if not HAVE_DDGS:
         return None
     try:
-        results = call_with_deadline(lambda: DDGS().text(query, region="il-he", max_results=max_results), 10)
+        results = call_with_deadline(lambda: DDGS().text(query, region="il-he", max_results=max_results), 8)
         lines = []
         for r in results or []:
             lines.append("- %s: %s (%s)" % (r.get("title", ""), r.get("body", ""), r.get("href", "")))
@@ -560,20 +663,30 @@ def web_search(query, max_results=6):
         return None
 
 
-def answer_with_search(assistant, history, transcript):
-    """שלב חיפוש: קודם חיפוש חינמי + Gemini, אם נכשל - חיפוש מובנה של גוגל, אם נכשל - מהידע"""
+def answer_with_search(assistant, history, transcript, search_line=""):
+    """שלב חיפוש: מזג אוויר -> Open-Meteo; אחרת DuckDuckGo, ויקיפדיה, חיפוש גוגל; ואם הכל נכשל - מהידע"""
     base = assistant["prompt"] + GENERAL_RULES
     today = il_now().strftime("%d/%m/%Y")
-    results = web_search(transcript)
+    results, source = None, ""
+    if "מזג" in search_line:
+        place = search_line.split(":", 1)[1].strip() if ":" in search_line else ""
+        results = weather_lookup(place or "Tel Aviv")
+        source = "תחזית מזג אוויר"
+    if not results:
+        results = web_search(transcript)
+        source = "תוצאות חיפוש מהאינטרנט"
+    if not results:
+        results = wiki_search(transcript)
+        source = "ערכים מוויקיפדיה"
     if results:
-        sys2 = base + (" היום %s. קיבלת תוצאות חיפוש מהאינטרנט. ענה על השאלה לפי התוצאות, עם המספרים והשמות שמופיעים בהן,"
-                       " קצר ומתאים להקראה בטלפון. אל תקרא כתובות אינטרנט. אם התוצאות לא עונות על השאלה, אמור זאת בקצרה." % today)
-        contents = list(history) + [{"role": "user", "parts": [{"text": "השאלה: %s\n\nתוצאות החיפוש:\n%s" % (transcript, results)}]}]
+        sys2 = base + (" היום %s. קיבלת %s. ענה על השאלה לפי המידע הזה, עם המספרים והשמות שמופיעים בו,"
+                       " קצר ומתאים להקראה בטלפון. אל תקרא כתובות אינטרנט. אם המידע לא עונה על השאלה, אמור זאת בקצרה." % (today, source))
+        contents = list(history) + [{"role": "user", "parts": [{"text": "השאלה: %s\n\n%s:\n%s" % (transcript, source, results)}]}]
         found = gemini(sys2, contents)
         if found:
             return found
-    sys3 = base + " חפש באינטרנט וענה תשובה מדויקת עם המספרים והשמות שמצאת. תשובה קצרה, מתאימה להקראה בטלפון."
     contents = list(history) + [{"role": "user", "parts": [{"text": transcript}]}]
+    sys3 = base + " חפש באינטרנט וענה תשובה מדויקת עם המספרים והשמות שמצאת. תשובה קצרה, מתאימה להקראה בטלפון."
     found = gemini(sys3, contents, search=True)
     if found:
         return found
@@ -603,7 +716,8 @@ def ask_ai(assistant, history, file_name):
         " ענה בדיוק בפורמט הבא, ארבע שורות:\n"
         "תמלול: <תמלול מדויק של ההקלטה>\n"
         "פעולה: <אחת מהאפשרויות: none | menu | end | voice | switch:מזהה>\n"
-        "חיפוש: <כן אם התשובה דורשת חיפוש באינטרנט (המשתמש ביקש לחפש, או מידע עדכני: מחירים, חדשות, מזג אוויר, שעות פתיחה, תוצאות), אחרת לא>\n"
+        "חיפוש: <לא | כן | מזג אוויר: שם המקום באנגלית>. כן = כשהתשובה דורשת חיפוש באינטרנט (המשתמש ביקש לחפש, או מידע עדכני: מחירים, חדשות, שעות פתיחה, תוצאות)."
+        " אם השאלה על מזג האוויר, כתוב: מזג אוויר: ואז שם העיר באנגלית (למשל: מזג אוויר: Bnei Brak).\n"
         "תשובה: <התשובה שלך למשתמש. אם חיפוש = כן, כתוב כאן רק: מחפש>\n"
         "כללי הפעולה: menu אם ביקש לחזור לתפריט. end אם ביקש לסיים או להתנתק או אמר להתראות. "
         "voice אם ביקש להחליף קול. switch:מזהה אם ביקש לעבור לעוזר אחר מהרשימה: " + others + ". "
@@ -621,13 +735,14 @@ def ask_ai(assistant, history, file_name):
     m = ACTION_RE.search(raw)
     need_search = False
     if m:
-        transcript, action, need_search, answer = m.group(1).strip(), m.group(2).strip().lower(), "כן" in m.group(3), m.group(4).strip()
+        transcript, action, search_line, answer = m.group(1).strip(), m.group(2).strip().lower(), m.group(3).strip(), m.group(4).strip()
+        need_search = ("כן" in search_line) or ("מזג" in search_line)
     else:
-        transcript, action = "", "none"
+        transcript, action, search_line = "", "none", ""
         answer = re.sub(r"^(תמלול|פעולה|חיפוש|תשובה)\s*:\s*", "", raw.strip())
     if need_search and transcript and action == "none":
         t0 = time.time()
-        found = answer_with_search(assistant, history, transcript)
+        found = answer_with_search(assistant, history, transcript, search_line)
         print("timing: search step %.1fs" % (time.time() - t0))
         if found:
             m2 = ACTION_RE.search(found)
@@ -1285,10 +1400,14 @@ def api_diag():
         out["yemot"] = {"ok": False, "error": str(e)[:200]}
     t0 = time.time()
     try:
-        r = web_search("מזג אוויר תל אביב", 3)
+        r = web_search("חדשות היום", 3)
         out["search"] = {"ok": bool(r), "seconds": round(time.time() - t0, 1), "libs": HAVE_DDGS}
     except Exception as e:
         out["search"] = {"ok": False, "error": str(e)[:200]}
+    t0 = time.time()
+    out["weather"] = {"ok": bool(weather_lookup("Bnei Brak")), "seconds": round(time.time() - t0, 1)}
+    t0 = time.time()
+    out["wiki"] = {"ok": bool(wiki_search("ישי ריבו")), "seconds": round(time.time() - t0, 1)}
     out["model_status"] = {m: ("לא קיים" if MODEL_STATUS.get(m, {}).get("dead") else ("מכסה" if not model_ok(m) else "ok")) for m in MODELS}
     return J(out)
 
