@@ -29,6 +29,12 @@ import urllib.error
 from email.mime.text import MIMEText
 import importlib.resources  # noqa: F401  (טעינה מוקדמת - מונע תקלת ייבוא מקבילית ב-threads)
 try:
+    from ddgs import DDGS
+    HAVE_DDGS = True
+except Exception as _e:
+    print("ddgs missing:", _e)
+    HAVE_DDGS = False
+try:
     import edge_tts  # noqa: F401
     import imageio_ffmpeg  # noqa: F401
     HAVE_TTS = True
@@ -539,6 +545,42 @@ def transcribe_name(file_name):
     return clean_for_tts(text or "")[:30]
 
 
+def web_search(query, max_results=6):
+    """חיפוש חינמי (DuckDuckGo) - מחזיר טקסט של תוצאות או None"""
+    if not HAVE_DDGS:
+        return None
+    try:
+        results = call_with_deadline(lambda: DDGS().text(query, region="il-he", max_results=max_results), 10)
+        lines = []
+        for r in results or []:
+            lines.append("- %s: %s (%s)" % (r.get("title", ""), r.get("body", ""), r.get("href", "")))
+        return "\n".join(lines) if lines else None
+    except Exception as e:
+        print("web search error:", str(e)[:150])
+        return None
+
+
+def answer_with_search(assistant, history, transcript):
+    """שלב חיפוש: קודם חיפוש חינמי + Gemini, אם נכשל - חיפוש מובנה של גוגל, אם נכשל - מהידע"""
+    base = assistant["prompt"] + GENERAL_RULES
+    today = il_now().strftime("%d/%m/%Y")
+    results = web_search(transcript)
+    if results:
+        sys2 = base + (" היום %s. קיבלת תוצאות חיפוש מהאינטרנט. ענה על השאלה לפי התוצאות, עם המספרים והשמות שמופיעים בהן,"
+                       " קצר ומתאים להקראה בטלפון. אל תקרא כתובות אינטרנט. אם התוצאות לא עונות על השאלה, אמור זאת בקצרה." % today)
+        contents = list(history) + [{"role": "user", "parts": [{"text": "השאלה: %s\n\nתוצאות החיפוש:\n%s" % (transcript, results)}]}]
+        found = gemini(sys2, contents)
+        if found:
+            return found
+    sys3 = base + " חפש באינטרנט וענה תשובה מדויקת עם המספרים והשמות שמצאת. תשובה קצרה, מתאימה להקראה בטלפון."
+    contents = list(history) + [{"role": "user", "parts": [{"text": transcript}]}]
+    found = gemini(sys3, contents, search=True)
+    if found:
+        return found
+    sys4 = base + " החיפוש באינטרנט לא זמין כרגע. ענה כמיטב ידיעתך, וציין בקצרה שלא הצלחת לבדוק באינטרנט."
+    return gemini(sys4, contents)
+
+
 ACTION_RE = re.compile(r"תמלול\s*:\s*(.*?)\s*\n\s*פעולה\s*:\s*(.*?)\s*\n\s*חיפוש\s*:\s*(.*?)\s*\n\s*תשובה\s*:\s*(.*)", re.S)
 
 
@@ -584,18 +626,12 @@ def ask_ai(assistant, history, file_name):
         transcript, action = "", "none"
         answer = re.sub(r"^(תמלול|פעולה|חיפוש|תשובה)\s*:\s*", "", raw.strip())
     if need_search and transcript and action == "none":
-        # שלב שני, רק כשבאמת צריך: חיפוש באינטרנט לפי התמלול (טקסט בלבד, מהיר יותר מאודיו)
         t0 = time.time()
-        sys2 = assistant["prompt"] + GENERAL_RULES + " חפש באינטרנט וענה תשובה מדויקת עם המספרים והשמות שמצאת. תשובה קצרה, מתאימה להקראה בטלפון."
-        contents2 = list(history) + [{"role": "user", "parts": [{"text": transcript}]}]
-        found = gemini(sys2, contents2, search=True)
-        if not found:
-            # החיפוש נכשל - עונים מהידע, בלי להשאיר את המתקשר עם "מחפש"
-            sys3 = assistant["prompt"] + GENERAL_RULES + " החיפוש באינטרנט לא זמין כרגע. ענה כמיטב ידיעתך, וציין בקצרה שלא הצלחת לבדוק באינטרנט."
-            found = gemini(sys3, contents2)
-        print("timing: gemini(search) %.1fs" % (time.time() - t0))
+        found = answer_with_search(assistant, history, transcript)
+        print("timing: search step %.1fs" % (time.time() - t0))
         if found:
-            answer = re.sub(r"^(תמלול|פעולה|חיפוש|תשובה)\s*:\s*", "", found.strip())
+            m2 = ACTION_RE.search(found)
+            answer = m2.group(4).strip() if m2 else re.sub(r"^(תמלול|פעולה|חיפוש|תשובה)\s*:\s*", "", found.strip())
     if answer.strip() in ("מחפש", "מחפש.", "מחפש..."):
         answer = T("error")
     low = transcript.lower()
@@ -1247,6 +1283,12 @@ def api_diag():
         out["yemot"] = {"ok": bool(txt and txt.startswith("ok")), "seconds": round(time.time() - t0, 1)}
     except Exception as e:
         out["yemot"] = {"ok": False, "error": str(e)[:200]}
+    t0 = time.time()
+    try:
+        r = web_search("מזג אוויר תל אביב", 3)
+        out["search"] = {"ok": bool(r), "seconds": round(time.time() - t0, 1), "libs": HAVE_DDGS}
+    except Exception as e:
+        out["search"] = {"ok": False, "error": str(e)[:200]}
     out["model_status"] = {m: ("לא קיים" if MODEL_STATUS.get(m, {}).get("dead") else ("מכסה" if not model_ok(m) else "ok")) for m in MODELS}
     return J(out)
 
