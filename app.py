@@ -37,8 +37,51 @@ MAIL_PASS = os.environ.get("MAIL_PASS", "")
 MAIL_TO = os.environ.get("MAIL_TO", "") or MAIL_USER
 OWNER_PHONES = ["0527661756", "0527609296"]                 # תמיד בלי הגבלה
 
-# המהיר ראשון (מכסה חינמית גדולה יותר); הבאים הם גיבוי
-MODELS = ["gemini-3.1-flash-lite", "gemini-3-flash", "gemini-2.5-flash-lite", "gemini-2.5-flash"]
+# רשימת מודלים לניחוש ראשוני. בעליית השרת הרשימה מתעדכנת אוטומטית לפי המודלים שבאמת זמינים במפתח שלך
+MODELS = ["gemini-3.6-flash-lite", "gemini-3.6-flash", "gemini-3.1-flash-lite", "gemini-3.1-flash",
+          "gemini-3-flash-preview", "gemini-2.5-flash"]
+MODEL_STATUS = {}     # שם מודל -> {"dead": True} (לא קיים) או {"until": זמן} (מכסה נגמרה, לנסות שוב אחר כך)
+
+
+def model_ok(model):
+    st = MODEL_STATUS.get(model)
+    if not st:
+        return True
+    if st.get("dead"):
+        return False
+    return time.time() > st.get("until", 0)
+
+
+def discover_models():
+    """שואל את גוגל אילו מודלים זמינים במפתח, ומסדר: הדור החדש קודם, ובתוך הדור - המהיר (lite) קודם"""
+    try:
+        found = []
+        for m in get_client().models.list():
+            name = (m.name or "").replace("models/", "")
+            actions = getattr(m, "supported_actions", None) or []
+            if actions and "generateContent" not in actions:
+                continue
+            if not name.startswith("gemini-") or "flash" not in name:
+                continue
+            if any(x in name for x in ("tts", "image", "embedding", "live", "audio", "computer", "robot", "thinking", "exp", "8b")):
+                continue
+            ver = re.search(r"gemini-(\d+(?:\.\d+)?)", name)
+            v = float(ver.group(1)) if ver else 0
+            found.append((v, 0 if "lite" in name else 1, 1 if "preview" in name else 0, name))
+        if found:
+            found.sort(key=lambda x: (-x[0], x[1], x[2]))
+            seen, ordered = set(), []
+            for _, _, _, name in found:
+                if name not in seen:
+                    seen.add(name)
+                    ordered.append(name)
+            MODELS[:] = ordered[:6]
+            print("models available:", ", ".join(MODELS))
+        else:
+            print("models: list came back empty, keeping defaults")
+    except Exception as e:
+        print("models: could not list (%s), keeping defaults" % str(e)[:120])
+
 
 # קולות גבר טבעיים (Edge TTS, חינם). הראשון הוא ברירת המחדל.
 DEFAULT_VOICES = "he-IL-AvriNeural,en-US-AndrewMultilingualNeural,en-US-BrianMultilingualNeural,de-DE-FlorianMultilingualNeural"
@@ -331,6 +374,7 @@ def load_all():
 
 
 load_all()
+threading.Thread(target=discover_models, daemon=True).start()
 
 
 # ============================================================ קול טבעי
@@ -388,9 +432,14 @@ def gemini(system, contents, search=False):
     last_error = None
     variants = []
     for model in MODELS:
+        if not model_ok(model):
+            continue
         for think in ("level", "budget", None):
             variants.append((model, search, think))
+    skip_model = None
     for model, use_search, think in variants:
+        if model == skip_model:
+            continue
         no_think = think
         try:
             kw = dict(system_instruction=system, max_output_tokens=400)
@@ -407,8 +456,18 @@ def gemini(system, contents, search=False):
                 return response.text
         except Exception as e:
             last_error = e
+            msg = str(e)
             print("gemini variant failed (%s search=%s nothink=%s) after %.1fs: %s" % (
-                model, use_search, no_think, time.time() - t0, str(e)[:120]))
+                model, use_search, no_think, time.time() - t0, msg[:120]))
+            if "NOT_FOUND" in msg or "no longer available" in msg or "not found" in msg:
+                MODEL_STATUS[model] = {"dead": True}
+                skip_model = model
+            elif "RESOURCE_EXHAUSTED" in msg or "429" in msg[:20]:
+                if not use_search:
+                    MODEL_STATUS[model] = {"until": time.time() + 120}
+                skip_model = model
+            elif "timed out" in msg.lower():
+                skip_model = model
             continue
     print("Gemini error:", last_error)
     return None
@@ -926,6 +985,7 @@ def api_state():
         "charts": {"per_day": per_day, "per_assistant": sorted(per_a.items(), key=lambda x: -x[1])[:8],
                    "top_users": [[users.get(p, p), n] for p, n in sorted(per_user.items(), key=lambda x: -x[1])[:10]]},
         "voices": voice_list(), "mail": bool(MAIL_USER and MAIL_PASS), "mail_to": MAIL_TO, "owners": OWNER_PHONES,
+        "models": [{"name": m, "ok": model_ok(m), "dead": bool(MODEL_STATUS.get(m, {}).get("dead"))} for m in MODELS],
         "live": live_data(),
     })
 
