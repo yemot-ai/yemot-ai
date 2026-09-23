@@ -1217,6 +1217,40 @@ def api_export():
                     headers={"Content-Disposition": "attachment; filename=yemot-ai-log.csv"})
 
 
+@app.route("/api/diag", methods=["POST"])
+def api_diag():
+    """בדיקת מערכת מלאה בלחיצה אחת: פייתון, Gemini, קול, ימות - עם זמנים ושגיאות מדויקות"""
+    g = api_guard()
+    if g:
+        return g
+    out = {"python": sys.version.split()[0], "models": list(MODELS), "preferred": SETTINGS.get("model", ""),
+           "env": {"GEMINI_API_KEY": bool(os.environ.get("GEMINI_API_KEY")), "YEMOT_TOKEN": bool(YEMOT_TOKEN),
+                   "ADMIN_KEY": bool(ADMIN_KEY), "PYTHON_VERSION": os.environ.get("PYTHON_VERSION", "")},
+           "tts_libs": HAVE_TTS}
+    t0 = time.time()
+    try:
+        r = gemini("ענה במילה אחת בעברית.", [{"role": "user", "parts": [{"text": "שלום, מה שלומך?"}]}])
+        out["gemini"] = {"ok": bool(r), "answer": (r or "")[:60], "seconds": round(time.time() - t0, 1)}
+    except Exception as e:
+        out["gemini"] = {"ok": False, "error": str(e)[:200], "seconds": round(time.time() - t0, 1)}
+    t0 = time.time()
+    try:
+        wav = call_with_deadline(lambda: make_tts("שלום, זו בדיקה", voice_list()[0]), 15)
+        out["tts"] = {"ok": bool(wav), "bytes": len(wav or b""), "seconds": round(time.time() - t0, 1)}
+    except Exception as e:
+        out["tts"] = {"ok": False, "error": str(e)[:200], "seconds": round(time.time() - t0, 1)}
+    t0 = time.time()
+    try:
+        yemot_write_text("ai_diag.txt", "ok " + now_str())
+        time.sleep(1.5)
+        txt = yemot_read_text("ai_diag.txt")
+        out["yemot"] = {"ok": bool(txt and txt.startswith("ok")), "seconds": round(time.time() - t0, 1)}
+    except Exception as e:
+        out["yemot"] = {"ok": False, "error": str(e)[:200]}
+    out["model_status"] = {m: ("לא קיים" if MODEL_STATUS.get(m, {}).get("dead") else ("מכסה" if not model_ok(m) else "ok")) for m in MODELS}
+    return J(out)
+
+
 @app.route("/api/test_tts", methods=["POST"])
 def api_test_tts():
     """בדיקה שהקול הטבעי עובד (בלי להעלות לימות)"""
