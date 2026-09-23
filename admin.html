@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="he" dir="rtl">
+<html lang="he" dir="rtl" data-theme="dark">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -14,10 +14,20 @@
   --r:14px;--r-sm:9px;--shadow:0 1px 0 #0000000a,0 10px 30px -18px #14213d40;
 }
 [data-theme=dark]{
-  --bg:#0F1626;--paper:#172038;--ink:#EEF1F7;--mute:#9AA5BC;--line:#28324D;
-  --navy:#0B1120;--navy2:#141C30;--teal-soft:#123c39;--amber-soft:#3d2f14;--coral-soft:#3d1f18;--blue-soft:#1b2a52;
-  --shadow:0 1px 0 #00000030,0 10px 30px -18px #000c;
+  --bg:#0A1020;--paper:#131B31cc;--ink:#EEF1F7;--mute:#98A4C0;--line:#2A3552;
+  --navy:#0B1120;--navy2:#111A30;--teal-soft:#123c39;--amber-soft:#3d2f14;--coral-soft:#3d1f18;--blue-soft:#1b2a52;
+  --shadow:0 1px 0 #00000030,0 20px 50px -24px #000d;
 }
+[data-theme=dark] body{background:
+  radial-gradient(900px 500px at 8% -10%,#1fb2a626,transparent 60%),
+  radial-gradient(700px 500px at 100% 20%,#3a6ff224,transparent 60%),
+  radial-gradient(600px 400px at 60% 110%,#7c4dff1f,transparent 60%),var(--bg);background-attachment:fixed}
+[data-theme=dark] .panel,[data-theme=dark] .key,[data-theme=dark] .live-badge{backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
+[data-theme=dark] .board{background:linear-gradient(135deg,#0d1730 0%,#111d3c 60%,#0f1a34 100%);border:1px solid #ffffff14}
+[data-theme=dark] .side{background:linear-gradient(180deg,#0a1020 0%,#0e1730 100%);border-left:1px solid #ffffff0f}
+[data-theme=dark] .stat{background:#ffffff08}
+[data-theme=dark] input[type=text],[data-theme=dark] input[type=number],[data-theme=dark] input[type=password],[data-theme=dark] select,[data-theme=dark] textarea{background:#0f172bcc}
+[data-theme=dark] .msg.a{background:#0f172b}
 *{box-sizing:border-box}
 html,body{margin:0;background:var(--bg);color:var(--ink);font-family:Heebo,Arial,sans-serif;font-size:15px;line-height:1.5}
 h1,h2,h3,.num,.key b{font-family:Rubik,Heebo,Arial,sans-serif}
@@ -104,6 +114,12 @@ th{color:var(--mute);font-weight:500;font-size:13px}tbody tr:last-child td{borde
 .msg{max-width:78%;padding:9px 13px;border-radius:16px;white-space:pre-wrap;line-height:1.5}
 .msg.u{background:var(--blue-soft);margin-left:auto;border-bottom-right-radius:5px}.msg.a{background:var(--bg);border-bottom-left-radius:5px}
 .who{font-size:12px;color:var(--mute);margin:8px 0 2px}
+.thread-live{border-color:var(--teal)!important;box-shadow:0 0 0 3px var(--teal-soft),var(--shadow)}
+.typing{display:inline-flex;gap:4px;padding:10px 14px;background:var(--bg);border-radius:16px;border-bottom-left-radius:5px;width:max-content}
+.typing i{width:6px;height:6px;border-radius:50%;background:var(--mute);animation:tp 1.2s infinite}.typing i:nth-child(2){animation-delay:.2s}.typing i:nth-child(3){animation-delay:.4s}
+@keyframes tp{0%,60%,100%{transform:translateY(0);opacity:.4}30%{transform:translateY(-4px);opacity:1}}
+[data-theme=dark] .typing{background:#0f172b}
+.newmsg{animation:pop .35s ease-out}@keyframes pop{from{transform:translateY(6px);opacity:0}to{transform:none;opacity:1}}
 
 /* ---------- misc */
 .toast{position:fixed;bottom:22px;left:22px;background:var(--navy);color:#fff;padding:10px 16px;border-radius:12px;opacity:0;transform:translateY(8px);transition:.25s;pointer-events:none;box-shadow:var(--shadow)}
@@ -174,7 +190,7 @@ th{color:var(--mute);font-weight:500;font-size:13px}tbody tr:last-child td{borde
     </section>
 
     <section class="page" id="p-conv">
-      <div class="topbar"><h2>שיחות</h2>
+      <div class="topbar"><div class="row"><h2>שיחות</h2><span class="live-badge"><i></i>מתעדכן בזמן השיחה</span></div>
         <div class="row"><input type="text" id="cSearch" placeholder="חיפוש בתוכן" style="width:220px" oninput="renderConv()"><select id="cUser" style="width:220px" onchange="renderConv()"><option value="">כל המשתמשים</option></select>
         <a class="btn sm ghost" href="/api/export.csv">הורד לאקסל</a><button class="btn sm ghost" onclick="clearLog()">נקה יומן</button></div></div>
       <div id="convList"></div>
@@ -226,10 +242,16 @@ document.querySelectorAll('.nav a[data-p]').forEach(a=>a.onclick=()=>{document.q
 function toggleTheme(){const d=document.documentElement;const n=d.dataset.theme==='dark'?'light':'dark';d.dataset.theme=n;try{localStorage.setItem('theme',n);}catch(e){}}
 try{const t=localStorage.getItem('theme');if(t)document.documentElement.dataset.theme=t;}catch(e){}
 
-async function boot(){try{S=await api('/api/state');}catch(e){return;}$('app').style.display='grid';renderAll();tick();}
+async function boot(){try{S=await api('/api/state');}catch(e){return;}$('app').style.display='grid';renderAll();tick();tickLog();}
 async function reload(){S=await api('/api/state');renderAll();}
 function renderAll(){renderLive(S.live);renderCharts();renderUsers();renderConv();renderAssist();renderTexts();renderSettings();}
 async function tick(){try{renderLive(await api('/api/live'));}catch(e){}setTimeout(tick,5000);}
+let LIVE={};
+async function tickLog(){try{const d=await api('/api/log?after='+(S.log_total||0));
+  if(d.total<(S.log_total||0)){await reload();}else{if(d.new.length){S.log.push(...d.new);S.log_total=d.total;}
+  const changed=JSON.stringify(d.active)!==JSON.stringify(LIVE);LIVE=d.active;
+  if(d.new.length||changed){if($('p-conv').classList.contains('on'))renderConv(d.new.length);if(d.new.length)renderUsers();}}}catch(e){}
+  setTimeout(tickLog,3000);}
 
 /* ---------- dashboard */
 function renderLive(d){
@@ -274,15 +296,19 @@ async function addUser(){const p=$('addPhone').value.trim(),n=$('addName').value
 function showUser(phone){$('cUser').value=phone;document.querySelector('.nav a[data-p=conv]').click();renderConv();}
 
 /* ---------- conversations */
-function renderConv(){
+function renderConv(fresh){
   const q=($('cSearch').value||'').trim(),ph=$('cUser').value,groups={},order=[];
   for(const l of S.log){if(ph&&l.phone!==ph)continue;if(q&&!(l.q.includes(q)||l.a.includes(q)||(l.name||'').includes(q)))continue;const k=l.call||(l.phone+'|'+l.time.slice(0,10));if(!groups[k]){groups[k]=[];order.push(k);}groups[k].push(l);}
-  let s='';
-  for(const k of order){const msgs=groups[k].slice().reverse(),f=msgs[0];
-    s+=`<div class="panel"><div class="row between"><div class="row" style="flex-wrap:nowrap">${avatar(f.name)}<div><b>${esc(f.name)}</b><div class="mute small">${esc(f.phone)}</div></div></div><span class="mute small">${esc(f.time)} · ${msgs.length} שאלות</span></div><div class="thread" style="margin-top:10px">`;
-    let last='';for(const m of msgs){if(m.persona!==last){s+=`<div class="who">${esc(m.persona)}</div>`;last=m.persona;}s+=`<div class="msg u">${esc(m.q)}</div><div class="msg a">${esc(m.a)}</div>`;}
+  // שיחות פעילות שעדיין בלי הודעות
+  for(const [cid,a] of Object.entries(LIVE)){if(groups[cid])continue;if(ph&&a.phone!==ph)continue;if(q)continue;const u=S.users.find(x=>x.phone===a.phone);groups[cid]=[];order.push(cid);groups[cid].meta={name:u?u.name:'לא רשום',phone:a.phone,time:''};}
+  order.sort((a,b)=>{const la=LIVE[a]?1:0,lb=LIVE[b]?1:0;if(la!==lb)return lb-la;const ta=(groups[a][groups[a].length-1]||{}).time||'',tb=(groups[b][groups[b].length-1]||{}).time||'';return tb.localeCompare(ta);});
+  let s='',n=0;
+  for(const k of order){if(n++>150)break;const msgs=groups[k],meta=groups[k].meta||msgs[0],live=LIVE[k];
+    s+=`<div class="panel ${live?'thread-live':''}"><div class="row between"><div class="row" style="flex-wrap:nowrap">${avatar(meta.name)}<div><b>${esc(meta.name)}</b><div class="mute small">${esc(meta.phone)}</div></div></div><span class="row small">${live?`<span class="pill teal">בשיחה עכשיו${live.assistant?' · '+esc(live.assistant):''}</span>`:''}<span class="mute">${esc(meta.time)}${msgs.length?' · '+msgs.length+' שאלות':''}</span></span></div><div class="thread" style="margin-top:10px">`;
+    let last='';msgs.forEach((m,i)=>{if(m.persona!==last){s+=`<div class="who">${esc(m.persona)}</div>`;last=m.persona;}const anim=(fresh&&live&&i>=msgs.length-1)?' newmsg':'';s+=`<div class="msg u${anim}">${esc(m.q)}</div><div class="msg a${anim}">${esc(m.a)}</div>`;});
+    if(live&&live.waiting)s+=`<div class="typing"><i></i><i></i><i></i></div>`;
     s+='</div></div>';}
-  $('convList').innerHTML=s||'<div class="panel mute">עדיין אין שיחות שתואמות. שיחות חדשות יופיעו כאן ברגע שיסתיימו.</div>';
+  $('convList').innerHTML=s||'<div class="panel mute">עדיין אין שיחות. ברגע שמישהו יתקשר וידבר, השיחה תופיע כאן בזמן אמת.</div>';
 }
 async function clearLog(){if(!confirm('למחוק את כל יומן השיחות? זה בלתי הפיך.'))return;await api('/api/clear',{what:'log'});await reload();toast('היומן נוקה');}
 
