@@ -642,8 +642,14 @@ def yemot():
 
     # ---- התחלה
     if state["stage"] == "start":
-        note = notes.pop(phone, None)
-        if note:
+        note = None
+        n = notes.get(phone)
+        if isinstance(n, str):
+            n = {"text": n, "created": "", "heard": ""}
+            notes[phone] = n
+        if n and n.get("text") and not n.get("heard"):
+            note = n["text"]
+            n["heard"] = now_str()
             save_names()
         parts = [p for p in [SETTINGS.get("announcement", "").strip(), note] if p]
         ann = ". ".join(parts) if parts else None
@@ -877,7 +883,8 @@ def api_state():
         ulist.append({"phone": ph, "name": nm, "calls": sum(1 for c in cl if c["phone"] == ph), "msgs": per_user.get(ph, 0),
                       "today": sum(1 for l in log if l["phone"] == ph and l["time"].startswith(today_str())),
                       "blocked": ph in blocked, "unlimited": ph in unlimited or ph in OWNER_PHONES, "owner": ph in OWNER_PHONES,
-                      "note": notes.get(ph, ""), "voice": voices.get(ph, 0),
+                      "note": (notes.get(ph) if isinstance(notes.get(ph), dict) else ({"text": notes.get(ph), "created": "", "heard": ""} if notes.get(ph) else None)),
+                      "voice": voices.get(ph, 0),
                       "last": max([c["time"] for c in cl if c["phone"] == ph] or [""])})
     days = [(il_now() - datetime.timedelta(days=i)).strftime("%d/%m/%Y") for i in range(13, -1, -1)]
     per_day = [[d[:5], sum(1 for c in cl if c["time"].startswith(d))] for d in days]
@@ -989,9 +996,13 @@ def api_user():
     elif action == "note":
         txt = clean_for_tts(str(d.get("note", "")))[:300]
         if txt:
-            notes[phone] = txt
+            notes[phone] = {"text": txt, "created": now_str(), "heard": ""}
         else:
             notes.pop(phone, None)
+    elif action == "note_again":
+        if isinstance(notes.get(phone), dict):
+            notes[phone]["heard"] = ""
+            notes[phone]["created"] = now_str()
     elif action == "voice":
         try:
             voices[phone] = int(d.get("voice", 0))
@@ -1028,6 +1039,19 @@ def api_sendmail():
         return g
     day = today_str()
     return J({"ok": True, "result": send_mail("סיכום הקו ליום " + day, build_summary(day))})
+
+
+@app.route("/api/export.csv")
+def api_export():
+    g = api_guard()
+    if g:
+        return g
+    _, log, _, _ = snapshot()
+    rows = ["\ufeffזמן,שם,טלפון,עוזר,שאלה,תשובה"]
+    for l in log:
+        rows.append(",".join('"%s"' % str(l.get(k, "")).replace('"', '""') for k in ("time", "name", "phone", "persona", "q", "a")))
+    return Response("\n".join(rows), mimetype="text/csv; charset=utf-8",
+                    headers={"Content-Disposition": "attachment; filename=yemot-ai-log.csv"})
 
 
 @app.route("/api/test_tts", methods=["POST"])
