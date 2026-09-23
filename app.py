@@ -58,6 +58,7 @@ OWNER_PHONES = ["0527661756", "0527609296"]                 # תמיד בלי ה
 MODELS = ["gemini-3.5-flash-lite", "gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.6-flash",
           "gemini-3.5-flash", "gemini-3.1-flash-lite", "gemini-3-flash-preview"]
 MODEL_STATUS = {}     # שם מודל -> {"dead": True} (לא קיים) או {"until": זמן} (מכסה נגמרה, לנסות שוב אחר כך)
+MODEL_THINK = {}      # שם מודל -> הגדרת החשיבה שהוא מקבל ("level" / "budget" / None), נלמד מהניסיון
 
 
 def model_ok(model):
@@ -528,9 +529,14 @@ def gemini(system, contents, search=False):
     done = threading.Event()
 
     def worker(model):
-        for think in ("level", "budget", None):
+        options = ("level", "budget", None)
+        known = MODEL_THINK.get(model)
+        if known in options:
+            options = (known,) + tuple(o for o in options if o != known)
+        for think in options:
             try:
                 text = _one_call(model, system, contents, search, think)
+                MODEL_THINK[model] = think
                 with lock:
                     if text and "winner" not in results:
                         results["winner"] = (model, text)
@@ -593,15 +599,86 @@ WEATHER_CODES = {0: "בהיר", 1: "בהיר בעיקר", 2: "מעונן חלק�
                  81: "ממטרים", 82: "ממטרים חזקים", 95: "סופת רעמים", 96: "סופת רעמים עם ברד", 99: "סופת רעמים עם ברד"}
 
 
-def weather_lookup(place):
-    """מזג אוויר חינמי ואמין (Open-Meteo, בלי מפתח). מחזיר טקסט או None"""
+CITIES = {
+    "jerusalem": ("ירושלים", 31.78, 35.22), "ירושלים": ("ירושלים", 31.78, 35.22),
+    "tel aviv": ("תל אביב", 32.08, 34.78), "תל אביב": ("תל אביב", 32.08, 34.78),
+    "bnei brak": ("בני ברק", 32.08, 34.83), "bene beraq": ("בני ברק", 32.08, 34.83), "בני ברק": ("בני ברק", 32.08, 34.83),
+    "givat shmuel": ("גבעת שמואל", 32.08, 34.85), "גבעת שמואל": ("גבעת שמואל", 32.08, 34.85),
+    "petah tikva": ("פתח תקווה", 32.09, 34.89), "petach tikva": ("פתח תקווה", 32.09, 34.89), "פתח תקווה": ("פתח תקווה", 32.09, 34.89),
+    "ramat gan": ("רמת גן", 32.07, 34.82), "רמת גן": ("רמת גן", 32.07, 34.82), "givatayim": ("גבעתיים", 32.07, 34.81),
+    "holon": ("חולון", 32.02, 34.78), "חולון": ("חולון", 32.02, 34.78), "bat yam": ("בת ים", 32.02, 34.75), "בת ים": ("בת ים", 32.02, 34.75),
+    "rishon lezion": ("ראשון לציון", 31.97, 34.79), "ראשון לציון": ("ראשון לציון", 31.97, 34.79),
+    "rehovot": ("רחובות", 31.89, 34.81), "רחובות": ("רחובות", 31.89, 34.81), "yavne": ("יבנה", 31.88, 34.74),
+    "beit shemesh": ("בית שמש", 31.75, 34.99), "bet shemesh": ("בית שמש", 31.75, 34.99), "בית שמש": ("בית שמש", 31.75, 34.99),
+    "modiin illit": ("מודיעין עילית", 31.93, 35.04), "modi'in illit": ("מודיעין עילית", 31.93, 35.04), "kiryat sefer": ("מודיעין עילית", 31.93, 35.04),
+    "מודיעין עילית": ("מודיעין עילית", 31.93, 35.04), "קרית ספר": ("מודיעין עילית", 31.93, 35.04),
+    "modiin": ("מודיעין", 31.90, 35.01), "מודיעין": ("מודיעין", 31.90, 35.01),
+    "beitar illit": ("ביתר עילית", 31.70, 35.12), "ביתר עילית": ("ביתר עילית", 31.70, 35.12),
+    "elad": ("אלעד", 32.05, 34.95), "אלעד": ("אלעד", 32.05, 34.95), "rosh haayin": ("ראש העין", 32.10, 34.95),
+    "haifa": ("חיפה", 32.79, 34.99), "חיפה": ("חיפה", 32.79, 34.99), "rekhasim": ("רכסים", 32.75, 35.10), "רכסים": ("רכסים", 32.75, 35.10),
+    "kiryat ata": ("קרית אתא", 32.81, 35.11), "kiryat motzkin": ("קרית מוצקין", 32.84, 35.08), "kiryat bialik": ("קרית ביאליק", 32.83, 35.09),
+    "ashdod": ("אשדוד", 31.80, 34.65), "אשדוד": ("אשדוד", 31.80, 34.65), "ashkelon": ("אשקלון", 31.67, 34.57), "אשקלון": ("אשקלון", 31.67, 34.57),
+    "netanya": ("נתניה", 32.33, 34.86), "נתניה": ("נתניה", 32.33, 34.86), "hadera": ("חדרה", 32.44, 34.92),
+    "beer sheva": ("באר שבע", 31.25, 34.79), "beersheba": ("באר שבע", 31.25, 34.79), "באר שבע": ("באר שבע", 31.25, 34.79),
+    "tiberias": ("טבריה", 32.80, 35.53), "טבריה": ("טבריה", 32.80, 35.53), "safed": ("צפת", 32.96, 35.50), "tzfat": ("צפת", 32.96, 35.50), "צפת": ("צפת", 32.96, 35.50),
+    "meron": ("מירון", 32.98, 35.44), "מירון": ("מירון", 32.98, 35.44), "eilat": ("אילת", 29.56, 34.95), "אילת": ("אילת", 29.56, 34.95),
+    "nahariya": ("נהריה", 33.01, 35.10), "afula": ("עפולה", 32.61, 35.29), "karmiel": ("כרמיאל", 32.92, 35.30), "migdal haemek": ("מגדל העמק", 32.67, 35.24),
+    "lod": ("לוד", 31.95, 34.89), "ramla": ("רמלה", 31.93, 34.87), "raanana": ("רעננה", 32.18, 34.87), "kfar saba": ("כפר סבא", 32.18, 34.91),
+    "herzliya": ("הרצליה", 32.16, 34.84), "hod hasharon": ("הוד השרון", 32.15, 34.89), "kiryat ono": ("קרית אונו", 32.06, 34.86),
+    "kiryat gat": ("קרית גת", 31.61, 34.77), "kiryat malachi": ("קרית מלאכי", 31.73, 34.75), "ofakim": ("אופקים", 31.31, 34.62),
+    "netivot": ("נתיבות", 31.42, 34.59), "sderot": ("שדרות", 31.53, 34.60), "dimona": ("דימונה", 31.07, 35.03), "arad": ("ערד", 31.26, 35.21),
+    "emanuel": ("עמנואל", 32.16, 35.13), "givat zeev": ("גבעת זאב", 31.86, 35.17), "kochav yaakov": ("כוכב יעקב", 31.88, 35.25),
+    "tel zion": ("תל ציון", 31.88, 35.25), "telz stone": ("קרית יערים", 31.80, 35.10), "kiryat yearim": ("קרית יערים", 31.80, 35.10),
+    "or yehuda": ("אור יהודה", 32.03, 34.86), "yehud": ("יהוד", 32.03, 34.89), "israel": ("ישראל", 32.08, 34.78),
+}
+
+
+def geocode(place):
+    key = (place or "").strip().lower()
+    if key in CITIES:
+        return CITIES[key]
+    for k, v in CITIES.items():
+        if k in key or key in k:
+            return v
     try:
         g = http_json("https://geocoding-api.open-meteo.com/v1/search?" + urllib.parse.urlencode(
             {"name": place, "count": 1, "language": "he"}))
         res = (g.get("results") or [None])[0]
-        if not res:
-            return None
-        name = res.get("name", place)
+        if res:
+            return (res.get("name", place), res["latitude"], res["longitude"])
+    except Exception as e:
+        print("geocode error:", str(e)[:100])
+    return None
+
+
+WTTR_CODES = {"113": "בהיר", "116": "מעונן חלקית", "119": "מעונן", "122": "מעונן", "143": "ערפל", "176": "גשם קל", "200": "סופת רעמים",
+              "248": "ערפל", "260": "ערפל", "263": "טפטוף", "266": "טפטוף", "293": "גשם קל", "296": "גשם קל", "299": "גשם", "302": "גשם",
+              "305": "גשם חזק", "308": "גשם חזק", "353": "ממטרים", "356": "ממטרים", "359": "ממטרים חזקים", "386": "סופת רעמים", "389": "סופת רעמים"}
+
+
+def weather_wttr(name, place):
+    """גיבוי: wttr.in (חינמי, בלי מפתח)"""
+    d = http_json("https://wttr.in/%s?format=j1&lang=he" % urllib.parse.quote(place), timeout=10)
+    cur = d["current_condition"][0]
+    lines = ["מיקום: %s" % name, "עכשיו: %s מעלות, %s" % (cur.get("temp_C"), WTTR_CODES.get(cur.get("weatherCode"), ""))]
+    labels = ["היום", "מחר", "מחרתיים"]
+    for i, day in enumerate(d.get("weather", [])[:3]):
+        lines.append("%s (%s): %s עד %s מעלות" % (labels[i], day.get("date", "")[5:].replace("-", "/"), day.get("mintempC"), day.get("maxtempC")))
+        if i == 0:
+            for h in day.get("hourly", []):
+                if h.get("time") in ("2100", "0"):
+                    lines.append("הלילה בשעה %s: %s מעלות, %s" % (h["time"].zfill(4)[:2] + ":00", h.get("tempC"), WTTR_CODES.get(h.get("weatherCode"), "")))
+    return "\n".join(lines)
+
+
+def weather_lookup(place):
+    """מזג אוויר חינמי: טבלת ערים מובנית + Open-Meteo, ואם הוא חסום - wttr.in"""
+    geo = geocode(place)
+    if not geo:
+        return None
+    name, lat, lon = geo
+    try:
+        res = {"latitude": lat, "longitude": lon}
         f = http_json("https://api.open-meteo.com/v1/forecast?" + urllib.parse.urlencode({
             "latitude": res["latitude"], "longitude": res["longitude"], "timezone": "Asia/Jerusalem", "forecast_days": 3,
             "current": "temperature_2m,weather_code,wind_speed_10m",
@@ -623,7 +700,11 @@ def weather_lookup(place):
             lines.append("הלילה בשעה %s: %s מעלות, %s" % (t[11:16], round(temp), WEATHER_CODES.get(code, "")))
         return "\n".join(lines)
     except Exception as e:
-        print("weather error:", str(e)[:150])
+        print("weather (open-meteo) error:", str(e)[:100])
+    try:
+        return weather_wttr(name, place)
+    except Exception as e:
+        print("weather (wttr) error:", str(e)[:100])
         return None
 
 
