@@ -120,7 +120,7 @@ def get_client():
     global _client
     if _client is None:
         _client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY", ""),
-                               http_options=types.HttpOptions(timeout=25000))
+                               http_options=types.HttpOptions(timeout=15000))
     return _client
 
 
@@ -368,11 +368,14 @@ def speak_file(text, voice_idx, call_id):
         return None
     try:
         vl = voice_list()
+        t0 = time.time()
         wav = make_tts(text, vl[voice_idx % len(vl)])
         if not wav:
             return None
+        t1 = time.time()
         fname = "ai_tts_%s_%s" % (re.sub(r"[^0-9a-zA-Z]", "", call_id)[-10:], uuid.uuid4().hex[:6])
         yemot_upload_file(fname + ".wav", wav)
+        print("timing: tts %.1fs, upload %.1fs" % (t1 - t0, time.time() - t1))
         return fname
     except Exception as e:
         print("tts error:", e)
@@ -395,12 +398,15 @@ def gemini(system, contents, search=False):
                 kw["tools"] = [types.Tool(google_search=types.GoogleSearch())]
             if no_think:
                 kw["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
+            t0 = time.time()
             response = get_client().models.generate_content(
                 model=model, contents=contents, config=types.GenerateContentConfig(**kw))
             if response.text:
                 return response.text
         except Exception as e:
             last_error = e
+            print("gemini variant failed (%s search=%s nothink=%s) after %.1fs: %s" % (
+                model, use_search, no_think, time.time() - t0, str(e)[:120]))
             continue
     print("Gemini error:", last_error)
     return None
@@ -419,16 +425,18 @@ def transcribe_name(file_name):
     return clean_for_tts(text or "")[:30]
 
 
-ACTION_RE = re.compile(r"תמלול\s*:\s*(.*?)\s*\n\s*פעולה\s*:\s*(.*?)\s*\n\s*תשובה\s*:\s*(.*)", re.S)
+ACTION_RE = re.compile(r"תמלול\s*:\s*(.*?)\s*\n\s*פעולה\s*:\s*(.*?)\s*\n\s*חיפוש\s*:\s*(.*?)\s*\n\s*תשובה\s*:\s*(.*)", re.S)
 
 
 def ask_ai(assistant, history, file_name):
     """מחזיר (תמלול, פעולה, תשובה). פעולה: none / menu / end / voice / switch:id"""
+    t0 = time.time()
     try:
         audio = yemot_download(file_name + ".wav")
     except Exception as e:
         print("download error:", e)
         return "", "none", "סליחה, לא הצלחתי לשמוע את ההקלטה. נסה שוב."
+    print("timing: download %.1fs" % (time.time() - t0))
     _bg(yemot_delete, file_name + ".wav")
 
     others = "; ".join("%s = %s (מילים: %s)" % (a["id"], a["name"], a.get("keywords", "")) for _, a in active_assistants() if a["id"] != assistant["id"])
@@ -436,10 +444,11 @@ def ask_ai(assistant, history, file_name):
         " תקבל הקלטה של מה שהמשתמש אמר עכשיו. ההקלטה היא משיחת טלפון באיכות נמוכה (8 קילוהרץ), בעברית מדוברת,"
         " לפעמים עם רעשי רקע. הקשב בתשומת לב מלאה, והשתמש בהקשר של השיחה ובתחום של העוזר כדי להשלים מילים לא ברורות"
         " (שמות של זמרים, מלחינים, מקומות, מונחים). אם משהו באמת לא ברור, שאל בקצרה במקום לנחש."
-        " ענה בדיוק בפורמט הבא, שלוש שורות:\n"
+        " ענה בדיוק בפורמט הבא, ארבע שורות:\n"
         "תמלול: <תמלול מדויק של ההקלטה>\n"
         "פעולה: <אחת מהאפשרויות: none | menu | end | voice | switch:מזהה>\n"
-        "תשובה: <התשובה שלך למשתמש>\n"
+        "חיפוש: <כן אם התשובה דורשת חיפוש באינטרנט (המשתמש ביקש לחפש, או מידע עדכני: מחירים, חדשות, מזג אוויר, שעות פתיחה, תוצאות), אחרת לא>\n"
+        "תשובה: <התשובה שלך למשתמש. אם חיפוש = כן, כתוב כאן רק: מחפש>\n"
         "כללי הפעולה: menu אם ביקש לחזור לתפריט. end אם ביקש לסיים או להתנתק או אמר להתראות. "
         "voice אם ביקש להחליף קול. switch:מזהה אם ביקש לעבור לעוזר אחר מהרשימה: " + others + ". "
         "אחרת none. כשהפעולה אינה none, כתוב בתשובה משפט קצר מתאים (למשל: בטח, מעביר אותך)."
@@ -448,15 +457,27 @@ def ask_ai(assistant, history, file_name):
         "role": "user",
         "parts": [{"text": "ההקלטה של המשתמש:"}, types.Part.from_bytes(data=audio, mime_type="audio/wav")],
     }]
-    raw = gemini(system, contents, search=True)
+    t0 = time.time()
+    raw = gemini(system, contents)
+    print("timing: gemini(audio) %.1fs" % (time.time() - t0))
     if not raw:
         return "", "none", T("error")
     m = ACTION_RE.search(raw)
+    need_search = False
     if m:
-        transcript, action, answer = m.group(1).strip(), m.group(2).strip().lower(), m.group(3).strip()
+        transcript, action, need_search, answer = m.group(1).strip(), m.group(2).strip().lower(), "כן" in m.group(3), m.group(4).strip()
     else:
         transcript, action = "", "none"
-        answer = re.sub(r"^(תמלול|פעולה|תשובה)\s*:\s*", "", raw.strip())
+        answer = re.sub(r"^(תמלול|פעולה|חיפוש|תשובה)\s*:\s*", "", raw.strip())
+    if need_search and transcript and action == "none":
+        # שלב שני, רק כשבאמת צריך: חיפוש באינטרנט לפי התמלול (טקסט בלבד, מהיר יותר מאודיו)
+        t0 = time.time()
+        sys2 = assistant["prompt"] + GENERAL_RULES + " חפש באינטרנט וענה תשובה מדויקת עם המספרים והשמות שמצאת. תשובה קצרה, מתאימה להקראה בטלפון."
+        contents2 = list(history) + [{"role": "user", "parts": [{"text": transcript}]}]
+        found = gemini(sys2, contents2, search=True)
+        print("timing: gemini(search) %.1fs" % (time.time() - t0))
+        if found:
+            answer = re.sub(r"^(תמלול|פעולה|חיפוש|תשובה)\s*:\s*", "", found.strip())
     low = transcript.lower()
     if action == "none":
         if "החלף קול" in low or "תחליף קול" in low or "שנה קול" in low:
