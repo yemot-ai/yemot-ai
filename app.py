@@ -76,7 +76,8 @@ TEXTS = {
 }
 
 GENERAL_RULES = (
-    " אתה מדבר בטלפון, לכן ענה קצר וברור, בלי כוכביות, בלי רשימות, בלי אימוג'ים ובלי סימני עיצוב."
+    " אתה מדבר בטלפון, לכן ענה קצר וברור: משפט עד שלושה משפטים, אלא אם ביקשו במפורש משהו ארוך (סיפור, שיר, הסבר מפורט)."
+    " בלי כוכביות, בלי רשימות, בלי אימוג'ים ובלי סימני עיצוב."
     " ענה בשפה שבה המשתמש דיבר אליך; ברירת המחדל היא עברית."
     " שמור על שפה מכובדת וצנועה, ואל תעסוק בנושאים לא צנועים."
     " יש לך כלי חיפוש באינטרנט. השתמש בו כשהמשתמש מבקש לחפש, או כשהתשובה דורשת מידע עדכני:"
@@ -387,16 +388,17 @@ def gemini(system, contents, search=False):
     last_error = None
     variants = []
     for model in MODELS:
-        if search:
-            variants.append((model, True, True))
-        variants.append((model, False, True))
-        variants.append((model, False, False))
-    for model, use_search, no_think in variants:
+        for think in ("level", "budget", None):
+            variants.append((model, search, think))
+    for model, use_search, think in variants:
+        no_think = think
         try:
-            kw = dict(system_instruction=system, max_output_tokens=700)
+            kw = dict(system_instruction=system, max_output_tokens=400)
             if use_search:
                 kw["tools"] = [types.Tool(google_search=types.GoogleSearch())]
-            if no_think:
+            if think == "level":
+                kw["thinking_config"] = types.ThinkingConfig(thinking_level="minimal")
+            elif think == "budget":
                 kw["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
             t0 = time.time()
             response = get_client().models.generate_content(
@@ -715,7 +717,7 @@ def yemot():
             state["pending"] = pending
             state["wait_i"] = 0
             _bg(ai_worker, pending, state, assistant, list(state["history"]), state["file"], call_id, state["voice"])
-            pending["event"].wait(8)
+            pending["event"].wait(11)
 
         if not pending["done"]:
             if time.time() - pending["started"] > 75:
@@ -914,7 +916,7 @@ def api_state():
         per_a[l.get("persona", "")] = per_a.get(l.get("persona", ""), 0) + 1
     return J({
         "settings": SETTINGS, "texts": TEXTS, "assistants": ASSISTANTS, "users": ulist,
-        "log": log[-600:][::-1], "calls": cl[-300:][::-1],
+        "log": log[-600:], "log_total": len(log), "calls": cl[-300:][::-1],
         "charts": {"per_day": per_day, "per_assistant": sorted(per_a.items(), key=lambda x: -x[1])[:8],
                    "top_users": [[users.get(p, p), n] for p, n in sorted(per_user.items(), key=lambda x: -x[1])[:10]]},
         "voices": voice_list(), "mail": bool(MAIL_USER and MAIL_PASS), "mail_to": MAIL_TO, "owners": OWNER_PHONES,
@@ -1060,6 +1062,25 @@ def api_sendmail():
         return g
     day = today_str()
     return J({"ok": True, "result": send_mail("סיכום הקו ליום " + day, build_summary(day))})
+
+
+@app.route("/api/log")
+def api_log():
+    """שורות יומן חדשות בלבד (לעדכון חי של מסך השיחות)"""
+    g = api_guard()
+    if g:
+        return g
+    try:
+        after = int(request.args.get("after", "0"))
+    except ValueError:
+        after = 0
+    with _lock:
+        total = len(LOG)
+        new = LOG[after:] if 0 <= after <= total else LOG[-50:]
+        act = {st.get("call_id"): {"phone": st.get("phone"), "waiting": bool(st.get("pending")),
+                                   "assistant": (assistant_by_id(st["assistant"])["name"] if st.get("assistant") else "")}
+               for st in calls.values()}
+    return J({"total": total, "new": new, "active": act, "time": now_str()})
 
 
 @app.route("/api/export.csv")
