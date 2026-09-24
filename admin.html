@@ -308,7 +308,8 @@ function renderConv(fresh){
   for(const k of order){if(n++>150)break;const msgs=groups[k],meta=groups[k].meta||msgs[0],live=LIVE[k];
     s+=`<div class="panel ${live?'thread-live':''}"><div class="row between"><div class="row" style="flex-wrap:nowrap">${avatar(meta.name)}<div><b>${esc(meta.name)}</b><div class="mute small">${esc(meta.phone)}</div></div></div><span class="row small">${live?`<span class="pill teal">בשיחה עכשיו${live.assistant?' · '+esc(live.assistant):''}</span>`:''}<span class="mute">${esc(meta.time)}${msgs.length?' · '+msgs.length+' שאלות':''}</span></span></div><div class="thread" style="margin-top:10px">`;
     let last='';msgs.forEach((m,i)=>{if(m.persona!==last){s+=`<div class="who">${esc(m.persona)}</div>`;last=m.persona;}const anim=(fresh&&live&&i>=msgs.length-1)?' newmsg':'';s+=`<div class="msg u${anim}">${esc(m.q)}</div><div class="msg a${anim}">${esc(m.a)}</div>`;});
-    if(live&&live.waiting)s+=`<div class="typing"><i></i><i></i><i></i></div>`;
+    if(live&&live.waiting){if(live.pending_q)s+=`<div class="msg u newmsg">${esc(live.pending_q)}</div>`;
+      if(live.pending_a)s+=`<div class="msg a newmsg" style="opacity:.65">${esc(live.pending_a)} <span class="pill amber">מייצר קול...</span></div>`;else s+=`<div class="typing"><i></i><i></i><i></i></div>`;}
     s+='</div></div>';}
   $('convList').innerHTML=s||'<div class="panel mute">עדיין אין שיחות. ברגע שמישהו יתקשר וידבר, השיחה תופיע כאן בזמן אמת.</div>';
 }
