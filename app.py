@@ -30,6 +30,12 @@ from email.mime.text import MIMEText
 from zoneinfo import ZoneInfo
 import importlib.resources  # noqa: F401  (טעינה מוקדמת - מונע תקלת ייבוא מקבילית ב-threads)
 try:
+    from pyluach import dates as hebdates
+    HAVE_HEB = True
+except Exception as _e:
+    print("pyluach missing:", _e)
+    HAVE_HEB = False
+try:
     from ddgs import DDGS
     HAVE_DDGS = True
 except Exception as _e:
@@ -125,6 +131,7 @@ SETTINGS = {
     "voices": DEFAULT_VOICES,
     "record_max": 25,               # שניות הקלטה מקסימום
     "model": "",                    # מודל מועדף (ריק = אוטומטי: הראשון ברשימה)
+    "vocab": "",                    # שמות ומונחים כלליים שעוזרים ל-AI להבין את ההקלטות (למשל שמות של חברים, מקומות)
 }
 
 # כל הנוסחים שהקו אומר - ניתנים לעריכה באתר הניהול. {name} = שם המתקשר, {assistant} = שם העוזר
@@ -173,6 +180,10 @@ ASSISTANTS = [
      "prompt": "אתה מדבר כמו ערס ישראלי מגניב: סלנג רחוב (אחי, וואלה, סבבה, יא מלך, בקטנה), ביטחון עצמי, חוצפה וקטע של מגניבות. "
                "עונה לעניין אבל בסטייל. בלי קללות ובלי להעליב באמת."},
     {"id": "music", "name": "המומחה למוזיקה", "on": True, "keywords": "מוזיקה, מוזיקלי, מוסיקה",
+     "vocab": "ישי ריבו, מוטי שטיינמץ, אברהם פריד, מרדכי בן דוד, יעקב שוואקי, שמואלי אונגר, דודי לינקר, שרולי גרין, בני פרידמן, "
+              "מרדכי שפירו, ליפא שמעלצר, יואלי קליין, בערי וובר, שלמה כץ, אהרן רזאל, ישי לפידות, עמירן דביר, איציק דדיה, "
+              "מוטי וייס, אלי מרכוס, יונתן רזאל, חיים ישראל, ליאור נרקיס, עומר אדם, אייל גולן, שלמה ארצי, אריק איינשטיין, "
+              "נפתלי קמפה, שולם למר, זאנוויל וינברגר, ניגון, טיש, ג'ינגל, אקורדים, סולם, מעבר",
      "prompt": "אתה מומחה למוזיקה חסידית וישראלית: זמרים, מלחינים, אלבומים, ניגונים, היסטוריה, וגם תיאוריה מוזיקלית - סולמות, אקורדים, "
                "מבנה שירים, מעברים. כששואלים על אקורדים או סולם של שיר, תן את הסולם ואת סדר האקורדים לפי חלקי השיר. "
                "אל תצטט מילים של שירים - אפשר לתאר על מה השיר ומי כתב והלחין."},
@@ -600,6 +611,52 @@ def gemini(system, contents, search=False):
     return None
 
 
+def clean_audio(wav):
+    """שיפור הקלטת טלפון לפני שליחה ל-AI: סינון רעש, הגברה אחידה, דגימה ל-16 קילוהרץ. אם נכשל - מחזיר את המקור"""
+    if not HAVE_TTS:
+        return wav
+    try:
+        import imageio_ffmpeg
+        ff = imageio_ffmpeg.get_ffmpeg_exe()
+        p = subprocess.run([ff, "-loglevel", "error", "-i", "pipe:0", "-af", "highpass=f=120,lowpass=f=3800,loudnorm=I=-16:TP=-1.5",
+                            "-ar", "16000", "-ac", "1", "-acodec", "pcm_s16le", "-f", "wav", "pipe:1"],
+                           input=wav, capture_output=True, timeout=15)
+        if p.returncode == 0 and len(p.stdout) > 1000:
+            return p.stdout
+    except Exception as e:
+        print("clean audio error:", str(e)[:100])
+    return wav
+
+
+def hebrew_today():
+    if not HAVE_HEB:
+        return ""
+    try:
+        d = il_now()
+        h = hebdates.GregorianDate(d.year, d.month, d.day).to_heb()
+        after_sunset = d.hour >= 19
+        s = h.hebrew_date_string()
+        if after_sunset:
+            s += " (אחרי השקיעה - כבר " + (h + 1).hebrew_date_string() + ")"
+        return s
+    except Exception:
+        return ""
+
+
+def context_line(assistant):
+    """שורת הקשר שמצורפת לכל פנייה: תאריך לועזי ועברי, ומילון שמות שכדאי לצפות להם"""
+    d = il_now()
+    days = ["שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת", "ראשון"]
+    line = " היום יום %s, %s, השעה %s." % (days[d.weekday()], d.strftime("%d/%m/%Y"), d.strftime("%H:%M"))
+    heb = hebrew_today()
+    if heb:
+        line += " התאריך העברי היום: %s." % heb
+    vocab = (SETTINGS.get("vocab", "") + ", " + assistant.get("vocab", "")).strip(", ")
+    if vocab:
+        line += " שמות ומונחים שסביר שיוזכרו בהקלטה (העדף אותם כשההגייה דומה): " + vocab + "."
+    return line
+
+
 def transcribe_name(file_name):
     try:
         audio = yemot_download(file_name + ".wav")
@@ -607,6 +664,7 @@ def transcribe_name(file_name):
         print("download error:", e)
         return ""
     _bg(yemot_delete, file_name + ".wav")
+    audio = clean_audio(audio)
     text = gemini("בהקלטה טלפונית באיכות נמוכה אדם אומר את שמו הפרטי בעברית (שם ישראלי או יהודי נפוץ). "
                   "החזר רק את השם הפרטי, מילה אחת או שתיים, בלי שום תוספת.",
                   [types.Part.from_bytes(data=audio, mime_type="audio/wav")])
@@ -815,7 +873,7 @@ def ask_ai(assistant, history, file_name):
     _bg(yemot_delete, file_name + ".wav")
 
     others = "; ".join("%s = %s (מילים: %s)" % (a["id"], a["name"], a.get("keywords", "")) for _, a in active_assistants() if a["id"] != assistant["id"])
-    system = assistant["prompt"] + GENERAL_RULES + (
+    system = assistant["prompt"] + GENERAL_RULES + context_line(assistant) + (
         " תקבל הקלטה של מה שהמשתמש אמר עכשיו. ההקלטה היא משיחת טלפון באיכות נמוכה (8 קילוהרץ), בעברית מדוברת,"
         " לפעמים עם רעשי רקע. הקשב בתשומת לב מלאה, והשתמש בהקשר של השיחה ובתחום של העוזר כדי להשלים מילים לא ברורות"
         " (שמות של זמרים, מלחינים, מקומות, מונחים). אם משהו באמת לא ברור, שאל בקצרה במקום לנחש."
@@ -1330,7 +1388,8 @@ def api_assistants():
         pr = str(a.get("prompt", "")).strip()[:2000]
         if not nm or not pr:
             continue
-        out.append({"id": aid, "name": nm, "prompt": pr, "on": bool(a.get("on", True)), "keywords": str(a.get("keywords", ""))[:200]})
+        out.append({"id": aid, "name": nm, "prompt": pr, "on": bool(a.get("on", True)), "keywords": str(a.get("keywords", ""))[:200],
+                    "vocab": str(a.get("vocab", ""))[:1500]})
     if not out:
         return J({"ok": False, "error": "חייב להישאר לפחות עוזר אחד"})
     ASSISTANTS[:] = out
@@ -1372,6 +1431,7 @@ def api_settings():
     SETTINGS["tts"] = "on" if d.get("tts") == "on" else "off"
     SETTINGS["voices"] = ",".join(csv_list(str(d.get("voices", "")))) or DEFAULT_VOICES
     SETTINGS["model"] = re.sub(r"[^a-z0-9.\-]", "", str(d.get("model", "")).lower())[:60]
+    SETTINGS["vocab"] = clean_for_tts(str(d.get("vocab", "")))[:1500]
     save_settings()
     return J({"ok": True})
 
