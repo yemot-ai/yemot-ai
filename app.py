@@ -1023,6 +1023,7 @@ def goodbye(call_id, name, state=None):
 def ai_worker(pending, state, assistant, history, file_name, call_id, voice_idx):
     try:
         transcript, action, answer = ask_ai(assistant, history, file_name)
+        state["pending_q"], state["pending_a"] = transcript, answer   # מוצג באתר עוד לפני שהקול מוכן
         tts = None
         if action in ("none", "voice") or action.startswith("switch"):
             v = voice_idx
@@ -1169,6 +1170,7 @@ def yemot():
                 return R(wait_message(state))
 
         state["pending"] = None
+        state["pending_q"] = state["pending_a"] = ""
         transcript, action, answer, tts = pending["result"]
         if tts:
             state["tts_file"] = tts
@@ -1529,6 +1531,8 @@ def api_log():
         total = len(LOG)
         new = LOG[after:] if 0 <= after <= total else LOG[-50:]
         act = {st.get("call_id"): {"phone": st.get("phone"), "waiting": bool(st.get("pending")),
+                                   "pending_q": st.get("pending_q", "") if st.get("pending") else "",
+                                   "pending_a": st.get("pending_a", "") if st.get("pending") else "",
                                    "assistant": (assistant_by_id(st["assistant"])["name"] if st.get("assistant") else "")}
                for st in calls.values()}
     return J({"total": total, "new": new, "active": act, "time": now_str()})
