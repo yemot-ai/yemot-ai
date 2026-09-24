@@ -5,3 +5,4 @@ gunicorn
 edge-tts
 imageio-ffmpeg
 ddgs
+pyluach
