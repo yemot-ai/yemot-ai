@@ -331,6 +331,7 @@ function drawEditor(){
   $('editor').innerHTML=`<div class="row between"><h3 style="margin:0">${esc(a.name)}</h3><div class="row"><button class="btn sm ghost" onclick="mv(-1)">הזז למעלה</button><button class="btn sm ghost" onclick="mv(1)">הזז למטה</button><label class="row small"><input type="checkbox" ${a.on?'checked':''} onchange="A[selIdx].on=this.checked;drawKeypad();drawEditor()"> מופיע בתפריט</label><button class="btn sm coral" onclick="if(confirm('למחוק את העוזר?')){A.splice(selIdx,1);selIdx=-1;drawKeypad();drawEditor();}">מחק</button></div></div>
   <div class="grid2" style="margin-top:12px"><div class="field"><label>השם כפי שנשמע בתפריט</label><input type="text" value="${esc(a.name)}" oninput="A[selIdx].name=this.value" onchange="drawKeypad()"></div>
   <div class="field"><label>מילים לזיהוי בדיבור, מופרדות בפסיק</label><input type="text" value="${esc(a.keywords||'')}" onchange="A[selIdx].keywords=this.value"><div class="mute small">כשמתקשר אומר "תעביר אותי ל..." עם אחת המילים האלה</div></div></div>
+  <div class="field"><label>מילון שמות ומונחים של העוזר הזה (מופרדים בפסיק) - עוזר ל-AI להבין נכון שמות שנאמרים בטלפון</label><textarea style="min-height:60px" onchange="A[selIdx].vocab=this.value">${esc(a.vocab||'')}</textarea></div>
   <div class="field"><label>ההנחיה ל-AI: מי הוא, מה התחום שלו, איך הוא עונה</label><textarea style="min-height:150px" onchange="A[selIdx].prompt=this.value">${esc(a.prompt)}</textarea></div>
   <p class="mute small">הכללים הקבועים (לענות קצר, בעברית, בכבוד, חיפוש באינטרנט כשצריך) מתווספים לבד לכל עוזר.</p>`;
 }
@@ -348,6 +349,7 @@ function renderSettings(){const s=S.settings;
   $('settingsBox').innerHTML=`<h3>הקו</h3>
   <div class="field"><label>הודעה בתחילת כל שיחה, לכולם (ריק = בלי)</label><input type="text" id="s_announcement" value="${esc(s.announcement)}"></div>
   <div class="grid2"><div class="field"><label>שאלות ליום לכל משתמש (0 = בלי הגבלה)</label><input type="number" id="s_daily_limit" value="${s.daily_limit}"></div><div class="field"><label>אורך הקלטה מקסימלי, שניות</label><input type="number" id="s_record_max" value="${s.record_max}"></div></div>
+  <div class="field"><label>מילון כללי: שמות של חברים, מקומות ומונחים שאנשים אומרים בקו (מופרדים בפסיק). עוזר להבנת ההקלטות</label><input type="text" id="s_vocab" value="${esc(s.vocab||'')}"></div>
   <div class="field"><label>מספרים בלי הגבלה, מופרדים בפסיק</label><input type="text" id="s_unlimited_phones" value="${esc(s.unlimited_phones)}"></div>
   <div class="field"><label>מספרים חסומים</label><input type="text" id="s_blocked_phones" value="${esc(s.blocked_phones)}"></div>
   <div class="field"><label>שעת הסיכום היומי למייל (0-23)</label><input type="number" id="s_mail_hour" value="${s.mail_hour}"></div>`;
@@ -357,7 +359,7 @@ function renderSettings(){const s=S.settings;
   $('ttsVoice').innerHTML=S.voices.map(v=>`<option>${esc(v)}</option>`).join('');
   $('s_model').innerHTML='<option value="">אוטומטי (הראשון ברשימה)</option>'+(S.models||[]).map(m=>`<option value="${esc(m.name)}" ${S.settings.model===m.name?'selected':''}>${esc(m.name)}</option>`).join('');
   $('modelsBox').innerHTML=(S.models||[]).map((m,i)=>`<div class="row" style="margin-bottom:4px"><span class="pill ${m.dead?'coral':(m.ok?'teal':'amber')}">${m.dead?'לא קיים':(m.ok?'זמין':'מכסה נגמרה')}</span> ${esc(m.name)}${i===0&&m.ok?' <span class="mute">← בשימוש</span>':''}</div>`).join('')||'<span class="mute">עדיין לא נבדק</span>';}
-async function saveSettings(){const d={};for(const k of ['announcement','tts','voices','daily_limit','record_max','unlimited_phones','blocked_phones','mail_hour','model'])d[k]=$('s_'+k).value;await api('/api/settings',d);await reload();toast('ההגדרות נשמרו');}
+async function saveSettings(){const d={};for(const k of ['announcement','tts','voices','daily_limit','record_max','unlimited_phones','blocked_phones','mail_hour','model','vocab'])d[k]=$('s_'+k).value;await api('/api/settings',d);await reload();toast('ההגדרות נשמרו');}
 async function runDiag(){$('diagBox').innerHTML='<span class="mute">בודק... (עד 30 שניות)</span>';const d=await api('/api/diag',{});
   const ok=v=>v?'<span class="pill teal">תקין</span>':'<span class="pill coral">נכשל</span>';
   let s=`<table><tr><td>פייתון</td><td>${esc(d.python)} ${d.python.startsWith('3.12')||d.python.startsWith('3.11')?ok(1):'<span class="pill amber">מומלץ 3.12 (PYTHON_VERSION ב-Render)</span>'}</td></tr>`;
