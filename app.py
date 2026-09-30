@@ -3,6 +3,7 @@
 קו AI טלפוני בימות המשיח
 - Render (חינם) + Gemini (חינם) + Edge TTS (חינם, קול טבעי)
 - רישום שם לפי מספר טלפון, 7 עוזרים, חיפוש באינטרנט, החלפת קול, אתר ניהול חי
+- חיפוש באינטרנט: חיפוש גוגל של Gemini + כמה מנועי חיפוש חינמיים במקביל + קריאת תוכן האתרים עצמם
 """
 from flask import Flask, request, Response
 from yemot_flow.actions import build_id_list_message, build_read, build_go_to_folder, build_combined_action
@@ -18,6 +19,7 @@ import json
 import html
 import time
 import uuid
+import base64
 import asyncio
 import smtplib
 import threading
@@ -26,6 +28,7 @@ import subprocess
 import urllib.request
 import urllib.parse
 import urllib.error
+import xml.etree.ElementTree as ET
 from email.mime.text import MIMEText
 from zoneinfo import ZoneInfo
 import importlib.resources  # noqa: F401  (טעינה מוקדמת - מונע תקלת ייבוא מקבילית ב-threads)
@@ -161,7 +164,7 @@ GENERAL_RULES = (
     " ענה בשפה שבה המשתמש דיבר אליך; ברירת המחדל היא עברית."
     " שמור על שפה מכובדת וצנועה, ואל תעסוק בנושאים לא צנועים."
     " יש לך כלי חיפוש באינטרנט. השתמש בו כשהמשתמש מבקש לחפש, או כשהתשובה דורשת מידע עדכני:"
-    " מחירים, חנויות, חדשות, מזג אוויר, שעות פתיחה, תוצאות, מה קורה עכשיו. אחרי חיפוש תן תשובה מדויקת עם המספרים והשמות שמצאת."
+    " מחירים, חנויות, חדשות, מזג אוויר, שעות פתיחה, תחבורה ציבורית, תוצאות, מה קורה עכשיו. אחרי חיפוש תן תשובה מדויקת עם המספרים והשמות שמצאת."
 )
 
 # העוזרים: רשימה מסודרת (הסדר = מספר ההקשה בתפריט). ניתן להוסיף, למחוק ולסדר באתר הניהול.
@@ -234,8 +237,6 @@ def call_with_deadline(fn, seconds):
     if "e" in box:
         raise box["e"]
     return box["r"]
-
-
 
 
 def il_now():
@@ -812,49 +813,348 @@ def wiki_search(query):
         return None
 
 
-def web_search(query, max_results=6):
-    """חיפוש חינמי (DuckDuckGo) - מחזיר טקסט של תוצאות או None"""
-    if not HAVE_DDGS:
-        return None
+# ============================================================ חיפוש באינטרנט
+# שתי דרכים רצות במקביל, והראשונה שמצליחה עונה:
+#   1. חיפוש גוגל המובנה של Gemini (כמו בג'מיני באתר של גוגל)
+#   2. מנועי חיפוש חינמיים (DDGS: בינג/ברייב/גוגל/יאהו... + בינג ישיר + גוגל חדשות),
+#      ואז כניסה לאתרים עצמם וקריאת התוכן שלהם - כך אפשר לענות מכל אתר: תחבורה, חדשות, מוזיקה, חנויות
+BROWSER_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
+              "Chrome/126.0.0.0 Safari/537.36")
+SEARCH_STATE = {"ground_until": 0, "last": {}}   # מצב כל מקור חיפוש (מוצג בבדיקת המערכת)
+SEARCH_CACHE = {}                                # שאילתה -> (זמן, תוצאות) - חוסך חיפוש כפול על אותה שאלה
+SEARCH_CACHE_TTL = 600
+SEARCH_BUDGET = 30          # שניות מקסימום לכל שלב החיפוש (כדי שהשיחה לא תיפול)
+GROUND_GRACE = 8            # כמה שניות לחכות לחיפוש גוגל לפני שמסתפקים בתשובה מהמנועים החינמיים
+SKIP_DOMAINS = ("youtube.com", "youtu.be", "facebook.com", "instagram.com", "tiktok.com", "twitter.com", "x.com",
+                "news.google.com", "linkedin.com", "pinterest.")
+NEWS_WORDS = ("חדשות", "מה קרה", "מה חדש", "מה נשמע ב", "עדכון", "עדכונים", "מבזק", "היום", "אתמול", "הלילה", "עכשיו",
+              "השבוע", "בחירות", "פיגוע", "תאונה", "תוצאה", "תוצאות", "משחק", "שביתה")
+FORCE_SEARCH_WORDS = ("תחפש", "חפש ", "תבדוק באינטרנט", "בדוק באינטרנט", "באינטרנט", "בגוגל", "תגגל")
+
+
+def _search_note(src, ok, err=""):
+    SEARCH_STATE["last"][src] = {"ok": bool(ok), "time": now_str(), "error": str(err)[:160]}
+
+
+def run_parallel(tasks, timeout):
+    """מריץ כמה פונקציות במקביל ומחזיר את התוצאות שהספיקו לחזור בזמן (None למי שנכשל או איחר)"""
+    box = [None] * len(tasks)
+
+    def run(i, fn):
+        try:
+            box[i] = fn()
+        except Exception as e:
+            print("parallel task error:", str(e)[:120])
+    threads = [threading.Thread(target=run, args=(i, fn), daemon=True) for i, fn in enumerate(tasks)]
+    for t in threads:
+        t.start()
+    end = time.time() + timeout
+    for t in threads:
+        t.join(max(0, end - time.time()))
+    return list(box)
+
+
+def http_get(url, timeout=6, max_bytes=700000):
+    """הורדת דף כמו דפדפן רגיל. מחזיר (סוג תוכן, טקסט)"""
+    req = urllib.request.Request(url, headers={
+        "User-Agent": BROWSER_UA,
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "he-IL,he;q=0.9,en-US;q=0.7,en;q=0.5"})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        ctype = r.headers.get("Content-Type", "") or ""
+        data = r.read(max_bytes)
+    charset = ""
+    m = re.search(r"charset=([\w-]+)", ctype, re.I)
+    if m:
+        charset = m.group(1)
+    else:
+        m = re.search(rb"<meta[^>]+charset=[\"']?([\w-]+)", data[:4000], re.I)
+        if m:
+            charset = m.group(1).decode("ascii", "ignore")
     try:
-        results = call_with_deadline(lambda: DDGS().text(query, region="il-he", max_results=max_results), 8)
-        lines = []
-        for r in results or []:
-            lines.append("- %s: %s (%s)" % (r.get("title", ""), r.get("body", ""), r.get("href", "")))
-        return "\n".join(lines) if lines else None
+        text = data.decode(charset or "utf-8", "ignore")
+    except LookupError:
+        text = data.decode("utf-8", "ignore")
+    return ctype, text
+
+
+def _strip_tags(s):
+    return re.sub(r"\s+", " ", html.unescape(re.sub(r"(?s)<[^>]+>", " ", s or ""))).strip()
+
+
+def html_to_text(page):
+    """הופך דף אינטרנט לטקסט נקי: בלי תפריטים, סקריפטים וכפתורים"""
+    page = re.sub(r"(?is)<(script|style|noscript|svg|head|nav|footer|form|iframe)\b[^>]*>.*?</\1\s*>", " ", page)
+    page = re.sub(r"(?is)<br\s*/?>|</(p|div|li|h[1-6]|tr|section|article)\s*>", "\n", page)
+    page = re.sub(r"(?s)<[^>]+>", " ", page)
+    page = html.unescape(page)
+    lines = [re.sub(r"\s+", " ", ln).strip() for ln in page.split("\n")]
+    lines = [ln for ln in lines if len(ln) > 25]
+    return "\n".join(lines)
+
+
+def _domain(url):
+    try:
+        return urllib.parse.urlparse(url).netloc.replace("www.", "")
+    except Exception:
+        return ""
+
+
+def search_ddgs(query, n=6):
+    """DDGS: מנוע שמשלב כמה מנועי חיפוש (בינג, ברייב, גוגל, יאהו ועוד) ומחליף ביניהם אוטומטית"""
+    if not HAVE_DDGS:
+        return []
+    try:
+        try:
+            res = DDGS().text(query, region="il-he", max_results=n, backend="auto")
+        except TypeError:
+            res = DDGS().text(query, region="il-he", max_results=n)
+        out = [{"title": r.get("title", ""), "body": r.get("body", ""), "href": r.get("href", "")} for r in (res or [])]
+        _search_note("ddg", bool(out), "" if out else "לא חזרו תוצאות")
+        return out
     except Exception as e:
-        print("web search error:", str(e)[:150])
+        _search_note("ddg", False, e)
+        print("ddgs error:", str(e)[:150])
+        return []
+
+
+def _bing_url(u):
+    u = html.unescape(u or "")
+    if "bing.com/ck/a" in u:
+        try:
+            q = urllib.parse.parse_qs(urllib.parse.urlparse(u).query).get("u", [""])[0]
+            if q.startswith("a1"):
+                s = q[2:]
+                s += "=" * (-len(s) % 4)
+                return base64.urlsafe_b64decode(s).decode("utf-8", "ignore")
+        except Exception:
+            pass
+    return u
+
+
+def search_bing(query, n=6):
+    """חיפוש ישיר בבינג (גיבוי כשמנועים אחרים חסומים)"""
+    try:
+        _, page = http_get("https://www.bing.com/search?" + urllib.parse.urlencode(
+            {"q": query, "setlang": "he", "cc": "IL", "mkt": "he-IL", "count": 10}), timeout=7)
+        out = []
+        for chunk in page.split('<li class="b_algo"')[1:]:
+            m = re.search(r'(?s)<h2[^>]*>\s*<a[^>]+href="([^"]+)"[^>]*>(.*?)</a>', chunk)
+            if not m:
+                continue
+            sn = re.search(r'(?s)<p[^>]*>(.*?)</p>', chunk) or re.search(r'(?s)class="b_lineclamp\d*"[^>]*>(.*?)</', chunk)
+            out.append({"title": _strip_tags(m.group(2)), "href": _bing_url(m.group(1)), "body": _strip_tags(sn.group(1)) if sn else ""})
+            if len(out) >= n:
+                break
+        _search_note("bing", bool(out), "" if out else "לא חזרו תוצאות")
+        return out
+    except Exception as e:
+        _search_note("bing", False, e)
+        print("bing error:", str(e)[:150])
+        return []
+
+
+def search_news(query, n=6):
+    """כותרות חדשות עדכניות: גוגל חדשות (RSS חינמי), ואם לא - חדשות של DDGS"""
+    out = []
+    try:
+        _, x = http_get("https://news.google.com/rss/search?" + urllib.parse.urlencode(
+            {"q": query, "hl": "he", "gl": "IL", "ceid": "IL:he"}), timeout=7)
+        root = ET.fromstring(x.encode("utf-8"))
+        for it in root.iter("item"):
+            src = it.find("source")
+            out.append({"title": (it.findtext("title") or "").strip(),
+                        "body": "פורסם: %s%s" % ((it.findtext("pubDate") or "").strip(), (", מקור: " + src.text) if src is not None and src.text else ""),
+                        "href": ""})
+            if len(out) >= n:
+                break
+    except Exception as e:
+        print("google news error:", str(e)[:150])
+    if not out and HAVE_DDGS:
+        try:
+            for r in DDGS().news(query, region="il-he", max_results=n) or []:
+                out.append({"title": r.get("title", ""), "body": "פורסם: %s, מקור: %s. %s" % (r.get("date", ""), r.get("source", ""), r.get("body", "")),
+                            "href": r.get("url", "")})
+        except Exception as e:
+            print("ddgs news error:", str(e)[:150])
+    _search_note("news", bool(out), "" if out else "לא חזרו כותרות")
+    return out
+
+
+def fetch_page_text(url):
+    """נכנס לאתר וקורא את התוכן שלו (כמו שג'מיני קורא דפים)"""
+    try:
+        ctype, page = http_get(url, timeout=6)
+        if "html" not in ctype.lower() and not page.lstrip()[:200].lower().startswith(("<!doctype", "<html")):
+            return None
+        t = html_to_text(page)
+        return t[:4000] if len(t) > 150 else None
+    except Exception as e:
+        print("fetch page error (%s): %s" % (_domain(url), str(e)[:100]))
         return None
 
 
-def answer_with_search(assistant, history, transcript, search_line=""):
-    """שלב חיפוש: מזג אוויר -> Open-Meteo; אחרת DuckDuckGo, ויקיפדיה, חיפוש גוגל; ואם הכל נכשל - מהידע"""
-    base = assistant["prompt"] + GENERAL_RULES
-    today = il_now().strftime("%d/%m/%Y")
-    results, source = None, ""
+def gather_web(query, newsy=False):
+    """אוסף מידע מהאינטרנט: כמה מנועי חיפוש במקביל + תוכן האתרים המובילים. מחזיר טקסט או None"""
+    key = (query or "").strip().lower()
+    if not key:
+        return None
+    cached = SEARCH_CACHE.get(key)
+    if cached and time.time() - cached[0] < SEARCH_CACHE_TTL:
+        return cached[1]
+    t0 = time.time()
+    tasks = [lambda: search_ddgs(query), lambda: search_bing(query)]
+    if newsy:
+        tasks.append(lambda: search_news(query))
+    res = run_parallel(tasks, 9)
+    hits, seen = [], set()
+    for h in (res[0] or []) + (res[1] or []):
+        href = h.get("href", "")
+        k = href.split("?")[0].rstrip("/")
+        if not href or k in seen:
+            continue
+        seen.add(k)
+        hits.append(h)
+    news = (res[2] if newsy else None) or []
+    if not hits and not news:
+        news = search_news(query)
+    extra = None
+    if not hits and not news:
+        extra = wiki_search(query)
+    urls = [h["href"] for h in hits if h["href"].startswith("http") and not any(d in h["href"] for d in SKIP_DOMAINS)
+            and not h["href"].lower().endswith(".pdf")][:3]
+    pages = run_parallel([(lambda u=u: fetch_page_text(u)) for u in urls], 7) if urls else []
+    parts = []
+    if hits:
+        parts.append("תוצאות חיפוש:\n" + "\n".join("- %s: %s (%s)" % (h["title"], h["body"], _domain(h["href"])) for h in hits[:8]))
+    if news:
+        parts.append("כותרות חדשות אחרונות:\n" + "\n".join("- %s (%s)" % (h["title"], h["body"]) for h in news[:6]))
+    for u, txt in zip(urls, pages):
+        if txt:
+            parts.append("תוכן מתוך האתר %s:\n%s" % (_domain(u), txt[:2500]))
+    if extra:
+        parts.append("ערכים מוויקיפדיה:\n" + extra)
+    text = "\n\n".join(parts) or None
+    print("timing: web gather %.1fs - %d results, %d news, %d pages read" % (
+        time.time() - t0, len(hits), len(news), sum(1 for p in pages if p)))
+    if text:
+        SEARCH_CACHE[key] = (time.time(), text)
+        if len(SEARCH_CACHE) > 300:
+            for k in sorted(SEARCH_CACHE, key=lambda x: SEARCH_CACHE[x][0])[:100]:
+                SEARCH_CACHE.pop(k, None)
+    return text
+
+
+def web_search(query, max_results=6):
+    """תאימות לאחור: חיפוש חינמי - מחזיר טקסט של תוצאות או None"""
+    hits = search_ddgs(query, max_results) or search_bing(query, max_results)
+    if not hits:
+        return None
+    return "\n".join("- %s: %s (%s)" % (r.get("title", ""), r.get("body", ""), r.get("href", "")) for r in hits)
+
+
+def grounded_answer(system, contents):
+    """חיפוש גוגל המובנה של Gemini. מודל אחד בכל פעם (לא כמה במקביל) כדי לא לשרוף את המכסה היומית החינמית"""
+    if time.time() < SEARCH_STATE["ground_until"]:
+        return None
+    order = [m for m in MODELS if model_ok(m)]
+    order.sort(key=lambda m: 1 if "lite" in m else 0)          # לחיפוש - מודל מלא קודם, הוא מחפש טוב יותר
+    pref = SETTINGS.get("model", "")
+    if pref and pref in order:
+        order = [pref] + [m for m in order if m != pref]
+    quota_hits, tried = 0, 0
+    for m in order[:2]:
+        tried += 1
+        known = MODEL_THINK.get(m, "level")
+        thinks = [known] + [t for t in ("level", "budget", None) if t != known]
+        for think in thinks:
+            try:
+                text = call_with_deadline(lambda m=m, think=think: _one_call(m, system, contents, True, think), 18)
+                if text:
+                    _search_note("google", True)
+                    return text
+                break
+            except Exception as e:
+                msg = str(e)
+                print("google search failed (%s think=%s): %s" % (m, think, msg[:140]))
+                if "RESOURCE_EXHAUSTED" in msg or "429" in msg[:8] or "quota" in msg.lower():
+                    quota_hits += 1
+                    _search_note("google", False, "המכסה החינמית של חיפוש גוגל נגמרה זמנית")
+                    break
+                if "NOT_FOUND" in msg or "no longer available" in msg:
+                    _note_failure(m, True, msg)
+                    break
+                if isinstance(e, Deadline):
+                    _search_note("google", False, "חיפוש גוגל לא ענה בזמן")
+                    break
+                if "thinking" not in msg.lower() and "level" not in msg.lower() and "budget" not in msg.lower():
+                    _search_note("google", False, msg)
+                    break
+    if tried and quota_hits >= tried:
+        SEARCH_STATE["ground_until"] = time.time() + 900      # רבע שעה בלי חיפוש גוגל; המנועים החינמיים ממשיכים לעבוד
+        print("google search: quota exhausted, pausing 15 minutes")
+    return None
+
+
+def answer_with_search(assistant, history, transcript, search_line="", query=""):
+    """שלב חיפוש: מזג אוויר -> Open-Meteo. אחרת חיפוש גוגל של Gemini ומנועים חינמיים + קריאת אתרים - במקביל"""
+    base = assistant["prompt"] + GENERAL_RULES + context_line(assistant)
+    q = (query or transcript or "").strip()
+    t0 = time.time()
     if "מזג" in search_line:
         place = search_line.split(":", 1)[1].strip() if ":" in search_line else ""
-        results = weather_lookup(place or "Tel Aviv")
-        source = "תחזית מזג אוויר"
-    if not results:
-        results = web_search(transcript)
-        source = "תוצאות חיפוש מהאינטרנט"
-    if not results:
-        results = wiki_search(transcript)
-        source = "ערכים מוויקיפדיה"
-    if results:
-        sys2 = base + (" היום %s. קיבלת %s. ענה על השאלה לפי המידע הזה, עם המספרים והשמות שמופיעים בו,"
-                       " קצר ומתאים להקראה בטלפון. אל תקרא כתובות אינטרנט. אם המידע לא עונה על השאלה, אמור זאת בקצרה." % (today, source))
-        contents = list(history) + [{"role": "user", "parts": [{"text": "השאלה: %s\n\n%s:\n%s" % (transcript, source, results)}]}]
-        found = gemini(sys2, contents)
-        if found:
-            return found
+        w = weather_lookup(place or "Tel Aviv")
+        if w:
+            sys_w = base + " קיבלת תחזית מזג אוויר. ענה על השאלה לפי המידע הזה, קצר ומתאים להקראה בטלפון."
+            ans = gemini(sys_w, list(history) + [{"role": "user", "parts": [{"text": "השאלה: %s\n\nתחזית מזג אוויר:\n%s" % (transcript, w)}]}])
+            if ans:
+                return ans
+    newsy = any(w in (transcript + " " + q) for w in NEWS_WORDS)
     contents = list(history) + [{"role": "user", "parts": [{"text": transcript}]}]
-    sys3 = base + " חפש באינטרנט וענה תשובה מדויקת עם המספרים והשמות שמצאת. תשובה קצרה, מתאימה להקראה בטלפון."
-    found = gemini(sys3, contents, search=True)
-    if found:
-        return found
-    sys4 = base + " החיפוש באינטרנט לא זמין כרגע. ענה כמיטב ידיעתך, וציין בקצרה שלא הצלחת לבדוק באינטרנט."
+    sys_g = base + (" חפש באינטרנט, בכל אתר שצריך: חדשות, תחבורה ציבורית ולוחות זמנים, מוזיקה, חנויות, מחירים, שעות פתיחה."
+                    " ענה תשובה מדויקת עם המספרים, השעות והשמות שמצאת. תשובה קצרה, מתאימה להקראה בטלפון. אל תקרא כתובות אינטרנט.")
+    box = {}
+
+    def run_google():
+        try:
+            box["g"] = grounded_answer(sys_g, contents)
+        except Exception as e:
+            print("google search step error:", e)
+            box["g"] = None
+
+    def run_free():
+        try:
+            data = gather_web(q, newsy)
+            if not data:
+                box["f"] = None
+                return
+            sys2 = base + (" חיפשת באינטרנט וקיבלת את המידע שלמטה: תוצאות חיפוש ותוכן שנקרא מתוך האתרים עצמם."
+                           " ענה על השאלה לפי המידע הזה, עם המספרים, השעות והשמות שמופיעים בו, קצר ומתאים להקראה בטלפון."
+                           " אל תקרא כתובות אינטרנט. אפשר לציין מאיזה אתר המידע. אם המידע לא מספיק לתשובה מדויקת, אמור בקצרה מה כן מצאת.")
+            box["f"] = gemini(sys2, list(history) + [{"role": "user", "parts": [{"text": "השאלה: %s\n\nמה שנמצא באינטרנט:\n%s" % (transcript, data[:12000])}]}])
+        except Exception as e:
+            print("free search step error:", e)
+            box["f"] = None
+    threading.Thread(target=run_google, daemon=True).start()
+    threading.Thread(target=run_free, daemon=True).start()
+    end = t0 + SEARCH_BUDGET
+    while time.time() < end:
+        if box.get("g"):
+            print("search: answered by google search in %.1fs" % (time.time() - t0))
+            return box["g"]
+        if box.get("f") and (time.time() - t0 > GROUND_GRACE or "g" in box):
+            print("search: answered by web engines in %.1fs" % (time.time() - t0))
+            return box["f"]
+        if "g" in box and "f" in box:
+            break
+        time.sleep(0.3)
+    if box.get("g"):
+        return box["g"]
+    if box.get("f"):
+        return box["f"]
+    print("search: all sources failed after %.1fs" % (time.time() - t0))
+    sys4 = base + (" החיפוש באינטרנט לא הצליח הפעם. ענה כמיטב ידיעתך. רק אם התשובה באמת תלויה במידע עדכני"
+                   " (שעות, מחירים, חדשות, לוחות זמנים), אמור במשפט קצר שכרגע לא הצלחת לבדוק ושאפשר לנסות שוב בעוד רגע.")
     return gemini(sys4, contents)
 
 
@@ -880,8 +1180,10 @@ def ask_ai(assistant, history, file_name):
         " ענה בדיוק בפורמט הבא, ארבע שורות:\n"
         "תמלול: <תמלול מדויק של ההקלטה>\n"
         "פעולה: <אחת מהאפשרויות: none | menu | end | voice | switch:מזהה>\n"
-        "חיפוש: <לא | כן | מזג אוויר: שם המקום באנגלית>. כן = כשהתשובה דורשת חיפוש באינטרנט (המשתמש ביקש לחפש, או מידע עדכני: מחירים, חדשות, שעות פתיחה, תוצאות)."
-        " אם השאלה על מזג האוויר, כתוב: מזג אוויר: ואז שם העיר באנגלית (למשל: מזג אוויר: Bnei Brak).\n"
+        "חיפוש: <לא | כן: מילות חיפוש קצרות וברורות כמו שכותבים בגוגל | מזג אוויר: שם המקום באנגלית>."
+        " כן = כשהתשובה דורשת חיפוש באינטרנט: המשתמש ביקש לחפש או לבדוק, או שצריך מידע עדכני - מחירים, חדשות, תחבורה ציבורית"
+        " (קווי אוטובוס, רכבות, לוחות זמנים), שעות פתיחה, תוצאות, שירים ואלבומים חדשים, מה קורה עכשיו."
+        " למשל: כן: קו 402 בני ברק ירושלים לוח זמנים. אם השאלה על מזג האוויר, כתוב: מזג אוויר: ואז שם העיר באנגלית (למשל: מזג אוויר: Bnei Brak).\n"
         "תשובה: <התשובה שלך למשתמש. אם חיפוש = כן, כתוב כאן רק: מחפש>\n"
         "כללי הפעולה: menu אם ביקש לחזור לתפריט. end אם ביקש לסיים או להתנתק או אמר להתראות. "
         "voice אם ביקש להחליף קול. switch:מזהה אם ביקש לעבור לעוזר אחר מהרשימה: " + others + ". "
@@ -898,15 +1200,20 @@ def ask_ai(assistant, history, file_name):
         return "", "none", T("error")
     m = ACTION_RE.search(raw)
     need_search = False
+    query = ""
     if m:
         transcript, action, search_line, answer = m.group(1).strip(), m.group(2).strip().lower(), m.group(3).strip(), m.group(4).strip()
         need_search = ("כן" in search_line) or ("מזג" in search_line)
+        if "כן" in search_line and ":" in search_line:
+            query = search_line.split(":", 1)[1].strip().strip(".")
     else:
         transcript, action, search_line = "", "none", ""
         answer = re.sub(r"^(תמלול|פעולה|חיפוש|תשובה)\s*:\s*", "", raw.strip())
+    if not need_search and transcript and action == "none" and any(w in transcript + " " for w in FORCE_SEARCH_WORDS):
+        need_search = True        # המשתמש ביקש במפורש לחפש - מחפשים גם אם הבינה לא סימנה
     if need_search and transcript and action == "none":
         t0 = time.time()
-        found = answer_with_search(assistant, history, transcript, search_line)
+        found = answer_with_search(assistant, history, transcript, search_line, query)
         print("timing: search step %.1fs" % (time.time() - t0))
         if found:
             m2 = ACTION_RE.search(found)
@@ -1370,6 +1677,8 @@ def api_state():
         "voices": voice_list(), "mail": bool(MAIL_USER and MAIL_PASS), "mail_to": MAIL_TO, "owners": OWNER_PHONES,
         "models": [{"name": m, "ok": model_ok(m), "dead": bool(MODEL_STATUS.get(m, {}).get("dead"))}
                    for m in ([SETTINGS["model"]] if SETTINGS.get("model") else []) + [x for x in MODELS if x != SETTINGS.get("model")]],
+        "search": {"sources": SEARCH_STATE["last"],
+                   "google_paused_min": max(0, round((SEARCH_STATE["ground_until"] - time.time()) / 60))},
         "live": live_data(),
     })
 
@@ -1553,7 +1862,7 @@ def api_export():
 
 @app.route("/api/diag", methods=["POST"])
 def api_diag():
-    """בדיקת מערכת מלאה בלחיצה אחת: פייתון, Gemini, קול, ימות - עם זמנים ושגיאות מדויקות"""
+    """בדיקת מערכת מלאה בלחיצה אחת: פייתון, Gemini, קול, ימות, כל מקורות החיפוש - עם זמנים ושגיאות מדויקות"""
     g = api_guard()
     if g:
         return g
@@ -1581,12 +1890,36 @@ def api_diag():
         out["yemot"] = {"ok": bool(txt and txt.startswith("ok")), "seconds": round(time.time() - t0, 1)}
     except Exception as e:
         out["yemot"] = {"ok": False, "error": str(e)[:200]}
-    t0 = time.time()
-    try:
-        r = web_search("חדשות היום", 3)
-        out["search"] = {"ok": bool(r), "seconds": round(time.time() - t0, 1), "libs": HAVE_DDGS}
-    except Exception as e:
-        out["search"] = {"ok": False, "error": str(e)[:200]}
+
+    # כל מקורות החיפוש נבדקים במקביל, כדי שהבדיקה לא תיקח יותר מדי זמן
+    def timed(fn):
+        def run():
+            s = time.time()
+            try:
+                r = fn()
+                return {"ok": bool(r), "seconds": round(time.time() - s, 1), "answer": (r if isinstance(r, str) else "")[:60]}
+            except Exception as e:
+                return {"ok": False, "seconds": round(time.time() - s, 1), "error": str(e)[:200]}
+        return run
+    was_paused = SEARCH_STATE["ground_until"]
+    SEARCH_STATE["ground_until"] = 0      # בבדיקה מנסים את חיפוש גוגל גם אם הוא בהפסקה
+    res = run_parallel([
+        timed(lambda: grounded_answer("ענה במשפט אחד קצר בעברית.", [{"role": "user", "parts": [{"text": "מה הכותרת הראשית בחדשות בישראל היום?"}]}])),
+        timed(lambda: search_ddgs("חדשות היום", 3)),
+        timed(lambda: search_bing("חדשות היום", 3)),
+        timed(lambda: search_news("ישראל", 3)),
+        timed(lambda: fetch_page_text("https://he.wikipedia.org/wiki/%D7%99%D7%A8%D7%95%D7%A9%D7%9C%D7%99%D7%9D")),
+    ], 24)
+    if not res[0] or not res[0].get("ok"):
+        SEARCH_STATE["ground_until"] = max(was_paused, SEARCH_STATE["ground_until"])
+    labels = ["google", "ddg", "bing", "news", "pages"]
+    for k, r in zip(labels, res):
+        err = (SEARCH_STATE["last"].get(k) or {}).get("error", "")
+        out[k] = r or {"ok": False, "error": "לא ענה בזמן"}
+        if not out[k].get("ok") and err and not out[k].get("error"):
+            out[k]["error"] = err
+    out["search"] = {"ok": any((out[k] or {}).get("ok") for k in labels),
+                     "seconds": max([(out[k] or {}).get("seconds", 0) for k in labels] or [0]), "libs": HAVE_DDGS}
     t0 = time.time()
     out["weather"] = {"ok": bool(weather_lookup("Bnei Brak")), "seconds": round(time.time() - t0, 1)}
     t0 = time.time()
@@ -1611,7 +1944,7 @@ def api_test_tts():
 
 @app.route("/admin")
 def admin():
-    """אתר הניהול. אם יש קובץ admin.html ליד app.py - הוא זה שמוגש (כך אפשר לשדרג את האתר בלי לגעת בקוד של הקו)."""
+    """אתר הניהול מוגש מהקובץ admin.html שנמצא ליד app.py"""
     path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "admin.html")
     try:
         with open(path, encoding="utf-8") as f:
@@ -1620,123 +1953,12 @@ def admin():
         return Response(ADMIN_HTML, mimetype="text/html; charset=utf-8")
 
 
-ADMIN_HTML = r"""<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>ניהול הקו</title><style>
-:root{--bg:#f3f5f9;--card:#fff;--ink:#1f2937;--muted:#6b7280;--line:#e5e7eb;--brand:#1e3a5f;--brand2:#2563eb;--ok:#16a34a;--bad:#dc2626;--warn:#d97706}
-*{box-sizing:border-box}body{margin:0;font-family:Segoe UI,Arial,sans-serif;background:var(--bg);color:var(--ink);font-size:15px}
-.app{display:flex;min-height:100vh}.side{width:220px;background:var(--brand);color:#fff;padding:18px 0;position:sticky;top:0;height:100vh;flex-shrink:0}
-.side h1{font-size:18px;margin:0 18px 18px}.nav{display:flex;flex-direction:column}.nav a{color:#cbd5e1;text-decoration:none;padding:11px 18px;border-right:3px solid transparent;cursor:pointer}
-.nav a.on,.nav a:hover{color:#fff;background:#ffffff14;border-right-color:#60a5fa}.main{flex:1;padding:22px 26px;min-width:0}
-h2{margin:0 0 14px;font-size:22px}h3{margin:18px 0 8px;font-size:16px;color:var(--brand)}.sub{color:var(--muted);font-size:13px}
-.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px}
-.card{background:var(--card);border-radius:12px;padding:14px 16px;box-shadow:0 1px 2px #0000000d}.card b{display:block;font-size:28px;margin-top:4px}
-.panel{background:var(--card);border-radius:12px;padding:16px;box-shadow:0 1px 2px #0000000d;margin-bottom:16px}
-table{width:100%;border-collapse:collapse}th,td{padding:8px 9px;border-bottom:1px solid var(--line);text-align:right;vertical-align:top;font-size:14px}th{color:var(--muted);font-weight:600;font-size:13px}
-tr:hover td{background:#f9fafb}input[type=text],input[type=number],input[type=password],select,textarea{padding:7px 9px;border:1px solid #cfd4dc;border-radius:8px;font:inherit;width:100%}
-textarea{min-height:64px;resize:vertical}.btn{padding:7px 13px;border:0;border-radius:8px;background:var(--brand2);color:#fff;cursor:pointer;font:inherit}
-.btn.sm{padding:4px 9px;font-size:13px}.btn.gray{background:#6b7280}.btn.red{background:var(--bad)}.btn.green{background:var(--ok)}.btn.line{background:#fff;color:var(--brand2);border:1px solid var(--brand2)}
-.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
-.tag{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;background:#eef2ff;color:#3730a3;margin-left:4px}.tag.red{background:#fee2e2;color:#991b1b}.tag.green{background:#dcfce7;color:#166534}.tag.gold{background:#fef3c7;color:#92400e}
-.dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--ok);margin-left:6px;animation:b 1.2s infinite}@keyframes b{50%{opacity:.25}}
-.page{display:none}.page.on{display:block}.q{color:#1d4ed8}.a{color:#374151}.bubble{max-width:80%;padding:8px 12px;border-radius:14px;margin:4px 0;white-space:pre-wrap}
-.bubble.u{background:#dbeafe;margin-left:auto}.bubble.m{background:#f1f5f9}.chat{display:flex;flex-direction:column}
-.toast{position:fixed;bottom:20px;left:20px;background:#111827;color:#fff;padding:10px 16px;border-radius:10px;opacity:0;transition:.3s;pointer-events:none}.toast.on{opacity:1}
-.field{margin-bottom:10px}.field label{display:block;font-size:13px;color:var(--muted);margin-bottom:3px}.drag{cursor:grab;color:#9ca3af}
-.login{max-width:360px;margin:100px auto}svg text{font-family:inherit}.muted{color:var(--muted)}.pill{cursor:pointer}
-@media(max-width:800px){.side{display:none}.grid2,.grid3{grid-template-columns:1fr}}
-</style></head><body>
-<div id="loginBox" class="login" style="display:none"><div class="panel"><h2>כניסה לניהול הקו</h2><div class="field"><input type="password" id="pw" placeholder="סיסמה"></div><button class="btn" style="width:100%" onclick="login()">כניסה</button><p id="loginErr" style="color:var(--bad)"></p></div></div>
-<div class="app" id="app" style="display:none">
-<div class="side"><h1>ניהול הקו</h1><div class="nav">
-<a data-p="dash" class="on">לוח בקרה</a><a data-p="users">משתמשים</a><a data-p="conv">שיחות</a><a data-p="assist">עוזרים</a><a data-p="texts">נוסחים</a><a data-p="settings">הגדרות</a><a href="/admin/logout">יציאה</a></div>
-<p class="sub" style="margin:18px;color:#94a3b8" id="clock"></p></div>
-<div class="main">
-
-<div class="page on" id="p-dash"><h2><span class="dot"></span>לוח בקרה <span class="sub">מתעדכן כל 5 שניות</span></h2>
-<div class="cards"><div class="card">שיחות פעילות עכשיו<b id="l_active">0</b></div><div class="card">שיחות היום<b id="l_calls">0</b></div><div class="card">הודעות היום<b id="l_msgs">0</b></div><div class="card">משתמשים רשומים<b id="l_users">0</b></div><div class="card">סה"כ שיחות<b id="l_ct">0</b></div><div class="card">סה"כ הודעות<b id="l_mt">0</b></div></div>
-<div class="panel"><h3 style="margin-top:0">עכשיו בקו</h3><table id="activeT"></table></div>
-<div class="grid3" id="charts"></div></div>
-
-<div class="page" id="p-users"><h2>משתמשים</h2>
-<div class="panel"><div class="row"><input type="text" id="uSearch" placeholder="חיפוש לפי שם או טלפון" style="max-width:280px" oninput="renderUsers()">
-<span class="muted">|</span><input type="text" id="addPhone" placeholder="טלפון" style="max-width:150px"><input type="text" id="addName" placeholder="שם" style="max-width:150px"><button class="btn sm" onclick="addUser()">הוסף משתמש ידנית</button></div></div>
-<div class="panel"><table id="usersT"></table></div></div>
-
-<div class="page" id="p-conv"><h2>שיחות</h2>
-<div class="panel"><div class="row"><input type="text" id="cSearch" placeholder="חיפוש בתוכן השיחות" style="max-width:300px" oninput="renderConv()"><select id="cUser" style="max-width:220px" onchange="renderConv()"><option value="">כל המשתמשים</option></select>
-<button class="btn sm gray" onclick="clearLog()">נקה יומן</button></div></div>
-<div id="convList"></div></div>
-
-<div class="page" id="p-assist"><h2>עוזרים</h2><p class="sub">הסדר כאן = מספר ההקשה בתפריט (1 עד 8). עוזר כבוי לא מופיע בתפריט. "מילים" = איך המתקשר קורא לעוזר כשהוא מבקש לעבור אליו בדיבור.</p>
-<div id="assistList"></div><div class="row" style="margin:12px 0"><button class="btn line" onclick="addAssistant()">+ עוזר חדש</button><button class="btn" onclick="saveAssistants()">שמור עוזרים</button></div></div>
-
-<div class="page" id="p-texts"><h2>נוסחים</h2><p class="sub">כל מה שהקו אומר. אפשר להשתמש ב-{name} לשם המתקשר, ב-{assistant} לשם העוזר, וב-{digit} למספר ההקשה.</p>
-<div class="panel" id="textsList"></div><button class="btn" onclick="saveTexts()">שמור נוסחים</button></div>
-
-<div class="page" id="p-settings"><h2>הגדרות</h2><div class="panel" id="settingsBox"></div><button class="btn" onclick="saveSettings()">שמור הגדרות</button>
-<div class="panel" style="margin-top:16px"><h3 style="margin-top:0">סיכום יומי למייל</h3><p id="mailState"></p><button class="btn line" onclick="sendMail()">שלח סיכום של היום עכשיו</button> <span id="mailRes"></span></div>
-<div class="panel"><h3 style="margin-top:0">בדיקת קול טבעי</h3><div class="row"><select id="ttsVoice" style="max-width:300px"></select><button class="btn line" onclick="testTts()">בדוק</button><span id="ttsRes"></span></div><p class="sub">בודק שהשרת מצליח לייצר קול (בלי להעלות לימות).</p></div></div>
-
-</div></div><div class="toast" id="toast"></div>
-<script>
-let S=null;const $=id=>document.getElementById(id);const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-function toast(m){const t=$('toast');t.textContent=m;t.classList.add('on');setTimeout(()=>t.classList.remove('on'),2200);}
-async function api(path,body){const r=await fetch(path,body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{});if(r.status===403){showLogin();throw new Error('auth');}return r.json();}
-function showLogin(){$('app').style.display='none';$('loginBox').style.display='block';}
-async function login(){const d=await api('/admin/login',{key:$('pw').value});if(d.ok){$('loginBox').style.display='none';boot();}else $('loginErr').textContent=d.error||'שגיאה';}
-$('pw')?.addEventListener('keydown',e=>{if(e.key==='Enter')login();});
-document.querySelectorAll('.nav a[data-p]').forEach(a=>a.onclick=()=>{document.querySelectorAll('.nav a').forEach(x=>x.classList.remove('on'));a.classList.add('on');document.querySelectorAll('.page').forEach(p=>p.classList.remove('on'));$('p-'+a.dataset.p).classList.add('on');});
-async function boot(){try{S=await api('/api/state');}catch(e){return;}$('app').style.display='flex';renderAll();tick();}
-function renderAll(){renderLive(S.live);renderCharts();renderUsers();renderConv();renderAssist();renderTexts();renderSettings();}
-async function tick(){try{const d=await api('/api/live');renderLive(d);}catch(e){}setTimeout(tick,5000);}
-function renderLive(d){$('l_active').textContent=d.active.length;$('l_calls').textContent=d.calls_today;$('l_msgs').textContent=d.msgs_today;$('l_users').textContent=d.users;$('l_ct').textContent=d.calls_total;$('l_mt').textContent=d.msgs_total;$('clock').textContent=d.time;
-let t='<tr><th>מי</th><th>טלפון</th><th>עוזר</th><th>מצב</th><th>מאז</th><th>שאלה אחרונה</th></tr>';if(!d.active.length)t+='<tr><td colspan="6" class="muted">אין שיחות פעילות כרגע</td></tr>';
-for(const a of d.active)t+=`<tr><td>${esc(a.name)}</td><td>${esc(a.phone)}</td><td>${esc(a.assistant)}</td><td>${esc(a.state)}</td><td>${esc(a.since)}</td><td>${esc(a.last_q)}</td></tr>`;$('activeT').innerHTML=t;}
-function bar(title,pairs,color){if(!pairs.length)return `<div class="panel"><b>${esc(title)}</b><p class="muted">אין נתונים עדיין</p></div>`;const mx=Math.max(...pairs.map(p=>p[1]))||1;const w=Math.max(300,pairs.length*32+30);let s=`<div class="panel"><b>${esc(title)}</b><svg viewBox="0 0 ${w} 180" width="100%">`;
-pairs.forEach((p,i)=>{const x=15+i*32,h=Math.round(130*p[1]/mx);s+=`<rect x="${x}" y="${150-h}" width="24" height="${h}" rx="4" fill="${color}"/><text x="${x+12}" y="${145-h}" font-size="11" text-anchor="middle">${p[1]}</text><text x="${x+12}" y="170" font-size="9" text-anchor="middle">${esc(String(p[0])).slice(0,10)}</text>`;});return s+'</svg></div>';}
-function renderCharts(){const c=S.charts;$('charts').innerHTML=bar('שיחות ב-14 הימים האחרונים',c.per_day,'#1e3a5f')+bar('הודעות לפי עוזר',c.per_assistant,'#2563eb')+bar('המשתמשים הפעילים',c.top_users,'#16a34a');}
-function renderUsers(){const q=($('uSearch').value||'').trim();let t='<tr><th>שם</th><th>טלפון</th><th>שיחות</th><th>הודעות</th><th>היום</th><th>שיחה אחרונה</th><th>סטטוס</th><th>הודעה לשיחה הבאה</th><th></th></tr>';
-const list=S.users.filter(u=>!q||u.name.includes(q)||u.phone.includes(q)).sort((a,b)=>b.last.localeCompare(a.last));
-for(const u of list){t+=`<tr><td><input type="text" value="${esc(u.name)}" style="width:120px" onchange="userAct('${u.phone}','rename',{name:this.value})"></td><td>${esc(u.phone)}${u.owner?' <span class="tag gold">בעלים</span>':''}</td><td>${u.calls}</td><td>${u.msgs}</td><td>${u.today}</td><td>${esc(u.last)}</td>
-<td>${u.blocked?'<span class="tag red">חסום</span>':''}${u.unlimited?'<span class="tag green">בלי הגבלה</span>':''}</td>
-<td><input type="text" value="${esc(u.note)}" placeholder="יושמע לו פעם אחת" style="width:180px" onchange="userAct('${u.phone}','note',{note:this.value})"></td>
-<td class="row"><button class="btn sm gray" onclick="showUser('${u.phone}')">שיחות</button><button class="btn sm ${u.blocked?'green':'red'}" onclick="userAct('${u.phone}','block')">${u.blocked?'בטל חסימה':'חסום'}</button>${u.owner?'':`<button class="btn sm line" onclick="userAct('${u.phone}','unlimited')">${u.unlimited?'הפעל הגבלה':'בלי הגבלה'}</button><button class="btn sm gray" onclick="if(confirm('למחוק? בשיחה הבאה יירשם מחדש'))userAct('${u.phone}','delete')">מחק</button>`}</td></tr>`;}
-if(!list.length)t+='<tr><td colspan="9" class="muted">אין משתמשים</td></tr>';$('usersT').innerHTML=t;
-const sel=$('cUser');const cur=sel.value;sel.innerHTML='<option value="">כל המשתמשים</option>'+S.users.map(u=>`<option value="${u.phone}">${esc(u.name)} (${u.phone})</option>`).join('');sel.value=cur;}
-async function userAct(phone,action,extra){await api('/api/user',{phone,action,...extra});await reload();toast('נשמר');}
-async function addUser(){const p=$('addPhone').value.trim(),n=$('addName').value.trim();if(!p||!n)return toast('צריך טלפון ושם');await api('/api/user',{phone:p,name:n,action:'add'});$('addPhone').value='';$('addName').value='';await reload();toast('נוסף');}
-function showUser(phone){$('cUser').value=phone;document.querySelector('.nav a[data-p=conv]').click();renderConv();}
-function renderConv(){const q=($('cSearch').value||'').trim(),ph=$('cUser').value;const groups={};const order=[];
-for(const l of S.log){if(ph&&l.phone!==ph)continue;if(q&&!(l.q.includes(q)||l.a.includes(q)||(l.name||'').includes(q)))continue;const k=l.call||(l.phone+'|'+l.time.slice(0,10));if(!groups[k]){groups[k]=[];order.push(k);}groups[k].push(l);}
-let s='';for(const k of order){const msgs=groups[k].slice().reverse();const f=msgs[0];s+=`<div class="panel"><div class="row" style="justify-content:space-between"><b>${esc(f.name)} <span class="muted">${esc(f.phone)}</span></b><span class="muted">${esc(f.time)} · ${msgs.length} הודעות</span></div><div class="chat">`;
-let last='';for(const m of msgs){if(m.persona!==last){s+=`<div class="muted" style="font-size:12px;margin:6px 0 2px">— ${esc(m.persona)} —</div>`;last=m.persona;}s+=`<div class="bubble u">${esc(m.q)}</div><div class="bubble m">${esc(m.a)}</div>`;}s+='</div></div>';}
-$('convList').innerHTML=s||'<div class="panel muted">אין שיחות</div>';}
-async function clearLog(){if(!confirm('למחוק את כל יומן השיחות?'))return;await api('/api/clear',{what:'log'});await reload();toast('היומן נוקה');}
-let A=[];function renderAssist(){A=JSON.parse(JSON.stringify(S.assistants));drawAssist();}
-function drawAssist(){let s='';A.forEach((a,i)=>{const digit=A.slice(0,i+1).filter(x=>x.on).length;s+=`<div class="panel"><div class="row" style="justify-content:space-between"><div class="row"><b>${a.on?'הקשה '+digit:'כבוי'}</b><span class="tag">${esc(a.id)}</span></div>
-<div class="row"><button class="btn sm gray" onclick="mv(${i},-1)">▲</button><button class="btn sm gray" onclick="mv(${i},1)">▼</button><label><input type="checkbox" ${a.on?'checked':''} onchange="A[${i}].on=this.checked;drawAssist()"> פעיל</label><button class="btn sm red" onclick="if(confirm('למחוק את העוזר?')){A.splice(${i},1);drawAssist();}">מחק</button></div></div>
-<div class="grid2" style="margin-top:8px"><div class="field"><label>שם העוזר (כפי שנשמע בתפריט)</label><input type="text" value="${esc(a.name)}" onchange="A[${i}].name=this.value"></div><div class="field"><label>מילים לזיהוי בדיבור (מופרדות בפסיק)</label><input type="text" value="${esc(a.keywords||'')}" onchange="A[${i}].keywords=this.value"></div></div>
-<div class="field"><label>ההנחיה ל-AI (האופי, התחום, איך לענות)</label><textarea onchange="A[${i}].prompt=this.value">${esc(a.prompt)}</textarea></div></div>`;});$('assistList').innerHTML=s;}
-function mv(i,d){const j=i+d;if(j<0||j>=A.length)return;[A[i],A[j]]=[A[j],A[i]];drawAssist();}
-function addAssistant(){A.push({id:'a'+Math.random().toString(36).slice(2,8),name:'עוזר חדש',prompt:'אתה עוזר ידידותי.',on:true,keywords:''});drawAssist();window.scrollTo(0,document.body.scrollHeight);}
-async function saveAssistants(){const d=await api('/api/assistants',{assistants:A});if(d.ok){await reload();toast('העוזרים נשמרו');}else toast(d.error||'שגיאה');}
-const TXT_LABELS={first_time:'פעם ראשונה - בקשת שם',ask_name_again:'בקשת שם חוזרת',name_saved:'אחרי שמירת השם',menu_hello:'פתיחת התפריט',menu_item:'שורה בתפריט (לכל עוזר)',menu_end:'סיום התפריט',enter:'כניסה לעוזר',listening:'הקשבה (כשאין תשובה להשמיע)',not_heard:'לא נקלטה הקלטה',wait:'הודעות המתנה (מופרדות בפסיק, מתחלפות)',too_long:'התשובה לוקחת יותר מדי זמן',limit:'הגעה למכסה היומית',blocked:'מספר חסום',voice_changed:'הקול הוחלף (כשאין קול טבעי)',goodbye:'פרידה',error:'תקלה זמנית',not_understood:'לא הובן'};
-function renderTexts(){let s='';for(const k in TXT_LABELS)s+=`<div class="field"><label>${esc(TXT_LABELS[k])}</label><input type="text" id="t_${k}" value="${esc(S.texts[k]||'')}"></div>`;$('textsList').innerHTML=s;}
-async function saveTexts(){const d={};for(const k in TXT_LABELS)d[k]=$('t_'+k).value;await api('/api/texts',d);await reload();toast('הנוסחים נשמרו');}
-function renderSettings(){const s=S.settings;$('settingsBox').innerHTML=`<div class="field"><label>הודעה בתחילת כל שיחה (ריק = בלי)</label><input type="text" id="s_announcement" value="${esc(s.announcement)}"></div>
-<div class="grid2"><div class="field"><label>קול טבעי</label><select id="s_tts"><option value="on" ${s.tts=='on'?'selected':''}>פעיל (Edge, קול גבר טבעי)</option><option value="off" ${s.tts!='on'?'selected':''}>כבוי - הקראה של ימות (מהיר יותר)</option></select></div>
-<div class="field"><label>רשימת קולות (מופרדים בפסיק, הראשון ברירת מחדל)</label><input type="text" id="s_voices" value="${esc(s.voices)}"></div>
-<div class="field"><label>הודעות ליום לכל משתמש (0 = בלי הגבלה)</label><input type="number" id="s_daily_limit" value="${s.daily_limit}"></div><div class="field"><label>אורך הקלטה מקסימלי (שניות)</label><input type="number" id="s_record_max" value="${s.record_max}"></div>
-<div class="field"><label>מספרים ללא הגבלה (מופרדים בפסיק)</label><input type="text" id="s_unlimited_phones" value="${esc(s.unlimited_phones)}"></div><div class="field"><label>מספרים חסומים</label><input type="text" id="s_blocked_phones" value="${esc(s.blocked_phones)}"></div>
-<div class="field"><label>שעת הסיכום היומי למייל (0-23)</label><input type="number" id="s_mail_hour" value="${s.mail_hour}"></div></div>`;
-$('mailState').innerHTML=S.mail?`<span style="color:var(--ok)">מוגדר, נשלח אל ${esc(S.mail_to)}</span>`:'<span style="color:var(--bad)">לא מוגדר - צריך MAIL_USER ו-MAIL_PASS ב-Render</span>';
-$('ttsVoice').innerHTML=S.voices.map(v=>`<option>${esc(v)}</option>`).join('');}
-async function saveSettings(){const d={};for(const k of ['announcement','tts','voices','daily_limit','record_max','unlimited_phones','blocked_phones','mail_hour'])d[k]=$('s_'+k).value;await api('/api/settings',d);await reload();toast('ההגדרות נשמרו');}
-async function sendMail(){$('mailRes').textContent='שולח...';const d=await api('/api/sendmail',{});$('mailRes').textContent=d.result;}
-async function testTts(){$('ttsRes').textContent='בודק...';const d=await api('/api/test_tts',{voice:$('ttsVoice').value});$('ttsRes').textContent=d.ok?'עובד ('+d.bytes+' בייט)':'נכשל: '+(d.error||'');}
-async function reload(){S=await api('/api/state');renderAll();}
-boot();
-</script></body></html>"""
+# גיבוי בלבד: מוצג רק אם הקובץ admin.html חסר ב-GitHub
+ADMIN_HTML = """<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8"><title>ניהול הקו</title></head>
+<body style="background:#000;color:#f5f2ed;font-family:Arial;text-align:center;padding:80px 20px">
+<h1 style="color:#ff7a1a">הקו עובד</h1>
+<p>הקובץ admin.html לא נמצא בשרת. יש להעלות אותו ל-GitHub, באותה תיקייה של app.py.</p>
+</body></html>"""
 
 
 if __name__ == "__main__":
