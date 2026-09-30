@@ -9,20 +9,20 @@
 <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;700&family=Heebo:wght@300;400;500;700&display=swap" rel="stylesheet">
 <style>
 :root{
-  --bg:#F6F3EF;--paper:#FFFFFF;--ink:#1A1512;--mute:#7A6F66;--line:#E8E0D8;
-  --navy:#141110;--navy2:#221C18;--teal:#FF7A1A;--teal-soft:#FFE7D3;--amber:#FFB020;--amber-soft:#FFF1CC;
-  --coral:#E23D28;--coral-soft:#FBDDD6;--blue:#FF9A3C;--blue-soft:#FFE3C7;
-  --r:14px;--r-sm:9px;--shadow:0 1px 0 #0000000a,0 10px 30px -18px #1a151240;
+  --bg:#F6F3EF;--paper:#FFFFFF;--ink:#1A1512;--mute:#7A6F66;--line:#E8E0D8;
+  --navy:#141110;--navy2:#221C18;--teal:#FF7A1A;--teal-soft:#FFE7D3;--amber:#FFB020;--amber-soft:#FFF1CC;
+  --coral:#E23D28;--coral-soft:#FBDDD6;--blue:#FF9A3C;--blue-soft:#FFE3C7;
+  --r:14px;--r-sm:9px;--shadow:0 1px 0 #0000000a,0 10px 30px -18px #1a151240;
 }
 [data-theme=dark]{
-  --bg:#0A0908;--paper:#15120fcc;--ink:#F5EFE8;--mute:#A79B90;--line:#2C2520;
-  --navy:#070605;--navy2:#100D0B;--teal-soft:#3a2010;--amber-soft:#3a2a0c;--coral-soft:#3d1a14;--blue-soft:#3a2410;
-  --shadow:0 1px 0 #00000030,0 20px 50px -24px #000d;
+  --bg:#0A0908;--paper:#15120fcc;--ink:#F5EFE8;--mute:#A79B90;--line:#2C2520;
+  --navy:#070605;--navy2:#100D0B;--teal-soft:#3a2010;--amber-soft:#3a2a0c;--coral-soft:#3d1a14;--blue-soft:#3a2410;
+  --shadow:0 1px 0 #00000030,0 20px 50px -24px #000d;
 }
 [data-theme=dark] body{background:
-  radial-gradient(900px 520px at 10% -10%,#ff7a1a2e,transparent 60%),
-  radial-gradient(700px 500px at 100% 25%,#ff9a3c1c,transparent 60%),
-  radial-gradient(600px 400px at 60% 110%,#e23d2818,transparent 60%),var(--bg);background-attachment:fixed}
+  radial-gradient(900px 520px at 10% -10%,#ff7a1a2e,transparent 60%),
+  radial-gradient(700px 500px at 100% 25%,#ff9a3c1c,transparent 60%),
+  radial-gradient(600px 400px at 60% 110%,#e23d2818,transparent 60%),var(--bg);background-attachment:fixed}
 [data-theme=dark] .panel,[data-theme=dark] .key,[data-theme=dark] .live-badge{backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
 [data-theme=dark] .board{background:linear-gradient(135deg,#141008 0%,#1c130a 60%,#120e09 100%);border:1px solid #ff7a1a2a}
 [data-theme=dark] .side{background:linear-gradient(180deg,#070605 0%,#130e0a 100%);border-left:1px solid #ff7a1a22}
@@ -35,7 +35,7 @@ h1,h2,h3,.num,.key b{font-family:Rubik,Heebo,Arial,sans-serif}
 a{color:var(--blue)}
 button{font:inherit}
 input[type=text],input[type=number],input[type=password],select,textarea{
-  width:100%;padding:8px 11px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--paper);color:var(--ink);font:inherit}
+  width:100%;padding:8px 11px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--paper);color:var(--ink);font:inherit}
 input:focus,select:focus,textarea:focus,button:focus-visible{outline:2px solid var(--teal);outline-offset:1px}
 textarea{min-height:72px;resize:vertical;line-height:1.55}
 .btn{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border:0;border-radius:var(--r-sm);background:var(--navy);color:#fff;cursor:pointer;transition:transform .08s,filter .15s;text-decoration:none}
@@ -54,5 +54,3 @@ textarea{min-height:72px;resize:vertical;line-height:1.55}
 .brand svg{width:34px;height:34px;flex-shrink:0}
 .brand h1{font-size:17px;margin:0;font-weight:500;letter-spacing:.2px}.brand .small{color:#b39c8a}
 .nav{display:flex;flex-direction:column;padding:6px 10px;gap:2px}
-.nav a{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;color:#d9cfc6;text-decoration:none;cursor:pointer;font-weight:400}
-.nav a svg{width:18px;height:18px;opacity:.85}
