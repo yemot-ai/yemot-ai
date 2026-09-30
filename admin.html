@@ -191,6 +191,8 @@ tbody tr:hover{background:var(--s2)}
 
 /* ---------- conversations ---------- */
 .filters{display:grid;grid-template-columns:2fr 1.3fr 1.3fr 1fr auto;gap:10px;margin-bottom:16px}
+.filters.cf{grid-template-columns:2fr 1.3fr 1fr auto auto}
+a.btn{text-decoration:none}
 .thread{margin-bottom:14px}
 .thread .th{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px}
 .thread .th b{font-size:15px}
@@ -201,6 +203,50 @@ tbody tr:hover{background:var(--s2)}
 .bb small{display:block;font-size:11px;color:var(--mu2);margin-top:3px}
 .persona{align-self:center;font-size:12px;color:var(--or2);background:var(--s2);border:1px solid var(--line);padding:1px 12px;border-radius:99px;margin:6px 0}
 mark{background:var(--or);color:#000;border-radius:3px;padding:0 2px}
+
+/* ---------- two-pane conversations ---------- */
+.cv{display:grid;grid-template-columns:340px minmax(0,1fr);gap:16px;height:calc(100vh - 210px);min-height:480px}
+.cv-list{background:var(--s1);border:1px solid var(--line);border-radius:var(--r);display:flex;flex-direction:column;min-height:0}
+.cv-list .lh{padding:12px 14px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;font-size:13px;color:var(--mu)}
+.cv-items{overflow-y:auto;flex:1}
+.ci{display:grid;grid-template-columns:auto 1fr auto;gap:2px 12px;padding:12px 14px;border-bottom:1px solid var(--line);cursor:pointer;position:relative;transition:background .12s}
+.ci:hover{background:var(--s2)}
+.ci.on{background:var(--orD)}
+.ci.on::before{content:"";position:absolute;right:0;top:0;bottom:0;width:3px;background:var(--or)}
+.ci .av{grid-row:span 2;width:42px;height:42px;border-radius:50%;background:var(--s3);display:grid;place-items:center;font-weight:700;color:var(--or2);position:relative}
+.ci .av .dotl{position:absolute;bottom:0;left:0;width:11px;height:11px;border-radius:50%;background:var(--or);border:2px solid var(--s1);box-shadow:0 0 8px var(--or)}
+.ci b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ci .tm{font-size:12px;color:var(--mu2);white-space:nowrap}
+.ci .sn{font-size:13px;color:var(--mu);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ci .bd{align-self:center;background:var(--s3);color:var(--mu);font-size:11px;border-radius:99px;padding:0 7px;min-width:22px;text-align:center}
+.ci .bd.new{background:var(--or);color:#000;font-weight:700}
+.cv-pane{background:var(--s1);border:1px solid var(--line);border-radius:var(--r);display:flex;flex-direction:column;min-height:0;overflow:hidden}
+.cv-pane .pt{padding:12px 18px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.cv-pane .pt .av{width:42px;height:42px;border-radius:50%;background:var(--orD);color:var(--or);display:grid;place-items:center;font-weight:700;border:1px solid var(--orL)}
+.cv-body{flex:1;overflow-y:auto;padding:18px;background:radial-gradient(circle at 20% 0%,#140a03,transparent 50%)}
+.daysep{align-self:center;font-size:12px;color:var(--mu);background:var(--s2);border:1px solid var(--line);border-radius:8px;padding:2px 12px;margin:14px 0 6px}
+.cv-empty{flex:1;display:grid;place-items:center;color:var(--mu);text-align:center;padding:30px}
+.back-m{display:none}
+
+/* ---------- bulk ---------- */
+.ck{appearance:none;-webkit-appearance:none;width:18px;height:18px;border:1.5px solid var(--line2);border-radius:5px;background:var(--bg);cursor:pointer;display:inline-grid;place-items:center;vertical-align:middle;margin:0}
+.ck:checked{background:var(--or);border-color:var(--or)}
+.ck:checked::after{content:"";width:5px;height:9px;border:solid #000;border-width:0 2px 2px 0;transform:rotate(45deg) translate(-1px,-1px)}
+.bulk{position:sticky;top:64px;z-index:15;display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--orD);border:1px solid var(--or);border-radius:12px;padding:10px 14px;margin-bottom:12px}
+.bulk b{color:var(--or2)}
+.notebtn{background:none;border:1px dashed var(--line2);color:var(--mu);border-radius:8px;padding:3px 10px;font-size:13px;cursor:pointer;white-space:nowrap}
+.notebtn:hover{border-color:var(--or);color:var(--or2)}
+.notebtn.has{border-style:solid;border-color:var(--orL);color:var(--or2);background:var(--orD)}
+.notebtn.heard{border-style:solid;color:var(--mu)}
+.nmodal{position:fixed;top:50%;left:50%;transform:translate(-50%,-46%) scale(.97);width:min(520px,94vw);background:var(--s2);border:1px solid var(--line2);border-radius:16px;padding:22px;z-index:70;opacity:0;pointer-events:none;transition:all .18s}
+.nmodal.on{opacity:1;pointer-events:auto;transform:translate(-50%,-50%)}
+.nmodal h3{margin:0 0 4px}
+.who{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 14px;max-height:92px;overflow-y:auto}
+.quick{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 14px}
+.quick button{background:var(--s3);border:1px solid var(--line2);border-radius:99px;padding:3px 12px;font-size:13px;cursor:pointer;color:var(--mu)}
+.quick button:hover{color:var(--or2);border-color:var(--or)}
+.readout small{display:block;font-size:12px;color:var(--mu2);margin-top:2px}
+.readout small.up{color:var(--ok)}.readout small.dn{color:#ff8080}
 
 /* ---------- assistants ---------- */
 .keypad-wrap{display:grid;grid-template-columns:auto 1fr;gap:28px;align-items:center}
@@ -229,8 +275,8 @@ mark{background:var(--or);color:#000;border-radius:3px;padding:0 2px}
 .acard.open .chev{transform:rotate(180deg)}
 
 /* ---------- save bar ---------- */
-.savebar{position:fixed;bottom:22px;left:50%;transform:translate(-50%,140%);background:var(--s2);border:1px solid var(--or);border-radius:14px;padding:10px 12px 10px 18px;display:flex;align-items:center;gap:14px;box-shadow:0 20px 50px -10px #000;z-index:40;transition:transform .3s cubic-bezier(.2,.9,.3,1.2)}
-.savebar.on{transform:translate(-50%,0)}
+.savebar{position:fixed;bottom:22px;left:50%;transform:translate(-50%,220%);visibility:hidden;background:var(--s2);border:1px solid var(--or);border-radius:14px;padding:10px 12px 10px 18px;display:flex;align-items:center;gap:14px;box-shadow:0 20px 50px -10px #000;z-index:40;transition:transform .3s cubic-bezier(.2,.9,.3,1.2)}
+.savebar.on{transform:translate(-50%,0);visibility:visible}
 .savebar span{font-size:14px}
 
 /* ---------- texts ---------- */
@@ -295,14 +341,14 @@ mark{background:var(--or);color:#000;border-radius:3px;padding:0 2px}
 .pal li{padding:10px 12px;border-radius:9px;cursor:pointer;display:flex;justify-content:space-between;gap:10px}
 .pal li.sel{background:var(--orD);color:var(--or2)}
 .pal li small{color:var(--mu)}
-.toast{position:fixed;bottom:24px;right:24px;background:var(--tx);color:#000;padding:11px 18px;border-radius:12px;font-weight:500;z-index:80;transform:translateY(150%);transition:transform .25s}
-.toast.on{transform:none}
+.toast{position:fixed;bottom:24px;right:24px;background:var(--tx);color:#000;padding:11px 18px;border-radius:12px;font-weight:500;z-index:80;transform:translateY(200%);visibility:hidden;transition:transform .25s,visibility .25s}
+.toast.on{transform:none;visibility:visible}
 .toast.bad{background:var(--bad);color:#fff}
 
 .loadmore{display:block;margin:10px auto 0}
 
 /* ---------- responsive ---------- */
-@media (max-width:1100px){.readout{grid-template-columns:repeat(3,1fr)}.readout>div:nth-child(4){border-inline-start:0}.readout>div:nth-child(n+4){border-top:1px solid var(--line)}.g3{grid-template-columns:1fr 1fr}.filters{grid-template-columns:1fr 1fr}}
+@media (max-width:1100px){.filters.cf{grid-template-columns:1fr 1fr 1fr}.filters.cf #cq{grid-column:1/-1}.readout{grid-template-columns:repeat(3,1fr)}.readout>div:nth-child(4){border-inline-start:0}.readout>div:nth-child(n+4){border-top:1px solid var(--line)}.g3{grid-template-columns:1fr 1fr}.filters{grid-template-columns:1fr 1fr}}
 @media (max-width:820px){
   .app{grid-template-columns:1fr}
   .side{position:fixed;top:auto;bottom:0;right:0;left:0;height:auto;z-index:40;flex-direction:row;padding:6px;border-left:0;border-top:1px solid var(--line);padding-bottom:calc(6px + env(safe-area-inset-bottom,0px))}
@@ -312,12 +358,19 @@ mark{background:var(--or);color:#000;border-radius:3px;padding:0 2px}
   .nav a.on::before{display:none}.nav .cnt{position:absolute;top:0;left:4px;font-size:10px;padding:0 5px}
   .top{padding:12px 16px}.top .hide-m{display:none}
   .content{padding:18px 14px 110px}
-  .g2,.g3,.filters{grid-template-columns:1fr}
+  .g2,.g3,.filters,.filters.cf{grid-template-columns:1fr 1fr}.filters.cf #cq{grid-column:1/-1}
+  .g2,.g3{grid-template-columns:1fr}
+  .main{overflow-x:hidden}
   .readout{grid-template-columns:repeat(2,1fr)}.readout>div{border-inline-start:0!important;border-top:1px solid var(--line)}.readout>div:nth-child(-n+2){border-top:0}
   .keypad-wrap{grid-template-columns:1fr;justify-items:center}
   .bb{max-width:92%}
   .dstats{grid-template-columns:repeat(2,1fr)}
   .savebar{bottom:84px}
+  .cv{grid-template-columns:1fr;height:auto}
+  .cv.sel .cv-list{display:none}.cv:not(.sel) .cv-pane{display:none}
+  .cv-list,.cv-pane{height:calc(100vh - 230px)}
+  .back-m{display:inline-flex}
+  .bulk{top:58px}
 }
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
 </style>
@@ -405,20 +458,33 @@ mark{background:var(--or);color:#000;border-radius:3px;padding:0 2px}
             </div>
           </div>
         </div>
-        <div class="panel"><div class="tw"><table id="usersT"></table></div></div>
+        <div class="bulk" id="bulk" hidden>
+          <b id="bulkN"></b>
+          <button class="btn sm" onclick="noteModal([...selU])">השאר הודעה חד פעמית</button>
+          <button class="btn ghost sm" onclick="bulkAct('unlimited')">החלף מצב הגבלה</button>
+          <button class="btn danger sm" onclick="bulkAct('block')">החלף מצב חסימה</button>
+          <span style="flex:1"></span>
+          <button class="btn ghost sm" onclick="selU.clear();renderUsers()">בטל בחירה</button>
+        </div>
+        <div class="panel">
+          <div class="ph"><h3 id="usersCount">משתמשים</h3>
+            <div class="row"><button class="btn ghost sm" onclick="noteModal(S.users.map(u=>u.phone),true)">הודעה חד פעמית לכולם</button><button class="btn ghost sm" onclick="exportUsers()">הורד רשימה לאקסל</button></div></div>
+          <div class="tw"><table id="usersT"></table></div></div>
       </section>
 
       <!-- ===== CONVERSATIONS ===== -->
       <section class="page" id="p-conv">
-        <div class="filters">
-          <input type="text" id="cq" placeholder="חיפוש בתוכן, בשם או בטלפון" oninput="convLimit=20;renderConv()">
-          <select id="cUser" onchange="convLimit=20;renderConv()"></select>
-          <select id="cAssist" onchange="convLimit=20;renderConv()"></select>
-          <input type="date" id="cDate" onchange="convLimit=20;renderConv()">
+        <div class="filters cf">
+          <input type="text" id="cq" placeholder="חיפוש בתוכן, בשם או בטלפון" oninput="convLimit=150;renderConv()">
+          <select id="cAssist" onchange="renderConv()"></select>
+          <input type="date" id="cDate" onchange="renderConv()">
           <button class="btn ghost" onclick="resetConv()">נקה סינון</button>
+          <a class="btn ghost" href="/api/export.csv">הורד לאקסל</a>
         </div>
-        <div class="row mb" style="justify-content:space-between"><span class="mu" id="convInfo"></span><a class="btn ghost sm" href="/api/export.csv">הורד את כל השיחות לאקסל</a></div>
-        <div id="convList"></div>
+        <div class="cv" id="cv">
+          <div class="cv-list"><div class="lh"><span id="convInfo"></span></div><div class="cv-items" id="cvItems"></div></div>
+          <div class="cv-pane" id="cvPane"></div>
+        </div>
       </section>
 
       <!-- ===== CALLS ===== -->
@@ -540,6 +606,15 @@ mark{background:var(--or);color:#000;border-radius:3px;padding:0 2px}
 <div class="scrim" id="scrim" onclick="closeAll()"></div>
 <aside class="drawer" id="drawer"><div id="drawerIn" style="display:contents"></div></aside>
 <div class="modal" id="modal"><p id="modalMsg"></p><div class="row" style="justify-content:flex-start"><button class="btn" id="modalOk">אישור</button><button class="btn ghost" id="modalNo">ביטול</button></div></div>
+<div class="nmodal" id="nmodal">
+  <h3 id="nmTitle">הודעה חד פעמית</h3>
+  <p class="mu" style="margin:0;font-size:14px">ההודעה תושמע פעם אחת בתחילת השיחה הבאה, לפני התפריט. אחרי שנשמעה היא לא חוזרת.</p>
+  <div class="who" id="nmWho"></div>
+  <textarea id="nmText" maxlength="300" placeholder="מה להגיד לו?" style="min-height:90px" oninput="$('#nmCnt').textContent=this.value.length+'/300'"></textarea>
+  <div class="row" style="justify-content:space-between;margin-top:4px"><span class="mu2" style="font-size:12px">רעיונות מהירים:</span><span class="mu2" style="font-size:12px" id="nmCnt">0/300</span></div>
+  <div class="quick" id="nmQuick"></div>
+  <div class="row"><button class="btn" id="nmSave" onclick="nmSave()">שמור הודעה</button><button class="btn ghost" onclick="nmClose()">ביטול</button><span style="flex:1"></span><button class="btn danger sm" id="nmDel" onclick="nmSave(true)">מחק הודעה קיימת</button></div>
+</div>
 <div class="pal" id="pal"><input type="text" id="palQ" placeholder="לאן לעבור? עמוד, שם או טלפון" oninput="renderPal()"><ul id="palL"></ul></div>
 <div class="savebar" id="savebar"><span id="saveMsg">יש שינויים שלא נשמרו</span><button class="btn ghost sm" onclick="discard()">בטל</button><button class="btn sm" onclick="saveCurrent()">שמור</button></div>
 <div class="toast" id="toast"></div>
@@ -563,6 +638,7 @@ const IC={
  grip:'M9 3a2 2 0 110 4 2 2 0 010-4zm6 0a2 2 0 110 4 2 2 0 010-4zM9 10a2 2 0 110 4 2 2 0 010-4zm6 0a2 2 0 110 4 2 2 0 010-4zm-6 7a2 2 0 110 4 2 2 0 010-4zm6 0a2 2 0 110 4 2 2 0 010-4z',
  chev:'M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6z'
 };
+IC.conv=IC.chat;
 const svg=(p,s=19)=>`<svg viewBox="0 0 24 24" width="${s}" height="${s}"><path fill="currentColor" d="${p}"/></svg>`;
 
 const PAGES=[['dash','לוח בקרה'],['users','משתמשים'],['conv','שיחות'],['calls','יומן שיחות'],['pad','עוזרים'],['texts','נוסחים'],['settings','הגדרות'],['system','מערכת ובדיקות']];
@@ -581,7 +657,8 @@ const TXT_GROUPS=[
 /* ================= state ================= */
 let S=null,LIVE=null,ACT={},logAfter=0,seen=new Set(),page='dash';
 let A=[],TX={},SE=null,dirty={assist:false,texts:false,settings:false};
-let prevPhones=null,lastOk=0,sound=store.get('yai_sound',false),uFilter='all',uSort={k:'last',d:-1},convLimit=20,convCall='',drawerPhone=null,dragI=null,openCards=new Set();
+let selU=new Set(),convPhone='',nmTargets=[],prevCounts=null;
+let prevPhones=null,lastOk=0,sound=store.get('yai_sound',false),uFilter='all',uSort={k:'last',d:-1},convLimit=150,convCall='',drawerPhone=null,dragI=null,openCards=new Set();
 const key=l=>(l.time||'')+'|'+(l.phone||'')+'|'+(l.q||'');
 const today=()=>((LIVE&&LIVE.time)||(S&&S.live&&S.live.time)||'').slice(0,10);
 
@@ -638,6 +715,7 @@ async function poll(){
     if(prevPhones&&sound)for(const p of phones)if(!prevPhones.has(p)){ring();break}
     prevPhones=phones;lastOk=Date.now();
     renderLive();
+    if(page==='conv'&&!fresh.length&&document.activeElement!==$('#cq'))renderConvLiveOnly();
     if(fresh.length){renderFeed(fresh);if(page==='conv')renderConv();if(drawerPhone&&fresh.some(m=>m.phone===drawerPhone))renderDrawer()}
   }catch(e){}
   setTimeout(poll,3000);
@@ -677,8 +755,12 @@ function renderAll(){
 /* ================= live ================= */
 function renderLive(){
   if(!LIVE)return;const d=LIVE;
-  $('#readout').innerHTML=[['עכשיו על הקו',d.active.length],['שיחות היום',d.calls_today],['הודעות היום',d.msgs_today],['משתמשים רשומים',d.users],['סך הכל שיחות',d.calls_total],['סך הכל הודעות',d.msgs_total]]
-    .map(([t,v])=>`<div><span>${t}</span><b>${Number(v).toLocaleString('he-IL')}</b></div>`).join('');
+  const pd=(S.charts&&S.charts.per_day)||[],yCalls=pd.length>1?pd[pd.length-2][1]:null;
+  const yd=pd.length>1?pd[pd.length-2][0]:'';const yMsgs=yd?S.log.filter(l=>(l.time||'').slice(0,5)===yd).length:null;
+  const cmp=(v,y)=>y===null?'':`<small class="${v>y?'up':v<y?'dn':''}">אתמול: ${y}</small>`;
+  const pendingNotes=S.users.filter(u=>{const n=noteOf(u);return n&&!n.heard}).length;
+  $('#readout').innerHTML=[['עכשיו על הקו',d.active.length,''],['שיחות היום',d.calls_today,cmp(d.calls_today,yCalls)],['הודעות היום',d.msgs_today,cmp(d.msgs_today,yMsgs)],['משתמשים רשומים',d.users,pendingNotes?`<small>${pendingNotes} הודעות ממתינות</small>`:''],['סך הכל שיחות',d.calls_total,''],['סך הכל הודעות',d.msgs_total,'']]
+    .map(([t,v,x])=>`<div><span>${t}</span><b>${Number(v).toLocaleString('he-IL')}</b>${x}</div>`).join('');
   $('#srvTime').textContent='שעון השרת: '+d.time;
   const nl=$('#navLive');if(nl){nl.hidden=!d.active.length;nl.textContent=d.active.length}
   const pend={};Object.values(ACT).forEach(a=>{if(a&&a.phone)pend[a.phone]=a});
@@ -747,23 +829,77 @@ function noteOf(u){const n=u.note;if(!n)return null;if(typeof n==='string')retur
 function renderUsers(){
   $('#uFilter').innerHTML=UF.map(([k,t])=>`<button class="${uFilter===k?'on':''}" onclick="uFilter='${k}';renderUsers()">${t}</button>`).join('');
   const q=($('#uq').value||'').trim(),lim=S.settings.daily_limit;
+  for(const p of [...selU])if(!S.users.some(u=>u.phone===p))selU.delete(p);
   let L=S.users.filter(u=>(!q||String(u.name).includes(q)||u.phone.includes(q))&&(
     uFilter==='all'||(uFilter==='today'&&u.today>0)||(uFilter==='note'&&noteOf(u))||(uFilter==='unlimited'&&u.unlimited)||(uFilter==='blocked'&&u.blocked)));
   const k=uSort.k,d=uSort.d;
   L.sort((a,b)=>{let x=a[k],y=b[k];if(k==='last'){x=parseT(x)||0;y=parseT(y)||0}if(typeof x==='string')return x.localeCompare(y,'he')*d;return((x||0)-(y||0))*d});
+  window._uList=L;
+  const allSel=L.length&&L.every(u=>selU.has(u.phone));
   const th=(k,t)=>`<th class="s ${uSort.k===k?'act':''}" onclick="sortU('${k}')">${t}${uSort.k===k?(uSort.d>0?' ▲':' ▼'):''}</th>`;
-  let h=`<thead><tr>${th('name','שם')}<th>טלפון</th>${th('calls','שיחות')}${th('msgs','הודעות')}${th('today','היום')}${th('last','שיחה אחרונה')}<th>מצב</th><th></th></tr></thead><tbody>`;
+  let h=`<thead><tr><th style="width:30px"><input type="checkbox" class="ck" ${allSel?'checked':''} onchange="selAll(this.checked)" aria-label="בחר הכל"></th>${th('name','שם')}<th>טלפון</th>${th('calls','שיחות')}${th('msgs','הודעות')}${th('today','היום')}${th('last','שיחה אחרונה')}<th>הודעה חד פעמית</th><th>מצב</th><th></th></tr></thead><tbody>`;
   for(const u of L){
-    const n=noteOf(u);
+    const n=noteOf(u),live=LIVE&&LIVE.active.some(a=>a.phone===u.phone);
     const todayCell=u.unlimited||!lim?`<span class="num">${u.today}</span> <span class="mu2">∞</span>`:`<span class="num">${u.today}/${lim}</span><div class="ht" style="height:4px;background:var(--s3);border-radius:9px;margin-top:4px;width:70px"><i style="display:block;height:100%;border-radius:9px;background:${u.today>=lim?'var(--bad)':'var(--or)'};width:${Math.min(100,u.today/lim*100)}%"></i></div>`;
+    const noteCell=n?`<button class="notebtn ${n.heard?'heard':'has'}" onclick="event.stopPropagation();noteModal(['${H(u.phone)}'])" title="${H(n.text)}">${n.heard?'✓ נשמעה ב-'+H((n.heard||'').slice(0,5)):'⏳ ממתינה'}</button>`
+      :`<button class="notebtn" onclick="event.stopPropagation();noteModal(['${H(u.phone)}'])">+ השאר הודעה</button>`;
     h+=`<tr class="click" onclick="openUser('${H(u.phone)}')">
-      <td><b>${H(u.name)}</b></td><td class="num" dir="ltr" style="text-align:right">${H(u.phone)}</td>
+      <td onclick="event.stopPropagation()"><input type="checkbox" class="ck" ${selU.has(u.phone)?'checked':''} onchange="selToggle('${H(u.phone)}',this.checked)" aria-label="בחר"></td>
+      <td><b>${H(u.name)}</b>${live?' <span class="tag or">על הקו</span>':''}</td><td class="num" dir="ltr" style="text-align:right">${H(u.phone)}</td>
       <td class="num">${u.calls}</td><td class="num">${u.msgs}</td><td>${todayCell}</td><td class="mu">${H(u.last)||'—'}</td>
-      <td><div class="row" style="gap:4px">${u.owner?'<span class="tag gold">בעלים</span>':''}${u.blocked?'<span class="tag red">חסום</span>':''}${u.unlimited&&!u.owner?'<span class="tag green">בלי הגבלה</span>':''}${n?`<span class="tag or">${n.heard?'הודעה נשמעה':'הודעה ממתינה'}</span>`:''}</div></td>
-      <td><button class="btn ghost sm" onclick="event.stopPropagation();openUser('${H(u.phone)}')">פרטים</button></td></tr>`;
+      <td>${noteCell}</td>
+      <td><div class="row" style="gap:4px">${u.owner?'<span class="tag gold">בעלים</span>':''}${u.blocked?'<span class="tag red">חסום</span>':''}${u.unlimited&&!u.owner?'<span class="tag green">בלי הגבלה</span>':''}</div></td>
+      <td><div class="row" style="gap:4px;flex-wrap:nowrap"><button class="btn ghost sm" onclick="event.stopPropagation();showConvOf('${H(u.phone)}')">שיחות</button><button class="btn ghost sm" onclick="event.stopPropagation();openUser('${H(u.phone)}')">פרטים</button></div></td></tr>`;
   }
-  if(!L.length)h+=`<tr><td colspan="8" class="empty">${S.users.length?'אין משתמשים שמתאימים לחיפוש':'עדיין אין משתמשים רשומים'}</td></tr>`;
+  if(!L.length)h+=`<tr><td colspan="10" class="empty">${S.users.length?'אין משתמשים שמתאימים לחיפוש':'עדיין אין משתמשים רשומים'}</td></tr>`;
   $('#usersT').innerHTML=h+'</tbody>';
+  $('#usersCount').textContent=L.length===S.users.length?`${S.users.length} משתמשים`:`${L.length} מתוך ${S.users.length} משתמשים`;
+  $('#bulk').hidden=!selU.size;$('#bulkN').textContent=`נבחרו ${selU.size}`;
+}
+function selToggle(p,on){on?selU.add(p):selU.delete(p);renderUsers()}
+function selAll(on){for(const u of window._uList||[])on?selU.add(u.phone):selU.delete(u.phone);renderUsers()}
+async function runMany(phones,fn){const P=[...phones];for(let i=0;i<P.length;i+=5)await Promise.all(P.slice(i,i+5).map(fn))}
+async function bulkAct(action){
+  const P=[...selU].filter(p=>!(S.owners||[]).includes(p));if(!P.length)return toast('מספרי בעלים לא משתנים',true);
+  const txt=action==='block'?`להחליף מצב חסימה ל-${P.length} משתמשים? (חסום יבוטל, לא חסום ייחסם)`:`להחליף מצב הגבלה ל-${P.length} משתמשים?`;
+  if(!await ask(txt,'המשך'))return;
+  await runMany(P,p=>api('/api/user',{phone:p,action}));selU.clear();await refresh();toast('עודכן')
+}
+function exportUsers(){
+  const rows=[['שם','טלפון','שיחות','הודעות','היום','שיחה אחרונה','חסום','בלי הגבלה','הודעה ממתינה']];
+  for(const u of S.users){const n=noteOf(u);rows.push([u.name,u.phone,u.calls,u.msgs,u.today,u.last,u.blocked?'כן':'',u.unlimited?'כן':'',n&&!n.heard?n.text:''])}
+  const csv='\ufeff'+rows.map(r=>r.map(x=>'"'+String(x??'').replace(/"/g,'""')+'"').join(',')).join('\n');
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));a.download='yemot-ai-users.csv';document.body.appendChild(a);a.click();a.remove();
+}
+
+/* ---------- one-time note modal ---------- */
+const NOTE_IDEAS=['יש עדכון חדש בקו, נסה את העוזר המוזיקלי','תתקשר אליי כשאתה יכול','שבת שלום ומבורך','מזל טוב!','הקו יהיה בשיפוצים מחר בבוקר'];
+function noteModal(phones,all){
+  nmTargets=phones.slice();if(!nmTargets.length)return toast('אין משתמשים',true);
+  const us=nmTargets.map(p=>S.users.find(u=>u.phone===p)).filter(Boolean);
+  const one=us.length===1?us[0]:null,n=one?noteOf(one):null;
+  $('#nmTitle').textContent=all?`הודעה חד פעמית לכל ${us.length} המשתמשים`:one?`הודעה חד פעמית ל${one.name}`:`הודעה חד פעמית ל-${us.length} משתמשים`;
+  $('#nmWho').innerHTML=all?'':us.slice(0,40).map(u=>`<span class="tag or">${H(u.name)}</span>`).join('')+(us.length>40?`<span class="tag">ועוד ${us.length-40}</span>`:'');
+  $('#nmText').value=n?n.text:'';$('#nmCnt').textContent=$('#nmText').value.length+'/300';
+  $('#nmDel').hidden=!(one?n:us.some(u=>noteOf(u)));
+  $('#nmDel').textContent=one?'מחק הודעה':'מחק את ההודעות שלהם';
+  $('#nmQuick').innerHTML=NOTE_IDEAS.map(t=>`<button onclick="$('#nmText').value=this.textContent;$('#nmCnt').textContent=this.textContent.length+'/300'">${H(t)}</button>`).join('');
+  if(n)$('#nmWho').insertAdjacentHTML('beforeend',`<span class="mu" style="font-size:13px;width:100%">${n.heard?'ההודעה הנוכחית נשמעה ב-'+H(n.heard)+'. שמירה תשלח אותה שוב.':'ההודעה הנוכחית עוד לא נשמעה.'}</span>`);
+  $('#nmodal').classList.add('on');$('#scrim').classList.add('on');setTimeout(()=>$('#nmText').focus(),30);
+}
+function nmClose(){$('#nmodal').classList.remove('on');if(!$('#drawer').classList.contains('on'))$('#scrim').classList.remove('on')}
+async function nmSave(del){
+  const txt=del?'':$('#nmText').value.trim();
+  if(!del&&!txt)return toast('צריך לכתוב הודעה',true);
+  const b=$('#nmSave');b.disabled=true;b.innerHTML='<span class="spin"></span> שומר…';
+  try{await runMany(nmTargets,async p=>{
+      const u=S.users.find(x=>x.phone===p),n=u&&noteOf(u);
+      if(!del&&n&&n.text===txt&&n.heard)await api('/api/user',{phone:p,action:'note_again'});
+      else await api('/api/user',{phone:p,action:'note',note:txt})});
+    nmClose();await refresh();selU.clear();renderUsers();
+    toast(del?'ההודעה נמחקה':nmTargets.length>1?`ההודעה תושמע ל-${nmTargets.length} משתמשים בשיחה הבאה שלהם`:'ההודעה תושמע בשיחה הבאה');
+  }catch(e){toast('השמירה נכשלה',true)}
+  b.disabled=false;b.textContent='שמור הודעה';
 }
 function sortU(k){uSort=uSort.k===k?{k,d:-uSort.d}:{k,d:k==='name'?1:-1};renderUsers()}
 async function addUser(){
@@ -774,7 +910,7 @@ async function addUser(){
 
 /* ---------- drawer ---------- */
 function openUser(phone){drawerPhone=phone;renderDrawer();$('#drawer').classList.add('on');$('#scrim').classList.add('on')}
-function closeAll(){$('#drawer').classList.remove('on');$('#scrim').classList.remove('on');$('#modal').classList.remove('on');closePal();drawerPhone=null}
+function closeAll(){$('#nmodal').classList.remove('on');$('#drawer').classList.remove('on');$('#scrim').classList.remove('on');$('#modal').classList.remove('on');closePal();drawerPhone=null}
 function renderDrawer(){
   const ph=drawerPhone;if(!ph)return;
   const u=S.users.find(x=>x.phone===ph)||{phone:ph,name:(LIVE.active.find(a=>a.phone===ph)||{}).name||'לא רשום',calls:0,msgs:0,today:0,last:'',blocked:false,unlimited:false,owner:false,note:null,voice:0,_new:true};
@@ -789,7 +925,7 @@ function renderDrawer(){
     <div class="dstats"><div><b>${u.calls}</b><span>שיחות</span></div><div><b>${u.msgs}</b><span>הודעות</span></div><div><b>${u.today}</b><span>היום</span></div><div><b style="font-size:13px;line-height:2.3">${H((u.last||'—').slice(0,10))}</b><span>אחרונה</span></div></div>
     <div class="dsec"><h4>שם</h4><div class="row"><input type="text" id="dName" value="${H(u._new?'':u.name)}" style="flex:1"><button class="btn sm" onclick="dRename()">${u._new?'רשום':'שמור שם'}</button></div></div>
     ${u._new?'':`
-    <div class="dsec"><h4>הודעה אישית לשיחה הבאה</h4>
+    <div class="dsec"><h4>הודעה חד פעמית לשיחה הבאה</h4>
       <textarea id="dNote" placeholder="תושמע לו פעם אחת בתחילת השיחה הבאה" style="min-height:70px">${H(n?n.text:'')}</textarea>
       ${n?`<p class="mu" style="font-size:13px;margin:6px 0">${n.heard?'נשמעה ב-'+H(n.heard):'ממתינה, עוד לא נשמעה'}${n.created?' · נכתבה ב-'+H(n.created):''}</p>`:''}
       <div class="row" style="margin-top:8px"><button class="btn sm" onclick="dNote()">שמור הודעה</button>${n&&n.heard?`<button class="btn ghost sm" onclick="uAct('note_again',{},'ההודעה תושמע שוב בשיחה הבאה')">השמע שוב</button>`:''}${n?`<button class="btn ghost sm" onclick="uAct('note',{note:''},'ההודעה נמחקה')">מחק הודעה</button>`:''}</div></div>
@@ -808,39 +944,83 @@ async function uAct(action,extra={},msg='נשמר'){await api('/api/user',{phone
 async function dRename(){const v=$('#dName').value.trim();if(!v)return toast('צריך להזין שם',true);const u=S.users.find(x=>x.phone===drawerPhone);await uAct(u?'rename':'add',{name:v},'השם נשמר')}
 async function dNote(){await uAct('note',{note:$('#dNote').value.trim()},$('#dNote').value.trim()?'ההודעה תושמע בשיחה הבאה':'ההודעה נמחקה')}
 async function dDelete(){if(!await ask('למחוק את המשתמש? בשיחה הבאה הוא יירשם מחדש.','מחק',true))return;const p=drawerPhone;await api('/api/user',{phone:p,action:'delete'});closeAll();await refresh();toast('המשתמש נמחק')}
-function showConvOf(ph){closeAll();resetConv(true);$('#cUser').value=ph;go('conv')}
+function showConvOf(ph){closeAll();resetConv(true);convPhone=ph;go('conv')}
 
-/* ================= conversations ================= */
+/* ================= conversations (two-pane) ================= */
 function fillConvFilters(){
-  const cu=$('#cUser').value,ca=$('#cAssist').value;
-  $('#cUser').innerHTML='<option value="">כל המתקשרים</option>'+S.users.slice().sort((a,b)=>String(a.name).localeCompare(b.name,'he')).map(u=>`<option value="${H(u.phone)}">${H(u.name)} (${H(u.phone)})</option>`).join('');
+  const ca=$('#cAssist').value;
   const per=[...new Set(S.log.map(l=>l.persona).filter(Boolean))];
   $('#cAssist').innerHTML='<option value="">כל העוזרים</option>'+per.map(p=>`<option>${H(p)}</option>`).join('');
-  $('#cUser').value=cu;$('#cAssist').value=ca;
+  $('#cAssist').value=ca;
 }
-function resetConv(silent){$('#cq').value='';$('#cUser').value='';$('#cAssist').value='';$('#cDate').value='';convCall='';convLimit=20;if(!silent)renderConv()}
+function resetConv(silent){$('#cq').value='';$('#cAssist').value='';$('#cDate').value='';convCall='';if(!silent)renderConv()}
 function hl(text,q){const t=H(text);if(!q)return t;const re=new RegExp(H(q).replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'gi');return t.replace(re,m=>`<mark>${m}</mark>`)}
 function isoToIl(v){if(!v)return '';const [y,m,d]=v.split('-');return `${d}/${m}/${y}`}
+function convMatch(l){
+  const q=($('#cq').value||'').trim(),as=$('#cAssist').value,dt=isoToIl($('#cDate').value);
+  if(convCall&&l.call!==convCall)return false;
+  if(as&&l.persona!==as)return false;if(dt&&!(l.time||'').startsWith(dt))return false;
+  if(q&&!((l.q||'').includes(q)||(l.a||'').includes(q)||(l.name||'').includes(q)||(l.phone||'').includes(q)))return false;
+  return true;
+}
+let seenCount=store.get('yai_seen',{});
 function renderConv(){
-  const q=($('#cq').value||'').trim(),ph=$('#cUser').value,as=$('#cAssist').value,dt=isoToIl($('#cDate').value);
-  const groups=new Map();
-  for(let i=S.log.length-1;i>=0;i--){const l=S.log[i];
-    if(convCall&&l.call!==convCall)continue;
-    if(ph&&l.phone!==ph)continue;if(as&&l.persona!==as)continue;if(dt&&!(l.time||'').startsWith(dt))continue;
-    if(q&&!((l.q||'').includes(q)||(l.a||'').includes(q)||(l.name||'').includes(q)||(l.phone||'').includes(q)))continue;
-    const k=l.call||(l.phone+'|'+(l.time||'').slice(0,10));if(!groups.has(k))groups.set(k,[]);groups.get(k).push(l)}
-  const all=[...groups.values()];const G=all.slice(0,convLimit);
-  const total=all.reduce((s,g)=>s+g.length,0);
-  $('#convInfo').innerHTML=(convCall?'<span class="tag or">שיחה אחת</span> ':'')+`${all.length} שיחות, ${total} הודעות`+(S.log_total>S.log.length?` <span class="mu2">(מוצגות ${S.log.length} ההודעות האחרונות מתוך ${S.log_total})</span>`:'');
-  let s='';
-  for(const g of G){const msgs=g.slice().reverse(),f=msgs[0],l=msgs[msgs.length-1];let last='',chat='';
-    const pers=[...new Set(msgs.map(m=>m.persona))];
-    for(const m of msgs){if(m.persona!==last){chat+=`<div class="persona">${H(m.persona)}</div>`;last=m.persona}
-      chat+=`<div class="bb u">${hl(m.q,q)}<small>${H((m.time||'').slice(11))}</small></div><div class="bb m">${hl(m.a,q)}</div>`}
-    s+=`<div class="panel thread"><div class="th"><b style="cursor:pointer" onclick="openUser('${H(f.phone)}')">${H(f.name)}</b><span class="mu num" dir="ltr">${H(f.phone)}</span><span class="mu2">${H(f.time)}${l.time!==f.time?' עד '+H((l.time||'').slice(11)):''}</span><span class="tag">${msgs.length} הודעות</span>${pers.length>1?`<span class="tag or">${pers.length} עוזרים</span>`:''}</div><div class="chat">${chat}</div></div>`}
-  if(!G.length)s=`<div class="panel empty">${S.log.length?'לא נמצאו שיחות שמתאימות לסינון':'עדיין אין שיחות. כשמישהו ידבר עם הקו, השיחה תופיע כאן.'}</div>`;
-  if(all.length>convLimit)s+=`<button class="btn ghost loadmore" onclick="convLimit+=20;renderConv()">הצג עוד שיחות (${all.length-convLimit} נוספות)</button>`;
-  $('#convList').innerHTML=s;
+  const people=new Map();
+  for(const l of S.log){if(!convMatch(l))continue;let p=people.get(l.phone);if(!p){p={phone:l.phone,name:l.name,msgs:[]};people.set(l.phone,p)}p.msgs.push(l);p.name=l.name||p.name}
+  const livePh=new Set((LIVE?LIVE.active:[]).map(a=>a.phone));
+  const list=[...people.values()].sort((a,b)=>(parseT(b.msgs[b.msgs.length-1].time)||0)-(parseT(a.msgs[a.msgs.length-1].time)||0));
+  const total=list.reduce((s,p)=>s+p.msgs.length,0);
+  $('#convInfo').innerHTML=(convCall?'<span class="tag or">שיחה אחת</span> ':'')+`${list.length} מתקשרים, ${total} הודעות`;
+  if(!convPhone&&list.length&&window.innerWidth>820)convPhone=list[0].phone;
+  const filtered=!!(($('#cq').value||'').trim()||$('#cAssist').value||$('#cDate').value);
+  $('#cvItems').innerHTML=list.map(p=>{
+    const last=p.msgs[p.msgs.length-1],u=S.users.find(x=>x.phone===p.phone),nm=(u&&u.name)||p.name;
+    const unseen=filtered?0:Math.max(0,p.msgs.length-(seenCount[p.phone]??p.msgs.length));
+    const t=last.time||'',tShow=t.slice(0,10)===today()?t.slice(11):t.slice(0,5);
+    return `<div class="ci ${p.phone===convPhone?'on':''}" onclick="pickConv('${H(p.phone)}')">
+      <div class="av">${initial(nm)}${livePh.has(p.phone)?'<span class="dotl" title="על הקו עכשיו"></span>':''}</div>
+      <b>${H(nm)}</b><span class="tm">${H(tShow)}</span>
+      <span class="sn">${H(last.q)}</span><span class="bd ${unseen?'new':''}">${unseen?'+'+unseen:p.msgs.length}</span></div>`}).join('')
+    ||`<div class="empty">${S.log.length?'אין תוצאות לסינון הזה':'עדיין אין שיחות'}</div>`;
+  $('#cv').classList.toggle('sel',!!convPhone);
+  renderPane(people.get(convPhone));
+}
+function renderConvLiveOnly(){const w=Object.values(ACT).some(a=>a&&a.phone===convPhone&&a.waiting);if(w||$('#cvPane').dataset.w==='1'){$('#cvPane').dataset.w=w?'1':'0';renderConv()}}
+function pickConv(ph){convPhone=ph;convLimit=150;renderConv()}
+function renderPane(p){
+  const pane=$('#cvPane');
+  if(!p){pane.innerHTML=`<div class="cv-empty"><div>${svg(IC.chat,40)}<p>בחר מתקשר מהרשימה כדי לראות את השיחות שלו</p></div></div>`;return}
+  if(page==='conv'){seenCount[p.phone]=S.log.filter(l=>l.phone===p.phone).length;store.set('yai_seen',seenCount)}
+  const q=($('#cq').value||'').trim(),u=S.users.find(x=>x.phone===p.phone),nm=(u&&u.name)||p.name,n=u&&noteOf(u);
+  const live=LIVE&&LIVE.active.find(a=>a.phone===p.phone);
+  const body=$('#cvBody'),nearBottom=body&&body.dataset.ph===p.phone&&body.scrollHeight-body.scrollTop-body.clientHeight<80,oldTop=body&&body.dataset.ph===p.phone?body.scrollTop:null;
+  const M=p.msgs.slice(-convLimit);let h='',lastCall=null,lastP='';
+  if(p.msgs.length>convLimit)h+=`<button class="btn ghost sm loadmore" style="margin-bottom:10px" onclick="convLimit+=150;renderConv()">הצג הודעות קודמות (${p.msgs.length-convLimit})</button>`;
+  for(const m of M){
+    const ck=m.call||(m.time||'').slice(0,10);
+    if(ck!==lastCall){h+=`<div class="daysep">שיחה ב-${H(m.time)}</div>`;lastCall=ck;lastP=''}
+    if(m.persona!==lastP){h+=`<div class="persona">${H(m.persona)}</div>`;lastP=m.persona}
+    h+=`<div class="bb u">${hl(m.q,q)}<small>${H((m.time||'').slice(11))}</small></div><div class="bb m">${hl(m.a,q)}</div>`;
+  }
+  if(live&&live.state==='מחכה לתשובה'){const pd=Object.values(ACT).find(a=>a&&a.phone===p.phone)||{};
+    if(pd.pending_q)h+=`<div class="bb u" style="opacity:.7">${H(pd.pending_q)}<small>עכשיו</small></div>`;
+    h+=`<div class="bb m"><span class="wave"><i></i><i></i><i></i><i></i></span> הבינה עונה…</div>`}
+  pane.innerHTML=`<div class="pt">
+     <button class="iconbtn back-m" onclick="convPhone='';renderConv()" aria-label="חזרה לרשימה">→</button>
+     <div class="av">${initial(nm)}</div>
+     <div style="flex:1;min-width:0"><b style="font-size:16px">${H(nm)}</b><div class="row" style="gap:6px"><span class="mu num" dir="ltr" style="font-size:13px">${H(p.phone)}</span>${live?'<span class="tag or">על הקו עכשיו</span>':''}${n&&!n.heard?'<span class="tag or">הודעה ממתינה</span>':''}</div></div>
+     <button class="btn sm" onclick="noteModal(['${H(p.phone)}'])">${n&&!n.heard?'ערוך הודעה':'השאר הודעה'}</button>
+     <button class="btn ghost sm" onclick="copyConv('${H(p.phone)}')">העתק</button>
+     <button class="btn ghost sm" onclick="openUser('${H(p.phone)}')">פרטים</button>
+     ${convCall?`<button class="btn ghost sm" onclick="convCall='';renderConv()">הצג את כל השיחות שלו</button>`:''}
+   </div><div class="cv-body" id="cvBody" data-ph="${H(p.phone)}"><div class="chat">${h}</div></div>`;
+  const nb=$('#cvBody');
+  if(oldTop!==null&&!nearBottom)nb.scrollTop=oldTop;else if(q){const mk=nb.querySelector('mark');if(mk)mk.scrollIntoView({block:'center'});else nb.scrollTop=nb.scrollHeight}else nb.scrollTop=nb.scrollHeight;
+}
+async function copyConv(ph){
+  const L=S.log.filter(l=>l.phone===ph&&convMatch(l));
+  const txt=L.map(l=>`[${l.time}] ${l.name} (${l.persona}): ${l.q}\nתשובה: ${l.a}`).join('\n\n');
+  try{await navigator.clipboard.writeText(txt);toast('השיחה הועתקה')}catch(e){toast('ההעתקה לא הצליחה',true)}
 }
 
 /* ================= calls ================= */
@@ -857,7 +1037,7 @@ function renderCalls(){
   if(!L.length)h+='<tr><td colspan="6" class="empty">אין שיחות להצגה</td></tr>';
   $('#callsT').innerHTML=h+'</tbody>';
 }
-function openCall(id){resetConv(true);convCall=id;go('conv')}
+function openCall(id){resetConv(true);convCall=id;const l=S.log.find(x=>x.call===id);if(l)convPhone=l.phone;go('conv')}
 
 /* ================= assistants ================= */
 function loadEditors(force){
@@ -1050,6 +1230,7 @@ document.addEventListener('keydown',e=>{
   else if(e.key==='Escape')closeAll();
 });
 
+window.addEventListener('hashchange',()=>{const h=location.hash.slice(1);if(h&&h!==page&&S)go(h)});
 boot();
 </script>
 </body>
