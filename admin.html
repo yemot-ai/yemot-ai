@@ -1,56 +1,1056 @@
 <!doctype html>
-<html lang="he" dir="rtl" data-theme="dark">
+<html lang="he" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>חדר הבקרה של הקו</title>
-<style>::selection{background:#ff7a1a55}</style>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>מרכזיית הקו</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;700&family=Heebo:wght@300;400;500;700&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
 :root{
-  --bg:#F6F3EF;--paper:#FFFFFF;--ink:#1A1512;--mute:#7A6F66;--line:#E8E0D8;
-  --navy:#141110;--navy2:#221C18;--teal:#FF7A1A;--teal-soft:#FFE7D3;--amber:#FFB020;--amber-soft:#FFF1CC;
-  --coral:#E23D28;--coral-soft:#FBDDD6;--blue:#FF9A3C;--blue-soft:#FFE3C7;
-  --r:14px;--r-sm:9px;--shadow:0 1px 0 #0000000a,0 10px 30px -18px #1a151240;
+  --bg:#000;--s1:#0c0c0c;--s2:#141414;--s3:#1c1c1c;--line:#242424;--line2:#343434;
+  --tx:#f5f2ed;--mu:#8e8a85;--mu2:#5b5855;
+  --or:#ff7a1a;--or2:#ffa453;--orD:#2b1506;--orL:#5c2c0a;
+  --ok:#3bd584;--bad:#ff4d4d;--warn:#ffc53d;
+  --r:14px;--f:'Rubik','Segoe UI',Arial,sans-serif;
 }
-[data-theme=dark]{
-  --bg:#0A0908;--paper:#15120fcc;--ink:#F5EFE8;--mute:#A79B90;--line:#2C2520;
-  --navy:#070605;--navy2:#100D0B;--teal-soft:#3a2010;--amber-soft:#3a2a0c;--coral-soft:#3d1a14;--blue-soft:#3a2410;
-  --shadow:0 1px 0 #00000030,0 20px 50px -24px #000d;
-}
-[data-theme=dark] body{background:
-  radial-gradient(900px 520px at 10% -10%,#ff7a1a2e,transparent 60%),
-  radial-gradient(700px 500px at 100% 25%,#ff9a3c1c,transparent 60%),
-  radial-gradient(600px 400px at 60% 110%,#e23d2818,transparent 60%),var(--bg);background-attachment:fixed}
-[data-theme=dark] .panel,[data-theme=dark] .key,[data-theme=dark] .live-badge{backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
-[data-theme=dark] .board{background:linear-gradient(135deg,#141008 0%,#1c130a 60%,#120e09 100%);border:1px solid #ff7a1a2a}
-[data-theme=dark] .side{background:linear-gradient(180deg,#070605 0%,#130e0a 100%);border-left:1px solid #ff7a1a22}
-[data-theme=dark] .stat{background:#ffffff08}
-[data-theme=dark] input[type=text],[data-theme=dark] input[type=number],[data-theme=dark] input[type=password],[data-theme=dark] select,[data-theme=dark] textarea{background:#0f0c0acc}
-[data-theme=dark] .msg.a{background:#1a1511}[data-theme=dark] .typing{background:#1a1511}
 *{box-sizing:border-box}
-html,body{margin:0;background:var(--bg);color:var(--ink);font-family:Heebo,Arial,sans-serif;font-size:15px;line-height:1.5}
-h1,h2,h3,.num,.key b{font-family:Rubik,Heebo,Arial,sans-serif}
-a{color:var(--blue)}
-button{font:inherit}
-input[type=text],input[type=number],input[type=password],select,textarea{
-  width:100%;padding:8px 11px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--paper);color:var(--ink);font:inherit}
-input:focus,select:focus,textarea:focus,button:focus-visible{outline:2px solid var(--teal);outline-offset:1px}
-textarea{min-height:72px;resize:vertical;line-height:1.55}
-.btn{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border:0;border-radius:var(--r-sm);background:var(--navy);color:#fff;cursor:pointer;transition:transform .08s,filter .15s;text-decoration:none}
-.btn:hover{filter:brightness(1.12)}.btn:active{transform:translateY(1px)}
-.btn.sm{padding:5px 10px;font-size:13px}.btn.teal{background:var(--teal)}.btn.amber{background:var(--amber);color:#3b2a00}.btn.coral{background:var(--coral)}
-.btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}.btn.blue{background:var(--blue)}
-.pill{display:inline-flex;align-items:center;gap:5px;padding:2px 9px;border-radius:999px;font-size:12px;font-weight:500;white-space:nowrap}
-.pill.teal{background:var(--teal-soft);color:#9a3f05}.pill.amber{background:var(--amber-soft);color:#7a4d00}.pill.coral{background:var(--coral-soft);color:#8a2a12}.pill.blue{background:var(--blue-soft);color:#8a3d05}.pill.gray{background:var(--line);color:var(--mute)}
-[data-theme=dark] .pill.teal{color:#ffb070}[data-theme=dark] .pill.amber{color:#ffd27a}[data-theme=dark] .pill.coral{color:#ff9f83}[data-theme=dark] .pill.blue{color:#ffc08a}
-.mute{color:var(--mute)}.small{font-size:13px}
+html,body{margin:0;background:var(--bg);color:var(--tx);font-family:var(--f);font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased}
+button,input,select,textarea{font:inherit;color:inherit}
+[hidden]{display:none!important}
+a{color:var(--or2)}
+::selection{background:var(--or);color:#000}
+::-webkit-scrollbar{width:10px;height:10px}::-webkit-scrollbar-thumb{background:#2a2a2a;border-radius:10px}::-webkit-scrollbar-track{background:transparent}
+:focus-visible{outline:2px solid var(--or);outline-offset:2px}
 
-/* ---------- shell */
-.shell{display:grid;grid-template-columns:236px 1fr;min-height:100vh}
-.side{background:linear-gradient(180deg,var(--navy) 0%,var(--navy2) 100%);color:#fff;padding:22px 0;position:sticky;top:0;height:100vh;display:flex;flex-direction:column}
-.brand{display:flex;align-items:center;gap:10px;padding:0 20px 22px;border-bottom:1px solid #ffffff14;margin-bottom:10px}
-.brand svg{width:34px;height:34px;flex-shrink:0}
-.brand h1{font-size:17px;margin:0;font-weight:500;letter-spacing:.2px}.brand .small{color:#b39c8a}
-.nav{display:flex;flex-direction:column;padding:6px 10px;gap:2px}
+/* ---------- login ---------- */
+.login{min-height:100vh;display:grid;place-items:center;padding:24px;background:
+  radial-gradient(600px 300px at 50% 0%,#2b1506 0%,transparent 70%),var(--bg)}
+.login-box{width:100%;max-width:380px;text-align:center}
+.login-box .mark{width:64px;height:64px;margin:0 auto 18px}
+.login-box h1{font-size:28px;margin:0 0 6px;font-weight:800}
+.login-box p{color:var(--mu);margin:0 0 26px}
+.login-box input{text-align:center;font-size:18px;padding:14px;letter-spacing:.1em}
+.login-box .btn{width:100%;margin-top:12px;padding:13px;font-size:16px}
+.err{color:var(--bad);min-height:24px;margin-top:10px}
+
+/* ---------- shell ---------- */
+.app{display:grid;grid-template-columns:248px minmax(0,1fr);min-height:100vh}
+.side{position:sticky;top:0;height:100vh;background:var(--s1);border-left:1px solid var(--line);display:flex;flex-direction:column;padding:22px 14px 16px}
+.brand{display:flex;align-items:center;gap:12px;padding:0 8px 26px}
+.brand .mark{width:38px;height:38px;flex:none}
+.brand b{display:block;font-size:18px;font-weight:800;line-height:1.1}
+.brand small{color:var(--mu);font-size:12px}
+.nav{display:flex;flex-direction:column;gap:2px}
+.nav a{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:10px;color:var(--mu);text-decoration:none;cursor:pointer;font-weight:500;position:relative;transition:background .15s,color .15s}
+.nav a:hover{color:var(--tx);background:var(--s2)}
+.nav a.on{color:var(--tx);background:var(--s2)}
+.nav a.on::before{content:"";position:absolute;right:-14px;top:9px;bottom:9px;width:3px;border-radius:3px 0 0 3px;background:var(--or)}
+.nav svg{width:19px;height:19px;flex:none}
+.nav a.on svg{color:var(--or)}
+.nav .cnt{margin-inline-start:auto;background:var(--or);color:#000;font-size:12px;font-weight:700;border-radius:99px;padding:0 8px;min-width:22px;text-align:center}
+.side-foot{margin-top:auto;padding:14px 8px 0;border-top:1px solid var(--line);font-size:13px;color:var(--mu);display:flex;flex-direction:column;gap:10px}
+.side-foot a{color:var(--mu);text-decoration:none}.side-foot a:hover{color:var(--bad)}
+
+.main{min-width:0;display:flex;flex-direction:column}
+.top{position:sticky;top:0;z-index:30;background:rgba(0,0,0,.82);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:14px;padding:13px 30px}
+.top h1{font-size:21px;margin:0;font-weight:700;white-space:nowrap}
+.top .sp{flex:1}
+.conn{display:flex;align-items:center;gap:8px;color:var(--mu);font-size:13px;white-space:nowrap}
+.conn i{width:8px;height:8px;border-radius:50%;background:var(--ok);box-shadow:0 0 8px var(--ok)}
+.conn.bad i{background:var(--bad);box-shadow:0 0 8px var(--bad)}
+.kbd{border:1px solid var(--line2);border-radius:6px;padding:0 6px;font-size:12px;color:var(--mu)}
+.iconbtn{background:var(--s2);border:1px solid var(--line);border-radius:10px;height:36px;min-width:36px;padding:0 10px;display:inline-flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;color:var(--mu)}
+.iconbtn:hover{color:var(--tx);border-color:var(--line2)}
+.iconbtn.on{color:var(--or);border-color:var(--orL)}
+.iconbtn svg{width:18px;height:18px}
+.content{padding:26px 30px 90px;width:100%;max-width:1480px}
+.page{display:none}.page.on{display:block;animation:pg .25s ease}
+@keyframes pg{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+/* ---------- building blocks ---------- */
+.panel{background:var(--s1);border:1px solid var(--line);border-radius:var(--r);padding:20px}
+.ph{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px;flex-wrap:wrap}
+.ph h3{margin:0;font-size:16px;font-weight:600}
+.ph .hint{color:var(--mu);font-size:13px}
+.grid{display:grid;gap:16px}
+.g2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.g3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.mb{margin-bottom:16px}
+.mu{color:var(--mu)}.mu2{color:var(--mu2)}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.lead{color:var(--mu);margin:-4px 0 20px;max-width:760px}
+
+.btn{border:0;border-radius:10px;padding:9px 16px;background:var(--or);color:#000;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:8px;white-space:nowrap;transition:filter .15s,transform .1s}
+.btn:hover{filter:brightness(1.1)}.btn:active{transform:scale(.97)}
+.btn.ghost{background:var(--s2);color:var(--tx);border:1px solid var(--line2)}
+.btn.ghost:hover{border-color:var(--or)}
+.btn.danger{background:transparent;color:var(--bad);border:1px solid #5a1d1d}
+.btn.danger:hover{background:#2a0c0c}
+.btn.ok{background:var(--ok);color:#000}
+.btn.sm{padding:5px 11px;font-size:13px;border-radius:8px}
+.btn[disabled]{opacity:.5;pointer-events:none}
+
+input[type=text],input[type=password],input[type=number],input[type=date],input[type=tel],select,textarea{
+  width:100%;background:var(--bg);border:1px solid var(--line2);border-radius:10px;padding:9px 12px;outline:none;transition:border-color .15s}
+input:focus,select:focus,textarea:focus{border-color:var(--or)}
+textarea{min-height:90px;resize:vertical;line-height:1.6}
+select{cursor:pointer}
+input::placeholder,textarea::placeholder{color:var(--mu2)}
+label.f{display:block;margin-bottom:14px}
+label.f>span{display:block;font-size:13px;color:var(--mu);margin-bottom:5px}
+label.f>small{display:block;font-size:12px;color:var(--mu2);margin-top:4px}
+.count{float:left;font-size:12px;color:var(--mu2)}
+
+.tag{display:inline-flex;align-items:center;gap:4px;padding:1px 9px;border-radius:99px;font-size:12px;font-weight:500;background:var(--s3);color:var(--mu);white-space:nowrap}
+.tag.or{background:var(--orD);color:var(--or2)}
+.tag.red{background:#2a0c0c;color:#ff8080}
+.tag.green{background:#0b2618;color:#6ee7a8}
+.tag.gold{background:#2a2206;color:var(--warn)}
+
+.switch{position:relative;display:inline-flex;align-items:center;gap:10px;cursor:pointer;user-select:none}
+.switch input{position:absolute;opacity:0;pointer-events:none}
+.switch i{width:40px;height:22px;border-radius:99px;background:var(--line2);position:relative;transition:background .2s;flex:none}
+.switch i::after{content:"";position:absolute;top:3px;right:3px;width:16px;height:16px;border-radius:50%;background:#fff;transition:transform .2s}
+.switch input:checked+i{background:var(--or)}
+.switch input:checked+i::after{transform:translateX(-18px)}
+.switch input:focus-visible+i{outline:2px solid var(--or);outline-offset:2px}
+
+table{width:100%;border-collapse:collapse}
+th,td{padding:11px 12px;text-align:right;border-bottom:1px solid var(--line);vertical-align:middle}
+th{color:var(--mu);font-weight:500;font-size:13px;white-space:nowrap}
+th.s{cursor:pointer}th.s:hover{color:var(--tx)}th.s.act{color:var(--or)}
+tbody tr{transition:background .12s}
+tbody tr.click{cursor:pointer}
+tbody tr:hover{background:var(--s2)}
+.tw{overflow-x:auto}
+.empty{text-align:center;color:var(--mu);padding:40px 12px}
+.num{font-variant-numeric:tabular-nums}
+
+.seg{display:inline-flex;background:var(--s2);border:1px solid var(--line);border-radius:10px;padding:3px}
+.seg button{background:none;border:0;padding:5px 12px;border-radius:7px;color:var(--mu);cursor:pointer;font-size:13px}
+.seg button.on{background:var(--or);color:#000;font-weight:600}
+
+/* ---------- readout ---------- */
+.readout{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));background:var(--s1);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;margin-bottom:16px}
+.readout>div{padding:16px 20px;border-inline-start:1px solid var(--line)}
+.readout>div:first-child{border-inline-start:0;background:linear-gradient(135deg,var(--orD),transparent 80%)}
+.readout b{display:block;font-size:32px;font-weight:700;line-height:1.15;font-variant-numeric:tabular-nums}
+.readout>div:first-child b{color:var(--or)}
+.readout span{color:var(--mu);font-size:13px}
+
+/* ---------- switchboard ---------- */
+.board-wrap{background:
+  linear-gradient(var(--s1),var(--s1)) padding-box,
+  linear-gradient(180deg,#3a1c06,var(--line) 40%) border-box;border:1px solid transparent;border-radius:var(--r);padding:20px;margin-bottom:16px}
+.jacks{display:grid;grid-template-columns:repeat(auto-fill,minmax(168px,1fr));gap:10px}
+.jack{border-radius:12px;min-height:108px;position:relative}
+.jack.idle{background:repeating-linear-gradient(135deg,transparent 0 6px,#0f0f0f 6px 7px),var(--s1);border:1px dashed var(--line);display:flex;align-items:center;justify-content:center;flex-direction:column;gap:6px;color:var(--mu2);font-size:12px}
+.jack.idle::before{content:"";width:14px;height:14px;border-radius:50%;background:#000;border:2px solid var(--line2);box-shadow:inset 0 2px 3px #000}
+.jack.live{cursor:pointer;background:linear-gradient(180deg,#261205,var(--s2) 70%);border:1px solid var(--or);box-shadow:0 0 28px -10px var(--or);padding:12px 13px;display:flex;flex-direction:column;gap:4px;animation:plug .4s ease}
+@keyframes plug{from{transform:scale(.94);opacity:.3}to{transform:none;opacity:1}}
+.jack .jh{display:flex;align-items:center;gap:8px}
+.jack .jh b{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.jack .jh .n{margin-inline-start:auto;color:var(--mu2);font-size:12px}
+.led{width:9px;height:9px;border-radius:50%;background:var(--or);box-shadow:0 0 10px var(--or);flex:none}
+.jack.wait .led{background:var(--warn);box-shadow:0 0 10px var(--warn);animation:blink .8s infinite}
+@keyframes blink{50%{opacity:.25}}
+.jack .js{font-size:13px;color:var(--or2)}
+.jack .jq{font-size:13px;color:var(--mu);overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;flex:1}
+.jack .jf{display:flex;justify-content:space-between;font-size:12px;color:var(--mu2)}
+.wave{display:inline-flex;gap:2px;align-items:center;height:12px}
+.wave i{width:2px;background:var(--or);border-radius:2px;animation:wv 1s infinite ease-in-out}
+.wave i:nth-child(2){animation-delay:.15s}.wave i:nth-child(3){animation-delay:.3s}.wave i:nth-child(4){animation-delay:.45s}
+@keyframes wv{0%,100%{height:3px}50%{height:12px}}
+
+/* ---------- feed ---------- */
+.feed{display:flex;flex-direction:column;max-height:520px;overflow-y:auto}
+.fi{padding:12px 4px;border-bottom:1px solid var(--line);display:grid;grid-template-columns:auto 1fr;gap:4px 12px}
+.fi:last-child{border:0}
+.fi .av{grid-row:span 3;width:34px;height:34px;border-radius:50%;background:var(--s3);display:grid;place-items:center;font-weight:700;color:var(--or2);font-size:14px}
+.fi .fh{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;font-size:13px}
+.fi .fh b{font-size:14px}
+.fi .fq{color:var(--tx)}
+.fi .fa{color:var(--mu);font-size:14px;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.fi.new{animation:flash 2.4s ease}
+@keyframes flash{0%{background:var(--orD)}100%{background:transparent}}
+
+/* ---------- charts ---------- */
+.vchart svg{width:100%;height:auto;display:block}
+.vchart text{fill:var(--mu);font-size:11px;font-family:var(--f)}
+.hb{display:grid;grid-template-columns:minmax(80px,130px) 1fr 40px;gap:10px;align-items:center;margin-bottom:10px;font-size:14px}
+.hb .hl{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hb .ht{height:10px;background:var(--s3);border-radius:99px;overflow:hidden}
+.hb .ht i{display:block;height:100%;background:linear-gradient(270deg,var(--or),var(--or2));border-radius:99px}
+.hb b{text-align:left;font-variant-numeric:tabular-nums;font-weight:600}
+.heat{display:grid;grid-template-columns:22px repeat(24,minmax(0,1fr));gap:3px;direction:ltr}
+.heat .c{aspect-ratio:1;border-radius:3px;background:var(--s3)}
+.heat .dl{font-size:11px;color:var(--mu);display:flex;align-items:center;justify-content:center}
+.heat .hl{font-size:10px;color:var(--mu2);text-align:center}
+
+/* ---------- conversations ---------- */
+.filters{display:grid;grid-template-columns:2fr 1.3fr 1.3fr 1fr auto;gap:10px;margin-bottom:16px}
+.thread{margin-bottom:14px}
+.thread .th{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+.thread .th b{font-size:15px}
+.chat{display:flex;flex-direction:column;gap:6px}
+.bb{max-width:78%;padding:9px 14px;border-radius:16px;white-space:pre-wrap;word-wrap:break-word;line-height:1.55}
+.bb.u{align-self:flex-start;background:var(--orD);border:1px solid var(--orL);border-bottom-right-radius:4px}
+.bb.m{align-self:flex-end;background:var(--s3);border-bottom-left-radius:4px;color:#ddd}
+.bb small{display:block;font-size:11px;color:var(--mu2);margin-top:3px}
+.persona{align-self:center;font-size:12px;color:var(--or2);background:var(--s2);border:1px solid var(--line);padding:1px 12px;border-radius:99px;margin:6px 0}
+mark{background:var(--or);color:#000;border-radius:3px;padding:0 2px}
+
+/* ---------- assistants ---------- */
+.keypad-wrap{display:grid;grid-template-columns:auto 1fr;gap:28px;align-items:center}
+.keypad{display:grid;grid-template-columns:repeat(3,76px);gap:10px;direction:ltr}
+.key{height:76px;border-radius:50%;background:var(--s2);border:1px solid var(--line2);display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:6px}
+.key b{font-size:24px;font-weight:600;line-height:1}
+.key span{font-size:10px;color:var(--mu);line-height:1.15;margin-top:3px;max-width:64px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.key.set{border-color:var(--or);background:radial-gradient(circle at 50% 30%,#3a1c06,var(--s2))}
+.key.set b{color:var(--or)}
+.key.end b{color:var(--bad)}
+.key.dim{opacity:.3}
+.acard{border:1px solid var(--line);border-radius:var(--r);background:var(--s1);margin-bottom:12px;transition:border-color .15s,opacity .15s}
+.acard.off{opacity:.55}
+.acard.over{border-color:var(--or);border-style:dashed}
+.acard .ah{display:flex;align-items:center;gap:12px;padding:14px 18px;cursor:pointer}
+.acard .digit{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;font-weight:700;font-size:18px;background:var(--orD);color:var(--or);border:1px solid var(--orL);flex:none}
+.acard.off .digit{background:var(--s3);color:var(--mu2);border-color:var(--line2);font-size:12px}
+.acard .an{flex:1;min-width:0}
+.acard .an b{display:block;font-size:16px}
+.acard .an span{display:block;color:var(--mu);font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.handle{cursor:grab;color:var(--mu2);padding:4px;display:flex}
+.handle:active{cursor:grabbing}
+.acard .ab{padding:0 18px 18px;border-top:1px solid var(--line);padding-top:16px;display:none}
+.acard.open .ab{display:block}
+.chev{transition:transform .2s;color:var(--mu)}
+.acard.open .chev{transform:rotate(180deg)}
+
+/* ---------- save bar ---------- */
+.savebar{position:fixed;bottom:22px;left:50%;transform:translate(-50%,140%);background:var(--s2);border:1px solid var(--or);border-radius:14px;padding:10px 12px 10px 18px;display:flex;align-items:center;gap:14px;box-shadow:0 20px 50px -10px #000;z-index:40;transition:transform .3s cubic-bezier(.2,.9,.3,1.2)}
+.savebar.on{transform:translate(-50%,0)}
+.savebar span{font-size:14px}
+
+/* ---------- texts ---------- */
+.tx-item{padding:14px 0;border-bottom:1px solid var(--line)}
+.tx-item:last-child{border:0}
+.tx-item .tl{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;gap:10px}
+.tx-item .tl span{font-size:14px;font-weight:500}
+.tx-item .pv{font-size:13px;color:var(--mu);margin-top:6px}
+.tx-item .pv b{color:var(--or2);font-weight:500}
+.ph-chips{display:flex;gap:6px;flex-wrap:wrap}
+.ph-chips button{background:var(--s3);border:1px solid var(--line2);border-radius:6px;padding:0 8px;font-size:12px;color:var(--or2);cursor:pointer;direction:ltr}
+
+/* ---------- chips ---------- */
+.chips{display:flex;flex-wrap:wrap;gap:6px;background:var(--bg);border:1px solid var(--line2);border-radius:10px;padding:6px;min-height:44px;align-items:center}
+.chips:focus-within{border-color:var(--or)}
+.chip{display:inline-flex;align-items:center;gap:6px;background:var(--s3);border-radius:8px;padding:3px 6px 3px 10px;font-size:14px;direction:ltr;font-variant-numeric:tabular-nums}
+.chip em{font-style:normal;font-size:11px;color:var(--warn);direction:rtl}
+.chip button{background:none;border:0;color:var(--mu);cursor:pointer;padding:0 2px;font-size:16px;line-height:1}
+.chip button:hover{color:var(--bad)}
+.chips input{border:0!important;background:none!important;flex:1;min-width:140px;padding:4px 6px!important}
+
+.vrow{display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--line);border-radius:10px;margin-bottom:6px;background:var(--bg)}
+.vrow code{flex:1;direction:ltr;text-align:left;font-size:13px}
+.vrow .first{color:var(--or)}
+
+/* ---------- system ---------- */
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px}
+.tile{border:1px solid var(--line);border-radius:12px;padding:14px;background:var(--s2)}
+.tile .tt{display:flex;align-items:center;gap:8px;font-weight:600;margin-bottom:4px}
+.tile .st{width:10px;height:10px;border-radius:50%;background:var(--mu2)}
+.tile.ok .st{background:var(--ok);box-shadow:0 0 8px var(--ok)}
+.tile.fail{border-color:#5a1d1d}.tile.fail .st{background:var(--bad);box-shadow:0 0 8px var(--bad)}
+.tile .td{font-size:13px;color:var(--mu);word-break:break-word}
+.spin{width:16px;height:16px;border:2px solid #0006;border-top-color:currentColor;border-radius:50%;animation:sp .7s linear infinite;display:inline-block}
+@keyframes sp{to{transform:rotate(360deg)}}
+.mrow{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line)}
+.mrow:last-child{border:0}
+.mrow code{direction:ltr;flex:1;text-align:left}
+
+/* ---------- drawer / modal / palette / toast ---------- */
+.scrim{position:fixed;inset:0;background:#000a;z-index:50;opacity:0;pointer-events:none;transition:opacity .2s}
+.scrim.on{opacity:1;pointer-events:auto}
+.drawer{position:fixed;top:0;bottom:0;left:0;width:min(520px,100vw);background:var(--s1);border-right:1px solid var(--line2);z-index:60;transform:translateX(-102%);transition:transform .3s cubic-bezier(.2,.8,.2,1);display:flex;flex-direction:column}
+.drawer.on{transform:none}
+.dh{padding:20px 22px;border-bottom:1px solid var(--line);display:flex;gap:14px;align-items:center}
+.dh .av{width:52px;height:52px;border-radius:50%;background:var(--orD);color:var(--or);display:grid;place-items:center;font-size:22px;font-weight:700;border:1px solid var(--orL);flex:none}
+.dh h2{margin:0;font-size:20px}
+.db{padding:18px 22px 40px;overflow-y:auto;flex:1}
+.dstats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:18px}
+.dstats div{background:var(--s2);border-radius:10px;padding:10px;text-align:center}
+.dstats b{display:block;font-size:20px;font-variant-numeric:tabular-nums}
+.dstats span{font-size:12px;color:var(--mu)}
+.dsec{margin-bottom:20px}
+.dsec h4{margin:0 0 10px;font-size:14px;color:var(--mu);font-weight:500}
+.modal{position:fixed;top:50%;left:50%;transform:translate(-50%,-46%) scale(.97);width:min(420px,92vw);background:var(--s2);border:1px solid var(--line2);border-radius:16px;padding:22px;z-index:70;opacity:0;pointer-events:none;transition:all .18s}
+.modal.on{opacity:1;pointer-events:auto;transform:translate(-50%,-50%)}
+.modal p{margin:0 0 20px;font-size:16px}
+.pal{position:fixed;top:12vh;left:50%;transform:translateX(-50%);width:min(560px,92vw);background:var(--s2);border:1px solid var(--line2);border-radius:16px;z-index:70;overflow:hidden;display:none;box-shadow:0 30px 80px #000}
+.pal.on{display:block}
+.pal input{border:0!important;border-bottom:1px solid var(--line)!important;border-radius:0!important;padding:16px 18px!important;font-size:17px;background:transparent!important}
+.pal ul{list-style:none;margin:0;padding:6px;max-height:50vh;overflow-y:auto}
+.pal li{padding:10px 12px;border-radius:9px;cursor:pointer;display:flex;justify-content:space-between;gap:10px}
+.pal li.sel{background:var(--orD);color:var(--or2)}
+.pal li small{color:var(--mu)}
+.toast{position:fixed;bottom:24px;right:24px;background:var(--tx);color:#000;padding:11px 18px;border-radius:12px;font-weight:500;z-index:80;transform:translateY(150%);transition:transform .25s}
+.toast.on{transform:none}
+.toast.bad{background:var(--bad);color:#fff}
+
+.loadmore{display:block;margin:10px auto 0}
+
+/* ---------- responsive ---------- */
+@media (max-width:1100px){.readout{grid-template-columns:repeat(3,1fr)}.readout>div:nth-child(4){border-inline-start:0}.readout>div:nth-child(n+4){border-top:1px solid var(--line)}.g3{grid-template-columns:1fr 1fr}.filters{grid-template-columns:1fr 1fr}}
+@media (max-width:820px){
+  .app{grid-template-columns:1fr}
+  .side{position:fixed;top:auto;bottom:0;right:0;left:0;height:auto;z-index:40;flex-direction:row;padding:6px;border-left:0;border-top:1px solid var(--line);padding-bottom:calc(6px + env(safe-area-inset-bottom,0px))}
+  .brand,.side-foot{display:none}
+  .nav{flex-direction:row;overflow-x:auto;width:100%;gap:0}
+  .nav a{flex-direction:column;gap:2px;font-size:11px;padding:6px 10px;white-space:nowrap}
+  .nav a.on::before{display:none}.nav .cnt{position:absolute;top:0;left:4px;font-size:10px;padding:0 5px}
+  .top{padding:12px 16px}.top .hide-m{display:none}
+  .content{padding:18px 14px 110px}
+  .g2,.g3,.filters{grid-template-columns:1fr}
+  .readout{grid-template-columns:repeat(2,1fr)}.readout>div{border-inline-start:0!important;border-top:1px solid var(--line)}.readout>div:nth-child(-n+2){border-top:0}
+  .keypad-wrap{grid-template-columns:1fr;justify-items:center}
+  .bb{max-width:92%}
+  .dstats{grid-template-columns:repeat(2,1fr)}
+  .savebar{bottom:84px}
+}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute">
+  <defs>
+    <symbol id="mark" viewBox="0 0 40 40">
+      <rect width="40" height="40" rx="11" fill="#ff7a1a"/>
+      <g fill="#000"><rect x="8" y="17" width="3" height="6" rx="1.5"/><rect x="13" y="12" width="3" height="16" rx="1.5"/><rect x="18.5" y="8" width="3" height="24" rx="1.5"/><rect x="24" y="13" width="3" height="14" rx="1.5"/><rect x="29" y="16.5" width="3" height="7" rx="1.5"/></g>
+    </symbol>
+  </defs>
+</svg>
+
+<!-- ============ LOGIN ============ -->
+<div class="login" id="login" hidden>
+  <div class="login-box">
+    <svg class="mark"><use href="#mark"/></svg>
+    <h1>מרכזיית הקו</h1>
+    <p>הזן את סיסמת הניהול כדי להיכנס</p>
+    <input type="password" id="pw" placeholder="סיסמה" autocomplete="current-password">
+    <button class="btn" onclick="login()">כניסה</button>
+    <div class="err" id="loginErr"></div>
+  </div>
+</div>
+
+<!-- ============ APP ============ -->
+<div class="app" id="app" hidden>
+  <aside class="side">
+    <div class="brand"><svg class="mark"><use href="#mark"/></svg><div><b>מרכזיית הקו</b><small>ניהול קו ה-AI</small></div></div>
+    <nav class="nav" id="nav"></nav>
+    <div class="side-foot">
+      <span id="srvTime"></span>
+      <a href="/admin/logout">יציאה מהמערכת</a>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="top">
+      <h1 id="pageTitle">לוח בקרה</h1>
+      <div class="sp"></div>
+      <div class="conn" id="conn"><i></i><span>מתחבר…</span></div>
+      <button class="iconbtn hide-m" onclick="openPal()" title="חיפוש מהיר"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg><span class="kbd">Ctrl K</span></button>
+      <button class="iconbtn" id="soundBtn" onclick="toggleSound()" title="צלצול כשנכנסת שיחה"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 22c1.1 0 2-.9 2-2h-4a2 2 0 002 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4a1.5 1.5 0 00-3 0v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/></svg></button>
+    </header>
+
+    <div class="content">
+
+      <!-- ===== DASHBOARD ===== -->
+      <section class="page" id="p-dash">
+        <div class="readout" id="readout"></div>
+        <div class="board-wrap">
+          <div class="ph"><h3>עכשיו על הקו</h3><span class="hint" id="boardHint"></span></div>
+          <div class="jacks" id="board"></div>
+        </div>
+        <div class="grid g2 mb">
+          <div class="panel">
+            <div class="ph"><h3>הודעות אחרונות</h3><span class="hint">מתעדכן בזמן אמת</span></div>
+            <div class="feed" id="feed"></div>
+          </div>
+          <div class="grid" style="align-content:start">
+            <div class="panel"><div class="ph"><h3>שיחות ב-14 הימים האחרונים</h3></div><div class="vchart" id="chDays"></div></div>
+            <div class="panel"><div class="ph"><h3>מתי מתקשרים</h3><span class="hint">לפי יום ושעה</span></div><div id="chHeat"></div></div>
+          </div>
+        </div>
+        <div class="grid g2">
+          <div class="panel"><div class="ph"><h3>הודעות לפי עוזר</h3></div><div id="chAssist"></div></div>
+          <div class="panel"><div class="ph"><h3>המתקשרים הפעילים ביותר</h3></div><div id="chUsers"></div></div>
+        </div>
+      </section>
+
+      <!-- ===== USERS ===== -->
+      <section class="page" id="p-users">
+        <div class="panel mb">
+          <div class="row" style="justify-content:space-between">
+            <div class="row" style="flex:1;min-width:260px">
+              <input type="text" id="uq" placeholder="חיפוש לפי שם או טלפון" style="max-width:300px" oninput="renderUsers()">
+              <div class="seg" id="uFilter"></div>
+            </div>
+            <div class="row">
+              <input type="tel" id="addPhone" placeholder="טלפון" style="width:140px">
+              <input type="text" id="addName" placeholder="שם" style="width:130px">
+              <button class="btn" onclick="addUser()">הוסף משתמש</button>
+            </div>
+          </div>
+        </div>
+        <div class="panel"><div class="tw"><table id="usersT"></table></div></div>
+      </section>
+
+      <!-- ===== CONVERSATIONS ===== -->
+      <section class="page" id="p-conv">
+        <div class="filters">
+          <input type="text" id="cq" placeholder="חיפוש בתוכן, בשם או בטלפון" oninput="convLimit=20;renderConv()">
+          <select id="cUser" onchange="convLimit=20;renderConv()"></select>
+          <select id="cAssist" onchange="convLimit=20;renderConv()"></select>
+          <input type="date" id="cDate" onchange="convLimit=20;renderConv()">
+          <button class="btn ghost" onclick="resetConv()">נקה סינון</button>
+        </div>
+        <div class="row mb" style="justify-content:space-between"><span class="mu" id="convInfo"></span><a class="btn ghost sm" href="/api/export.csv">הורד את כל השיחות לאקסל</a></div>
+        <div id="convList"></div>
+      </section>
+
+      <!-- ===== CALLS ===== -->
+      <section class="page" id="p-calls">
+        <div class="panel mb"><div class="row">
+          <input type="text" id="kq" placeholder="חיפוש לפי שם או טלפון" style="max-width:300px" oninput="renderCalls()">
+          <input type="date" id="kDate" style="max-width:180px" onchange="renderCalls()">
+          <span class="mu" id="callsInfo"></span>
+        </div></div>
+        <div class="panel"><div class="tw"><table id="callsT"></table></div></div>
+      </section>
+
+      <!-- ===== ASSISTANTS ===== -->
+      <section class="page" id="p-assist">
+        <p class="lead">הסדר כאן קובע את מספר ההקשה בתפריט. גרור כדי לשנות סדר, כבה עוזר כדי להוציא אותו מהתפריט. עד 8 עוזרים פעילים, הקשה 9 שמורה לסיום.</p>
+        <div class="panel mb">
+          <div class="keypad-wrap">
+            <div class="keypad" id="keypad"></div>
+            <div>
+              <h3 style="margin:0 0 8px">כך המתקשר שומע את התפריט</h3>
+              <p class="mu" id="menuPreview" style="margin:0;line-height:1.8"></p>
+            </div>
+          </div>
+        </div>
+        <div id="assistList"></div>
+        <button class="btn ghost" onclick="addAssistant()">+ עוזר חדש</button>
+      </section>
+
+      <!-- ===== TEXTS ===== -->
+      <section class="page" id="p-texts">
+        <p class="lead">כל משפט שהקו אומר. אפשר לשלב שדות שמתחלפים אוטומטית: שם המתקשר, שם העוזר ומספר ההקשה. מתחת לכל שדה מופיעה דוגמה איך זה יישמע.</p>
+        <div class="panel" id="textsList"></div>
+      </section>
+
+      <!-- ===== SETTINGS ===== -->
+      <section class="page" id="p-settings">
+        <div class="grid g2">
+          <div class="grid" style="align-content:start">
+            <div class="panel">
+              <div class="ph"><h3>הודעה לכל המתקשרים</h3></div>
+              <label class="f"><span>מושמעת בתחילת כל שיחה, לפני התפריט (ריק = בלי הודעה)</span><textarea id="se_announcement" style="min-height:70px"></textarea></label>
+            </div>
+            <div class="panel">
+              <div class="ph"><h3>מכסות והקלטה</h3></div>
+              <div class="grid g2">
+                <label class="f"><span>הודעות ליום לכל מתקשר</span><input type="number" id="se_daily_limit" min="0"><small>0 = בלי הגבלה</small></label>
+                <label class="f"><span>אורך הקלטה מקסימלי (שניות)</span><input type="number" id="se_record_max" min="5" max="120"></label>
+              </div>
+              <label class="f"><span>מספרים בלי הגבלה</span><div id="se_unlimited"></div></label>
+              <label class="f"><span>מספרים חסומים</span><div id="se_blocked"></div></label>
+            </div>
+            <div class="panel">
+              <div class="ph"><h3>סיכום יומי במייל</h3></div>
+              <label class="f"><span>שעת השליחה (0 עד 23)</span><input type="number" id="se_mail_hour" min="0" max="23" style="max-width:140px"></label>
+              <p class="mu" id="mailState" style="margin:0"></p>
+            </div>
+          </div>
+          <div class="grid" style="align-content:start">
+            <div class="panel">
+              <div class="ph"><h3>קול</h3>
+                <label class="switch"><input type="checkbox" id="se_tts"><i></i><span>קול טבעי</span></label></div>
+              <p class="mu" style="margin-top:-6px;font-size:13px">כשהקול הטבעי כבוי, הקו משתמש בהקראה של ימות המשיח. זה מהיר יותר אבל פחות טבעי.</p>
+              <div id="voiceList"></div>
+              <div class="row" style="margin-top:8px">
+                <input type="text" id="voiceAdd" list="voiceSug" placeholder="שם קול להוספה" style="flex:1;direction:ltr;text-align:left">
+                <button class="btn ghost sm" onclick="addVoice()">הוסף קול</button>
+              </div>
+              <datalist id="voiceSug">
+                <option value="he-IL-AvriNeural"><option value="en-US-AndrewMultilingualNeural"><option value="en-US-BrianMultilingualNeural">
+                <option value="de-DE-FlorianMultilingualNeural"><option value="fr-FR-RemyMultilingualNeural"><option value="it-IT-GiuseppeMultilingualNeural"><option value="ko-KR-HyunsuMultilingualNeural">
+              </datalist>
+            </div>
+            <div class="panel">
+              <div class="ph"><h3>הבינה המלאכותית</h3></div>
+              <label class="f"><span>מודל מועדף</span><select id="se_model"></select><small>באוטומטי הקו מנסה קודם את המודל המהיר, ועובר לבא אם נגמרה המכסה</small></label>
+              <label class="f"><span>שמות ומונחים שכדאי שהבינה תכיר <em class="count" id="vocabCnt"></em></span><textarea id="se_vocab" placeholder="למשל: שמות של חברים, ישיבות, מקומות, מופרדים בפסיק"></textarea><small>עוזר לבינה לזהות נכון מילים בהקלטה. לכל העוזרים יחד.</small></label>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== SYSTEM ===== -->
+      <section class="page" id="p-system">
+        <div class="panel mb">
+          <div class="ph"><h3>בדיקת מערכת מלאה</h3><button class="btn" id="diagBtn" onclick="runDiag()">הרץ בדיקה</button></div>
+          <p class="mu" style="margin-top:-6px">בודק את כל החלקים של הקו: הבינה, הקול, החיבור לימות, החיפוש ומזג האוויר. לוקח כחצי דקה.</p>
+          <div id="diagOut"></div>
+        </div>
+        <div class="grid g2 mb">
+          <div class="panel"><div class="ph"><h3>מודלים זמינים</h3><span class="hint">לפי סדר הניסיון</span></div><div id="modelsList"></div></div>
+          <div class="grid" style="align-content:start">
+            <div class="panel">
+              <div class="ph"><h3>בדיקת קול</h3></div>
+              <div class="row"><select id="ttsVoice" style="flex:1;direction:ltr"></select></div>
+              <input type="text" id="ttsText" value="שלום, זו בדיקה של הקול" style="margin-top:8px">
+              <div class="row" style="margin-top:10px"><button class="btn ghost" onclick="testTts()">בדוק</button><span id="ttsRes" class="mu"></span></div>
+            </div>
+            <div class="panel">
+              <div class="ph"><h3>מייל</h3></div>
+              <div class="row"><button class="btn ghost" onclick="sendMail()">שלח עכשיו את הסיכום של היום</button><span id="mailRes" class="mu"></span></div>
+            </div>
+          </div>
+        </div>
+        <div class="panel" style="border-color:#3a1515">
+          <div class="ph"><h3 style="color:#ff8080">מחיקת נתונים</h3></div>
+          <div class="row">
+            <button class="btn danger" onclick="clearData('log')">מחק את כל תוכן השיחות</button>
+            <button class="btn danger" onclick="clearData('calls')">מחק את יומן השיחות</button>
+            <a class="btn ghost" href="/api/export.csv">גיבוי לאקסל לפני מחיקה</a>
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </main>
+</div>
+
+<!-- overlays -->
+<div class="scrim" id="scrim" onclick="closeAll()"></div>
+<aside class="drawer" id="drawer"><div id="drawerIn" style="display:contents"></div></aside>
+<div class="modal" id="modal"><p id="modalMsg"></p><div class="row" style="justify-content:flex-start"><button class="btn" id="modalOk">אישור</button><button class="btn ghost" id="modalNo">ביטול</button></div></div>
+<div class="pal" id="pal"><input type="text" id="palQ" placeholder="לאן לעבור? עמוד, שם או טלפון" oninput="renderPal()"><ul id="palL"></ul></div>
+<div class="savebar" id="savebar"><span id="saveMsg">יש שינויים שלא נשמרו</span><button class="btn ghost sm" onclick="discard()">בטל</button><button class="btn sm" onclick="saveCurrent()">שמור</button></div>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ================= basics ================= */
+const $=s=>document.querySelector(s);
+const H=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const pad=n=>String(n).padStart(2,'0');
+const store={get(k,d){try{const v=localStorage.getItem(k);return v===null?d:JSON.parse(v)}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
+
+const IC={
+ dash:'M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z',
+ users:'M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5s-3 1.34-3 3 1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z',
+ chat:'M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM6 9h12v2H6V9zm8 5H6v-2h8v2zm4-6H6V6h12v2z',
+ calls:'M6.62 10.79a15.05 15.05 0 006.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1C10.61 21 3 13.39 3 4c0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z',
+ pad:'M12 19a2 2 0 100 4 2 2 0 000-4zM6 1a2 2 0 100 4 2 2 0 000-4zm0 6a2 2 0 100 4 2 2 0 000-4zm0 6a2 2 0 100 4 2 2 0 000-4zm12-8a2 2 0 100-4 2 2 0 000 4zm-6 8a2 2 0 100 4 2 2 0 000-4zm6 0a2 2 0 100 4 2 2 0 000-4zm0-6a2 2 0 100 4 2 2 0 000-4zm-6 0a2 2 0 100 4 2 2 0 000-4zm0-6a2 2 0 100 4 2 2 0 000-4z',
+ texts:'M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 000-1.41l-2.34-2.34a1 1 0 00-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z',
+ settings:'M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z',
+ system:'M20.38 8.57l-1.23 1.85a8 8 0 01-.22 7.58H5.07A8 8 0 0115.58 6.85l1.85-1.23A10 10 0 003.35 19a2 2 0 001.72 1h13.85a2 2 0 001.74-1 10 10 0 00-.27-10.44zm-9.79 6.84a2 2 0 002.83 0l5.66-8.49-8.49 5.66a2 2 0 000 2.83z',
+ grip:'M9 3a2 2 0 110 4 2 2 0 010-4zm6 0a2 2 0 110 4 2 2 0 010-4zM9 10a2 2 0 110 4 2 2 0 010-4zm6 0a2 2 0 110 4 2 2 0 010-4zm-6 7a2 2 0 110 4 2 2 0 010-4zm6 0a2 2 0 110 4 2 2 0 010-4z',
+ chev:'M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6z'
+};
+const svg=(p,s=19)=>`<svg viewBox="0 0 24 24" width="${s}" height="${s}"><path fill="currentColor" d="${p}"/></svg>`;
+
+const PAGES=[['dash','לוח בקרה'],['users','משתמשים'],['conv','שיחות'],['calls','יומן שיחות'],['pad','עוזרים'],['texts','נוסחים'],['settings','הגדרות'],['system','מערכת ובדיקות']];
+const PID={pad:'assist'};
+const pageId=k=>PID[k]||k;
+
+const TXT_DEF={first_time:"שלום, זו הפעם הראשונה שלך בקו. אמור את שמך הפרטי, ובסיום הקש סולמית",ask_name_again:"אמור את שמך הפרטי, ובסיום הקש סולמית",name_saved:"נעים להכיר {name}, השם נשמר",menu_hello:"שלום {name}.",menu_item:"הקש {digit} ל{assistant}.",menu_end:"הקש 9 לסיום.",enter:"אתה עם {assistant}. דבר אחרי הצפצוף, ובסיום הקש סולמית",listening:"אני מקשיב",not_heard:"לא שמעתי אותך",wait:"רק רגע, עוד רגע, רק שניה, כבר עונה, עוד שניה, רגע אחד",too_long:"סליחה, זה לוקח יותר מדי זמן. אפשר לנסות שוב",limit:"הגעת למכסת ההודעות היומית שלך. אפשר לנסות שוב מחר",blocked:"המספר שלך אינו מורשה להשתמש בקו",voice_changed:"הקול הוחלף",goodbye:"להתראות {name}",error:"סליחה, יש בעיה זמנית. נסה שוב",not_understood:"לא הבנתי, אפשר לחזור על זה?"};
+const TXT_GROUPS=[
+ ['היכרות ורישום',{first_time:'מתקשר חדש: בקשת שם',ask_name_again:'בקשת שם בפעם נוספת',name_saved:'אחרי שהשם נשמר'}],
+ ['תפריט',{menu_hello:'פתיחת התפריט',menu_item:'שורה לכל עוזר',menu_end:'סיום התפריט'}],
+ ['בזמן שיחה',{enter:'כניסה לעוזר',listening:'מקשיב (כשאין תשובה להשמיע)',not_heard:'לא נקלטה הקלטה',wait:'הודעות המתנה (מתחלפות, מופרדות בפסיק)',not_understood:'לא הובן',voice_changed:'אחרי החלפת קול'}],
+ ['חסימות ותקלות',{limit:'הגעה למכסה היומית',blocked:'מספר חסום',too_long:'התשובה מתעכבת',error:'תקלה זמנית'}],
+ ['סיום',{goodbye:'פרידה'}]
+];
+
+/* ================= state ================= */
+let S=null,LIVE=null,ACT={},logAfter=0,seen=new Set(),page='dash';
+let A=[],TX={},SE=null,dirty={assist:false,texts:false,settings:false};
+let prevPhones=null,lastOk=0,sound=store.get('yai_sound',false),uFilter='all',uSort={k:'last',d:-1},convLimit=20,convCall='',drawerPhone=null,dragI=null,openCards=new Set();
+const key=l=>(l.time||'')+'|'+(l.phone||'')+'|'+(l.q||'');
+const today=()=>((LIVE&&LIVE.time)||(S&&S.live&&S.live.time)||'').slice(0,10);
+
+async function api(p,body){
+  const opt=body!==undefined?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),credentials:'same-origin'}:{credentials:'same-origin'};
+  const r=await fetch(p,opt);
+  if(r.status===403){showLogin();throw new Error('auth')}
+  return r.json();
+}
+function toast(m,bad){const t=$('#toast');t.textContent=m;t.className='toast on'+(bad?' bad':'');clearTimeout(t._t);t._t=setTimeout(()=>t.className='toast',2400)}
+function ask(msg,okText='אישור',danger=false){
+  return new Promise(res=>{$('#modalMsg').textContent=msg;const ok=$('#modalOk');ok.textContent=okText;ok.className=danger?'btn danger':'btn';
+    $('#modal').classList.add('on');$('#scrim').classList.add('on');
+    const done=v=>{$('#modal').classList.remove('on');if(!$('#drawer').classList.contains('on'))$('#scrim').classList.remove('on');ok.onclick=null;$('#modalNo').onclick=null;res(v)};
+    ok.onclick=()=>done(true);$('#modalNo').onclick=()=>done(false);ok.focus()});
+}
+
+/* ================= login / boot ================= */
+function showLogin(){$('#app').hidden=true;$('#login').hidden=false;setTimeout(()=>$('#pw').focus(),50)}
+async function login(){
+  $('#loginErr').textContent='';
+  try{const r=await fetch('/admin/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:$('#pw').value}),credentials:'same-origin'});const d=await r.json();
+    if(d.ok){$('#login').hidden=true;boot()}else $('#loginErr').textContent=d.error||'הסיסמה לא נכונה'}
+  catch(e){$('#loginErr').textContent='אין חיבור לשרת. אם השרת נרדם, נסה שוב בעוד דקה.'}
+}
+$('#pw').addEventListener('keydown',e=>{if(e.key==='Enter')login()});
+
+let booted=false;
+async function boot(){
+  try{S=await api('/api/state')}catch(e){if(e.message!=='auth'){$('#login').hidden=false;$('#loginErr').textContent='השרת לא עונה כרגע. נסה לרענן בעוד דקה.'}return}
+  $('#login').hidden=true;$('#app').hidden=false;
+  LIVE=S.live;logAfter=S.log_total;seen=new Set(S.log.map(key));
+  buildNav();loadEditors(true);renderAll();
+  go((location.hash||'#dash').slice(1));
+  if(!booted){booted=true;poll();setInterval(refresh,45000);setInterval(tickConn,1000)}
+  $('#soundBtn').classList.toggle('on',sound);
+}
+
+async function refresh(){
+  try{const n=await api('/api/state');S=n;LIVE=n.live;logAfter=n.log_total;seen=new Set(S.log.map(key));
+    loadEditors(false);renderAll()}catch(e){}
+}
+
+async function poll(){
+  try{
+    const from=Math.max(0,logAfter-15);
+    const [l,g]=await Promise.all([api('/api/live'),api('/api/log?after='+from)]);
+    LIVE=l;ACT=g.active||{};
+    const fresh=[];
+    if(g.total<from){await refresh()}
+    else for(const m of g.new||[]){const k=key(m);if(!seen.has(k)){seen.add(k);S.log.push(m);fresh.push(m)}}
+    logAfter=g.total;
+    const phones=new Set(l.active.map(a=>a.phone));
+    if(prevPhones&&sound)for(const p of phones)if(!prevPhones.has(p)){ring();break}
+    prevPhones=phones;lastOk=Date.now();
+    renderLive();
+    if(fresh.length){renderFeed(fresh);if(page==='conv')renderConv();if(drawerPhone&&fresh.some(m=>m.phone===drawerPhone))renderDrawer()}
+  }catch(e){}
+  setTimeout(poll,3000);
+}
+function tickConn(){
+  const c=$('#conn');const s=lastOk?Math.round((Date.now()-lastOk)/1000):null;
+  const bad=s===null||s>15;c.classList.toggle('bad',bad);
+  c.querySelector('span').textContent=s===null?'מתחבר…':bad?'אין חיבור לשרת':'מחובר, עודכן לפני '+s+' שנ׳';
+}
+function ring(){
+  try{const C=new (window.AudioContext||window.webkitAudioContext)();[0,.18].forEach(t=>{const o=C.createOscillator(),g=C.createGain();o.frequency.value=880;o.type='sine';o.connect(g);g.connect(C.destination);g.gain.setValueAtTime(.0001,C.currentTime+t);g.gain.exponentialRampToValueAtTime(.2,C.currentTime+t+.02);g.gain.exponentialRampToValueAtTime(.0001,C.currentTime+t+.15);o.start(C.currentTime+t);o.stop(C.currentTime+t+.16)})}catch(e){}
+}
+function toggleSound(){sound=!sound;store.set('yai_sound',sound);$('#soundBtn').classList.toggle('on',sound);toast(sound?'צלצול כשנכנסת שיחה: פעיל':'הצלצול כבוי');if(sound)ring()}
+
+/* ================= nav ================= */
+function buildNav(){
+  $('#nav').innerHTML=PAGES.map(([k,t])=>`<a data-p="${pageId(k)}" onclick="go('${pageId(k)}')">${svg(IC[k])}<span>${t}</span>${k==='dash'?'<span class="cnt" id="navLive" hidden></span>':''}</a>`).join('');
+}
+function go(p){
+  if(!document.getElementById('p-'+p))p='dash';
+  page=p;
+  document.querySelectorAll('.page').forEach(x=>x.classList.toggle('on',x.id==='p-'+p));
+  document.querySelectorAll('#nav a').forEach(a=>a.classList.toggle('on',a.dataset.p===p));
+  const e=PAGES.find(([k])=>pageId(k)===p);$('#pageTitle').textContent=e?e[1]:'';
+  history.replaceState(null,'','#'+p);
+  if(p==='conv')renderConv();
+  updateSavebar();window.scrollTo(0,0);
+}
+
+/* ================= render all ================= */
+function renderAll(){
+  renderLive();renderFeed([]);renderCharts();renderUsers();fillConvFilters();renderConv();renderCalls();
+  renderAssist();renderTexts();renderSettings();renderSystem();
+  if(drawerPhone&&!$('#drawer').contains(document.activeElement))renderDrawer();
+}
+
+/* ================= live ================= */
+function renderLive(){
+  if(!LIVE)return;const d=LIVE;
+  $('#readout').innerHTML=[['עכשיו על הקו',d.active.length],['שיחות היום',d.calls_today],['הודעות היום',d.msgs_today],['משתמשים רשומים',d.users],['סך הכל שיחות',d.calls_total],['סך הכל הודעות',d.msgs_total]]
+    .map(([t,v])=>`<div><span>${t}</span><b>${Number(v).toLocaleString('he-IL')}</b></div>`).join('');
+  $('#srvTime').textContent='שעון השרת: '+d.time;
+  const nl=$('#navLive');if(nl){nl.hidden=!d.active.length;nl.textContent=d.active.length}
+  const pend={};Object.values(ACT).forEach(a=>{if(a&&a.phone)pend[a.phone]=a});
+  const act=d.active,n=Math.max(25,act.length);let h='';
+  for(let i=0;i<n;i++){
+    const a=act[i];
+    if(!a){h+=`<div class="jack idle">קו ${i+1}</div>`;continue}
+    const p=pend[a.phone]||{};const waiting=a.state==='מחכה לתשובה';
+    let q;
+    if(waiting&&p.pending_q)q='שואל: '+H(p.pending_q);
+    else if(a.last_q)q=H(a.last_q);
+    else q='<span class="mu2">'+H(a.state)+'</span>';
+    h+=`<div class="jack live ${waiting?'wait':''}" onclick="openUser('${H(a.phone)}')" title="${H(a.phone)}">
+      <div class="jh"><span class="led"></span><b>${H(a.name)}</b><span class="n">קו ${i+1}</span></div>
+      <div class="js">${H(a.assistant)}</div><div class="jq">${q}</div>
+      <div class="jf"><span>${waiting?'<span class="wave"><i></i><i></i><i></i><i></i></span> חושב…':H(a.state)}</span><span>מאז ${H(a.since)}</span></div></div>`;
+  }
+  $('#board').innerHTML=h;
+  $('#boardHint').textContent=act.length?act.length+' מחוברים כרגע':'הקו פנוי';
+}
+
+function initial(n){return H((n||'?').trim().charAt(0)||'?')}
+function renderFeed(fresh){
+  const fk=new Set(fresh.map(key));
+  const L=S.log.slice(-14).reverse();
+  $('#feed').innerHTML=L.length?L.map(l=>`<div class="fi ${fk.has(key(l))?'new':''}">
+    <div class="av">${initial(l.name)}</div>
+    <div class="fh"><b>${H(l.name)}</b><span class="tag or">${H(l.persona)}</span><span class="mu2">${H((l.time||'').slice(11))}${(l.time||'').slice(0,10)!==today()?' '+H((l.time||'').slice(0,5)):''}</span></div>
+    <div class="fq">${H(l.q)}</div><div class="fa">${H(l.a)}</div></div>`).join(''):'<div class="empty">עדיין לא היו הודעות. ברגע שמישהו ידבר עם הקו, זה יופיע כאן.</div>';
+}
+
+/* ================= charts ================= */
+function renderCharts(){
+  const c=S.charts;
+  // days
+  const P=c.per_day,mx=Math.max(1,...P.map(p=>p[1])),W=700,Hh=190,bw=W/P.length;
+  let s=`<svg viewBox="0 0 ${W} ${Hh+26}" role="img" aria-label="שיחות לפי יום"><defs><linearGradient id="gb" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffa453"/><stop offset="1" stop-color="#ff7a1a"/></linearGradient></defs>`;
+  [0.25,.5,.75,1].forEach(f=>s+=`<line x1="0" x2="${W}" y1="${Hh-f*(Hh-24)}" y2="${Hh-f*(Hh-24)}" stroke="#1f1f1f"/>`);
+  P.forEach((p,i)=>{const h=Math.max(p[1]?4:0,Math.round((Hh-24)*p[1]/mx)),x=i*bw+bw*.18,w=bw*.64,isT=i===P.length-1;
+    s+=`<rect x="${x}" y="${Hh-h}" width="${w}" height="${h}" rx="5" fill="${isT?'url(#gb)':'#ff7a1a'}" opacity="${isT?1:.55}"><title>${H(p[0])}: ${p[1]}</title></rect>`;
+    if(p[1])s+=`<text x="${x+w/2}" y="${Hh-h-6}" text-anchor="middle" style="fill:#f5f2ed;font-size:12px">${p[1]}</text>`;
+    s+=`<text x="${x+w/2}" y="${Hh+18}" text-anchor="middle">${H(p[0])}</text>`});
+  $('#chDays').innerHTML=s+'</svg>';
+  $('#chAssist').innerHTML=hbars(c.per_assistant);
+  $('#chUsers').innerHTML=hbars(c.top_users);
+  renderHeat();
+}
+function hbars(pairs){
+  if(!pairs||!pairs.length)return '<div class="empty">אין עדיין נתונים</div>';
+  const mx=Math.max(1,...pairs.map(p=>p[1]));
+  return pairs.map(([k,v])=>`<div class="hb"><span class="hl" title="${H(k)}">${H(k||'ללא')}</span><div class="ht"><i style="width:${Math.max(3,v/mx*100)}%"></i></div><b>${v}</b></div>`).join('');
+}
+function parseT(t){const m=/(\d+)\/(\d+)\/(\d+)\s+(\d+):(\d+)/.exec(t||'');return m?new Date(+m[3],m[2]-1,+m[1],+m[4],+m[5]):null}
+function renderHeat(){
+  const g=Array.from({length:7},()=>Array(24).fill(0));let mx=0;
+  for(const c of (S.calls||[])){const d=parseT(c.time);if(d){const v=++g[d.getDay()][d.getHours()];if(v>mx)mx=v}}
+  const days=['א','ב','ג','ד','ה','ו','ש'];let h='<div class="heat"><span></span>';
+  for(let x=0;x<24;x++)h+=`<span class="hl">${x%3===0?x:''}</span>`;
+  for(let d=0;d<7;d++){h+=`<span class="dl">${days[d]}</span>`;for(let x=0;x<24;x++){const v=g[d][x],o=v?.18+.82*v/mx:0;h+=`<span class="c" style="${v?`background:rgba(255,122,26,${o.toFixed(2)})`:''}" title="יום ${days[d]}׳ ${pad(x)}:00 — ${v} שיחות"></span>`}}
+  $('#chHeat').innerHTML=mx?h+'</div>':'<div class="empty">אין עדיין מספיק שיחות</div>';
+}
+
+/* ================= users ================= */
+const UF=[['all','כולם'],['today','פעילים היום'],['note','עם הודעה'],['unlimited','בלי הגבלה'],['blocked','חסומים']];
+function noteOf(u){const n=u.note;if(!n)return null;if(typeof n==='string')return{text:n,created:'',heard:''};return n.text?n:null}
+function renderUsers(){
+  $('#uFilter').innerHTML=UF.map(([k,t])=>`<button class="${uFilter===k?'on':''}" onclick="uFilter='${k}';renderUsers()">${t}</button>`).join('');
+  const q=($('#uq').value||'').trim(),lim=S.settings.daily_limit;
+  let L=S.users.filter(u=>(!q||String(u.name).includes(q)||u.phone.includes(q))&&(
+    uFilter==='all'||(uFilter==='today'&&u.today>0)||(uFilter==='note'&&noteOf(u))||(uFilter==='unlimited'&&u.unlimited)||(uFilter==='blocked'&&u.blocked)));
+  const k=uSort.k,d=uSort.d;
+  L.sort((a,b)=>{let x=a[k],y=b[k];if(k==='last'){x=parseT(x)||0;y=parseT(y)||0}if(typeof x==='string')return x.localeCompare(y,'he')*d;return((x||0)-(y||0))*d});
+  const th=(k,t)=>`<th class="s ${uSort.k===k?'act':''}" onclick="sortU('${k}')">${t}${uSort.k===k?(uSort.d>0?' ▲':' ▼'):''}</th>`;
+  let h=`<thead><tr>${th('name','שם')}<th>טלפון</th>${th('calls','שיחות')}${th('msgs','הודעות')}${th('today','היום')}${th('last','שיחה אחרונה')}<th>מצב</th><th></th></tr></thead><tbody>`;
+  for(const u of L){
+    const n=noteOf(u);
+    const todayCell=u.unlimited||!lim?`<span class="num">${u.today}</span> <span class="mu2">∞</span>`:`<span class="num">${u.today}/${lim}</span><div class="ht" style="height:4px;background:var(--s3);border-radius:9px;margin-top:4px;width:70px"><i style="display:block;height:100%;border-radius:9px;background:${u.today>=lim?'var(--bad)':'var(--or)'};width:${Math.min(100,u.today/lim*100)}%"></i></div>`;
+    h+=`<tr class="click" onclick="openUser('${H(u.phone)}')">
+      <td><b>${H(u.name)}</b></td><td class="num" dir="ltr" style="text-align:right">${H(u.phone)}</td>
+      <td class="num">${u.calls}</td><td class="num">${u.msgs}</td><td>${todayCell}</td><td class="mu">${H(u.last)||'—'}</td>
+      <td><div class="row" style="gap:4px">${u.owner?'<span class="tag gold">בעלים</span>':''}${u.blocked?'<span class="tag red">חסום</span>':''}${u.unlimited&&!u.owner?'<span class="tag green">בלי הגבלה</span>':''}${n?`<span class="tag or">${n.heard?'הודעה נשמעה':'הודעה ממתינה'}</span>`:''}</div></td>
+      <td><button class="btn ghost sm" onclick="event.stopPropagation();openUser('${H(u.phone)}')">פרטים</button></td></tr>`;
+  }
+  if(!L.length)h+=`<tr><td colspan="8" class="empty">${S.users.length?'אין משתמשים שמתאימים לחיפוש':'עדיין אין משתמשים רשומים'}</td></tr>`;
+  $('#usersT').innerHTML=h+'</tbody>';
+}
+function sortU(k){uSort=uSort.k===k?{k,d:-uSort.d}:{k,d:k==='name'?1:-1};renderUsers()}
+async function addUser(){
+  const p=$('#addPhone').value.replace(/\D/g,''),n=$('#addName').value.trim();
+  if(!p||!n)return toast('צריך למלא טלפון ושם',true);
+  await api('/api/user',{phone:p,name:n,action:'add'});$('#addPhone').value='';$('#addName').value='';await refresh();toast('המשתמש נוסף')
+}
+
+/* ---------- drawer ---------- */
+function openUser(phone){drawerPhone=phone;renderDrawer();$('#drawer').classList.add('on');$('#scrim').classList.add('on')}
+function closeAll(){$('#drawer').classList.remove('on');$('#scrim').classList.remove('on');$('#modal').classList.remove('on');closePal();drawerPhone=null}
+function renderDrawer(){
+  const ph=drawerPhone;if(!ph)return;
+  const u=S.users.find(x=>x.phone===ph)||{phone:ph,name:(LIVE.active.find(a=>a.phone===ph)||{}).name||'לא רשום',calls:0,msgs:0,today:0,last:'',blocked:false,unlimited:false,owner:false,note:null,voice:0,_new:true};
+  const n=noteOf(u);const msgs=S.log.filter(l=>l.phone===ph);const recent=msgs.slice(-24);
+  const live=LIVE.active.find(a=>a.phone===ph);
+  let chat='',last='';
+  for(const m of recent){if(m.persona!==last){chat+=`<div class="persona">${H(m.persona)}</div>`;last=m.persona}chat+=`<div class="bb u">${H(m.q)}<small>${H(m.time)}</small></div><div class="bb m">${H(m.a)}</div>`}
+  const voices=S.voices||[];
+  $('#drawerIn').innerHTML=`
+   <div class="dh"><div class="av">${initial(u.name)}</div><div style="flex:1;min-width:0"><h2>${H(u.name)}</h2><div class="row" style="gap:6px"><span class="mu num" dir="ltr">${H(ph)}</span>${u.owner?'<span class="tag gold">בעלים</span>':''}${u.blocked?'<span class="tag red">חסום</span>':''}${live?'<span class="tag or">על הקו עכשיו</span>':''}</div></div><button class="iconbtn" onclick="closeAll()" aria-label="סגור">✕</button></div>
+   <div class="db">
+    <div class="dstats"><div><b>${u.calls}</b><span>שיחות</span></div><div><b>${u.msgs}</b><span>הודעות</span></div><div><b>${u.today}</b><span>היום</span></div><div><b style="font-size:13px;line-height:2.3">${H((u.last||'—').slice(0,10))}</b><span>אחרונה</span></div></div>
+    <div class="dsec"><h4>שם</h4><div class="row"><input type="text" id="dName" value="${H(u._new?'':u.name)}" style="flex:1"><button class="btn sm" onclick="dRename()">${u._new?'רשום':'שמור שם'}</button></div></div>
+    ${u._new?'':`
+    <div class="dsec"><h4>הודעה אישית לשיחה הבאה</h4>
+      <textarea id="dNote" placeholder="תושמע לו פעם אחת בתחילת השיחה הבאה" style="min-height:70px">${H(n?n.text:'')}</textarea>
+      ${n?`<p class="mu" style="font-size:13px;margin:6px 0">${n.heard?'נשמעה ב-'+H(n.heard):'ממתינה, עוד לא נשמעה'}${n.created?' · נכתבה ב-'+H(n.created):''}</p>`:''}
+      <div class="row" style="margin-top:8px"><button class="btn sm" onclick="dNote()">שמור הודעה</button>${n&&n.heard?`<button class="btn ghost sm" onclick="uAct('note_again',{},'ההודעה תושמע שוב בשיחה הבאה')">השמע שוב</button>`:''}${n?`<button class="btn ghost sm" onclick="uAct('note',{note:''},'ההודעה נמחקה')">מחק הודעה</button>`:''}</div></div>
+    <div class="dsec"><h4>הקול שלו</h4><select onchange="uAct('voice',{voice:+this.value},'הקול עודכן')" style="direction:ltr">${voices.map((v,i)=>`<option value="${i}" ${i===(u.voice||0)?'selected':''}>${H(v)}</option>`).join('')}</select></div>
+    <div class="dsec"><h4>הרשאות</h4><div class="row">
+      ${u.owner?'<span class="mu" style="font-size:13px">מספר בעלים: תמיד בלי הגבלה ולא ניתן לחסום</span>':`
+      <button class="btn ${u.blocked?'ok':'danger'} sm" onclick="uAct('block',{},'${u.blocked?'החסימה בוטלה':'המספר נחסם'}')">${u.blocked?'בטל חסימה':'חסום מספר'}</button>
+      <button class="btn ghost sm" onclick="uAct('unlimited',{},'עודכן')">${u.unlimited?'החזר מכסה יומית':'תן בלי הגבלה'}</button>`}
+    </div></div>`}
+    <div class="dsec"><div class="row" style="justify-content:space-between;margin-bottom:10px"><h4 style="margin:0">שיחות אחרונות</h4>${msgs.length?`<button class="btn ghost sm" onclick="showConvOf('${H(ph)}')">כל ${msgs.length} ההודעות</button>`:''}</div>
+      ${chat?`<div class="chat">${chat}</div>`:'<p class="mu">עדיין לא דיבר עם הקו</p>'}</div>
+    ${!u._new&&!u.owner?`<div class="dsec" style="border-top:1px solid var(--line);padding-top:16px"><button class="btn danger sm" onclick="dDelete()">מחק משתמש</button> <span class="mu" style="font-size:12px">בשיחה הבאה הוא יתבקש לומר את שמו מחדש</span></div>`:''}
+   </div>`;
+}
+async function uAct(action,extra={},msg='נשמר'){await api('/api/user',{phone:drawerPhone,action,...extra});await refresh();renderDrawer();toast(msg)}
+async function dRename(){const v=$('#dName').value.trim();if(!v)return toast('צריך להזין שם',true);const u=S.users.find(x=>x.phone===drawerPhone);await uAct(u?'rename':'add',{name:v},'השם נשמר')}
+async function dNote(){await uAct('note',{note:$('#dNote').value.trim()},$('#dNote').value.trim()?'ההודעה תושמע בשיחה הבאה':'ההודעה נמחקה')}
+async function dDelete(){if(!await ask('למחוק את המשתמש? בשיחה הבאה הוא יירשם מחדש.','מחק',true))return;const p=drawerPhone;await api('/api/user',{phone:p,action:'delete'});closeAll();await refresh();toast('המשתמש נמחק')}
+function showConvOf(ph){closeAll();resetConv(true);$('#cUser').value=ph;go('conv')}
+
+/* ================= conversations ================= */
+function fillConvFilters(){
+  const cu=$('#cUser').value,ca=$('#cAssist').value;
+  $('#cUser').innerHTML='<option value="">כל המתקשרים</option>'+S.users.slice().sort((a,b)=>String(a.name).localeCompare(b.name,'he')).map(u=>`<option value="${H(u.phone)}">${H(u.name)} (${H(u.phone)})</option>`).join('');
+  const per=[...new Set(S.log.map(l=>l.persona).filter(Boolean))];
+  $('#cAssist').innerHTML='<option value="">כל העוזרים</option>'+per.map(p=>`<option>${H(p)}</option>`).join('');
+  $('#cUser').value=cu;$('#cAssist').value=ca;
+}
+function resetConv(silent){$('#cq').value='';$('#cUser').value='';$('#cAssist').value='';$('#cDate').value='';convCall='';convLimit=20;if(!silent)renderConv()}
+function hl(text,q){const t=H(text);if(!q)return t;const re=new RegExp(H(q).replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'gi');return t.replace(re,m=>`<mark>${m}</mark>`)}
+function isoToIl(v){if(!v)return '';const [y,m,d]=v.split('-');return `${d}/${m}/${y}`}
+function renderConv(){
+  const q=($('#cq').value||'').trim(),ph=$('#cUser').value,as=$('#cAssist').value,dt=isoToIl($('#cDate').value);
+  const groups=new Map();
+  for(let i=S.log.length-1;i>=0;i--){const l=S.log[i];
+    if(convCall&&l.call!==convCall)continue;
+    if(ph&&l.phone!==ph)continue;if(as&&l.persona!==as)continue;if(dt&&!(l.time||'').startsWith(dt))continue;
+    if(q&&!((l.q||'').includes(q)||(l.a||'').includes(q)||(l.name||'').includes(q)||(l.phone||'').includes(q)))continue;
+    const k=l.call||(l.phone+'|'+(l.time||'').slice(0,10));if(!groups.has(k))groups.set(k,[]);groups.get(k).push(l)}
+  const all=[...groups.values()];const G=all.slice(0,convLimit);
+  const total=all.reduce((s,g)=>s+g.length,0);
+  $('#convInfo').innerHTML=(convCall?'<span class="tag or">שיחה אחת</span> ':'')+`${all.length} שיחות, ${total} הודעות`+(S.log_total>S.log.length?` <span class="mu2">(מוצגות ${S.log.length} ההודעות האחרונות מתוך ${S.log_total})</span>`:'');
+  let s='';
+  for(const g of G){const msgs=g.slice().reverse(),f=msgs[0],l=msgs[msgs.length-1];let last='',chat='';
+    const pers=[...new Set(msgs.map(m=>m.persona))];
+    for(const m of msgs){if(m.persona!==last){chat+=`<div class="persona">${H(m.persona)}</div>`;last=m.persona}
+      chat+=`<div class="bb u">${hl(m.q,q)}<small>${H((m.time||'').slice(11))}</small></div><div class="bb m">${hl(m.a,q)}</div>`}
+    s+=`<div class="panel thread"><div class="th"><b style="cursor:pointer" onclick="openUser('${H(f.phone)}')">${H(f.name)}</b><span class="mu num" dir="ltr">${H(f.phone)}</span><span class="mu2">${H(f.time)}${l.time!==f.time?' עד '+H((l.time||'').slice(11)):''}</span><span class="tag">${msgs.length} הודעות</span>${pers.length>1?`<span class="tag or">${pers.length} עוזרים</span>`:''}</div><div class="chat">${chat}</div></div>`}
+  if(!G.length)s=`<div class="panel empty">${S.log.length?'לא נמצאו שיחות שמתאימות לסינון':'עדיין אין שיחות. כשמישהו ידבר עם הקו, השיחה תופיע כאן.'}</div>`;
+  if(all.length>convLimit)s+=`<button class="btn ghost loadmore" onclick="convLimit+=20;renderConv()">הצג עוד שיחות (${all.length-convLimit} נוספות)</button>`;
+  $('#convList').innerHTML=s;
+}
+
+/* ================= calls ================= */
+function renderCalls(){
+  const q=($('#kq').value||'').trim(),dt=isoToIl($('#kDate').value);
+  const cnt={},pers={};for(const l of S.log){if(!l.call)continue;cnt[l.call]=(cnt[l.call]||0)+1;(pers[l.call]=pers[l.call]||new Set()).add(l.persona)}
+  const L=(S.calls||[]).filter(c=>(!q||(c.name||'').includes(q)||(c.phone||'').includes(q))&&(!dt||(c.time||'').startsWith(dt)));
+  $('#callsInfo').textContent=L.length+' שיחות'+((S.calls||[]).length>=300?' (300 האחרונות)':'');
+  let h='<thead><tr><th>מתי</th><th>מי</th><th>טלפון</th><th>הודעות</th><th>עוזרים</th><th></th></tr></thead><tbody>';
+  for(const c of L){const n=cnt[c.call]||0,u=S.users.find(x=>x.phone===c.phone);
+    h+=`<tr><td class="num">${H(c.time)}</td><td><b style="cursor:pointer" onclick="openUser('${H(c.phone)}')">${H((u&&u.name)||c.name||'לא רשום')}</b></td><td class="num mu" dir="ltr" style="text-align:right">${H(c.phone)}</td><td class="num">${n||'<span class="mu2">0</span>'}</td>
+    <td>${pers[c.call]?[...pers[c.call]].map(p=>`<span class="tag or">${H(p)}</span>`).join(' '):'<span class="mu2">רק תפריט</span>'}</td>
+    <td>${n?`<button class="btn ghost sm" onclick="openCall('${H(c.call)}')">הצג שיחה</button>`:''}</td></tr>`}
+  if(!L.length)h+='<tr><td colspan="6" class="empty">אין שיחות להצגה</td></tr>';
+  $('#callsT').innerHTML=h+'</tbody>';
+}
+function openCall(id){resetConv(true);convCall=id;go('conv')}
+
+/* ================= assistants ================= */
+function loadEditors(force){
+  if(force||!dirty.assist)A=JSON.parse(JSON.stringify(S.assistants));
+  if(force||!dirty.texts)TX=Object.assign({},S.texts);
+  if(force||!dirty.settings){const s=S.settings;SE={announcement:s.announcement||'',tts:s.tts||'on',voices:(s.voices||'').split(',').map(x=>x.trim()).filter(Boolean),daily_limit:s.daily_limit,record_max:s.record_max,
+    unlimited:(s.unlimited_phones||'').split(',').filter(Boolean),blocked:(s.blocked_phones||'').split(',').filter(Boolean),mail_hour:s.mail_hour,model:s.model||'',vocab:s.vocab||''}}
+  if(force)dirty={assist:false,texts:false,settings:false};
+}
+function setDirty(k){dirty[k]=true;updateSavebar()}
+function updateSavebar(){const k={assist:'assist',texts:'texts',settings:'settings'}[page];$('#savebar').classList.toggle('on',!!(k&&dirty[k]))}
+function digitMap(){let d=0;return A.map(a=>a.on&&d<8?++d:null)}
+function renderAssist(){
+  const dm=digitMap();
+  // keypad
+  const byDigit={};A.forEach((a,i)=>{if(dm[i])byDigit[dm[i]]=a});
+  const keys=['1','2','3','4','5','6','7','8','9','*','0','#'];
+  $('#keypad').innerHTML=keys.map(k=>{const a=byDigit[k];if(k==='9')return `<div class="key end"><b>9</b><span>סיום</span></div>`;
+    if(a)return `<div class="key set"><b>${k}</b><span>${H(a.name)}</span></div>`;return `<div class="key dim"><b>${k}</b></div>`}).join('');
+  const T=(k,o)=>(TX[k]||'').replace(/\{(\w+)\}/g,(m,x)=>o[x]??m);
+  const parts=[T('menu_hello',{name:'משה'})];A.forEach((a,i)=>{if(dm[i]){const nm=a.name.startsWith('ה')?a.name.slice(1):a.name;parts.push(T('menu_item',{digit:dm[i],assistant:nm}))}});parts.push(T('menu_end',{}));
+  $('#menuPreview').textContent='״'+parts.join(' ')+'״';
+  // cards
+  $('#assistList').innerHTML=A.map((a,i)=>`
+   <div class="acard ${a.on?'':'off'} ${openCards.has(a.id)?'open':''}" ondragover="event.preventDefault();this.classList.add('over')" ondragleave="this.classList.remove('over')" ondrop="dropA(${i});this.classList.remove('over')">
+    <div class="ah" onclick="toggleCard('${H(a.id)}')">
+      <span class="handle" draggable="true" ondragstart="dragI=${i};event.dataTransfer.effectAllowed='move'" onclick="event.stopPropagation()" title="גרור לשינוי סדר">${svg(IC.grip,18)}</span>
+      <span class="digit">${dm[i]||'כבוי'}</span>
+      <div class="an"><b>${H(a.name)}</b><span>${H(a.prompt)}</span></div>
+      <label class="switch" onclick="event.stopPropagation()"><input type="checkbox" ${a.on?'checked':''} onchange="A[${i}].on=this.checked;setDirty('assist');renderAssist()"><i></i></label>
+      <span class="chev">${svg(IC.chev,22)}</span>
+    </div>
+    <div class="ab">
+      <div class="grid g2">
+        <label class="f"><span>שם העוזר, כפי שנשמע בתפריט</span><input type="text" value="${H(a.name)}" maxlength="40" oninput="A[${i}].name=this.value;setDirty('assist');refreshKeypadOnly()"></label>
+        <label class="f"><span>מילים שבהן קוראים לו בדיבור</span><input type="text" value="${H(a.keywords||'')}" maxlength="200" placeholder="מופרדות בפסיק" oninput="A[${i}].keywords=this.value;setDirty('assist')"><small>כשמתקשר אומר ״תעביר אותי ל...״</small></label>
+      </div>
+      <label class="f"><span>האופי וההנחיות לבינה <em class="count">${(a.prompt||'').length}/2000</em></span><textarea maxlength="2000" style="min-height:120px" oninput="A[${i}].prompt=this.value;setDirty('assist');this.previousElementSibling.querySelector('.count').textContent=this.value.length+'/2000'">${H(a.prompt)}</textarea></label>
+      <label class="f"><span>שמות ומונחים מיוחדים לעוזר הזה <em class="count">${(a.vocab||'').length}/1500</em></span><textarea maxlength="1500" style="min-height:70px" placeholder="למשל שמות זמרים, רבנים, מקומות" oninput="A[${i}].vocab=this.value;setDirty('assist');this.previousElementSibling.querySelector('.count').textContent=this.value.length+'/1500'">${H(a.vocab||'')}</textarea><small>עוזר לבינה לזהות נכון מילים בהקלטה כשמדברים עם העוזר הזה</small></label>
+      <div class="row">
+        <button class="btn ghost sm" onclick="mvA(${i},-1)" ${i===0?'disabled':''}>הזז למעלה</button>
+        <button class="btn ghost sm" onclick="mvA(${i},1)" ${i===A.length-1?'disabled':''}>הזז למטה</button>
+        <button class="btn ghost sm" onclick="dupA(${i})">שכפל</button>
+        <span style="flex:1"></span>
+        <button class="btn danger sm" onclick="delA(${i})">מחק עוזר</button>
+      </div>
+    </div>
+   </div>`).join('');
+  const on=A.filter(a=>a.on).length;
+  if(on>8)$('#assistList').insertAdjacentHTML('afterbegin',`<div class="panel mb" style="border-color:#5a4a0a;color:var(--warn)">יש ${on} עוזרים פעילים, אבל בתפריט נכנסים רק 8. האחרונים לא יופיעו.</div>`);
+}
+function refreshKeypadOnly(){const open=[...openCards];const ae=document.activeElement,sel=ae&&ae.selectionStart;/* update keypad + preview without redrawing inputs */
+  const dm=digitMap(),byDigit={};A.forEach((a,i)=>{if(dm[i])byDigit[dm[i]]=a});
+  document.querySelectorAll('#keypad .key.set').forEach(k=>{const a=byDigit[k.querySelector('b').textContent];if(a)k.querySelector('span').textContent=a.name});
+  document.querySelectorAll('#assistList .acard').forEach((c,i)=>{if(A[i])c.querySelector('.an b').textContent=A[i].name});
+}
+function toggleCard(id){openCards.has(id)?openCards.delete(id):openCards.add(id);renderAssist()}
+function mvA(i,d){const j=i+d;if(j<0||j>=A.length)return;[A[i],A[j]]=[A[j],A[i]];setDirty('assist');renderAssist()}
+function dropA(i){if(dragI===null||dragI===i)return;const [x]=A.splice(dragI,1);A.splice(i,0,x);dragI=null;setDirty('assist');renderAssist()}
+function dupA(i){const c=JSON.parse(JSON.stringify(A[i]));c.id='a'+Math.random().toString(36).slice(2,8);c.name=c.name+' (עותק)';A.splice(i+1,0,c);openCards.add(c.id);setDirty('assist');renderAssist()}
+async function delA(i){if(A.length<=1)return toast('חייב להישאר לפחות עוזר אחד',true);if(!await ask(`למחוק את ״${A[i].name}״?`,'מחק',true))return;A.splice(i,1);setDirty('assist');renderAssist()}
+function addAssistant(){const id='a'+Math.random().toString(36).slice(2,8);A.push({id,name:'עוזר חדש',prompt:'אתה עוזר ידידותי ומועיל.',on:true,keywords:'',vocab:''});openCards.add(id);setDirty('assist');renderAssist();setTimeout(()=>window.scrollTo({top:document.body.scrollHeight,behavior:'smooth'}),50)}
+async function saveAssist(){
+  for(const a of A){if(!a.name.trim()||!a.prompt.trim())return toast('לכל עוזר צריך שם והנחיות',true)}
+  const d=await api('/api/assistants',{assistants:A});
+  if(!d.ok)return toast(d.error||'השמירה נכשלה',true);
+  dirty.assist=false;await refresh();loadEditors(false);renderAssist();updateSavebar();toast('העוזרים נשמרו, התפריט התעדכן')
+}
+
+/* ================= texts ================= */
+function renderTexts(){
+  const sample={name:'משה',assistant:'העוזר הכללי',digit:'1'};
+  let h='';
+  for(const [g,items] of TXT_GROUPS){
+    h+=`<h3 style="margin:${h?'26px':'0'} 0 4px;color:var(--or2);font-size:15px">${g}</h3>`;
+    for(const k in items){
+      const v=TX[k]??'';const ph=['name','assistant','digit'].filter(x=>TXT_DEF[k].includes('{'+x+'}')||v.includes('{'+x+'}'));
+      h+=`<div class="tx-item"><div class="tl"><span>${items[k]}</span><div class="row" style="gap:6px">
+        ${ph.map(x=>`<div class="ph-chips"><button onclick="insPh('${k}','${x}')" title="הוסף">{${x}}</button></div>`).join('')}
+        ${v!==TXT_DEF[k]?`<button class="btn ghost sm" onclick="TX['${k}']=TXT_DEF['${k}'];setDirty('texts');renderTexts()">החזר לברירת מחדל</button>`:''}</div></div>
+        <input type="text" id="tx_${k}" value="${H(v)}" oninput="TX['${k}']=this.value;setDirty('texts');pvTx('${k}')">
+        <div class="pv" id="pv_${k}">${pvHtml(k,sample)}</div></div>`;
+    }
+  }
+  $('#textsList').innerHTML=h;
+}
+function pvHtml(k,s){s=s||{name:'משה',assistant:'העוזר הכללי',digit:'1'};const v=TX[k]||'';
+  if(k==='wait')return 'יתחלפו: '+v.split(',').map(x=>x.trim()).filter(Boolean).map(x=>`<b>${H(x)}</b>`).join(' / ');
+  if(!/\{/.test(v))return '';
+  return 'יישמע כך: '+H(v).replace(/\{(\w+)\}/g,(m,x)=>s[x]?`<b>${H(s[x])}</b>`:m)}
+function pvTx(k){$('#pv_'+k).innerHTML=pvHtml(k);if(k.startsWith('menu'))renderAssist()}
+function insPh(k,x){const el=$('#tx_'+k);const p=el.selectionStart??el.value.length;el.value=el.value.slice(0,p)+'{'+x+'}'+el.value.slice(p);TX[k]=el.value;setDirty('texts');pvTx(k);el.focus()}
+async function saveTexts(){await api('/api/texts',TX);dirty.texts=false;await refresh();loadEditors(false);renderTexts();updateSavebar();toast('הנוסחים נשמרו')}
+
+/* ================= settings ================= */
+function renderSettings(){
+  const s=SE;
+  const bind=(id,k,num)=>{const el=$('#se_'+id);el.value=s[k];el.oninput=()=>{s[k]=num?+el.value:el.value;setDirty('settings');if(k==='vocab')$('#vocabCnt').textContent=el.value.length+'/1500'}};
+  bind('announcement','announcement');bind('daily_limit','daily_limit',1);bind('record_max','record_max',1);bind('mail_hour','mail_hour',1);bind('vocab','vocab');
+  $('#vocabCnt').textContent=(s.vocab||'').length+'/1500';
+  const tt=$('#se_tts');tt.checked=s.tts==='on';tt.onchange=()=>{s.tts=tt.checked?'on':'off';setDirty('settings')};
+  const m=$('#se_model');const models=(S.models||[]).map(x=>x.name);if(s.model&&!models.includes(s.model))models.unshift(s.model);
+  m.innerHTML='<option value="">אוטומטי (מומלץ)</option>'+models.map(x=>`<option value="${H(x)}">${H(x)}</option>`).join('');m.value=s.model;m.onchange=()=>{s.model=m.value;setDirty('settings')};
+  $('#se_unlimited').innerHTML=chips('unlimited');$('#se_blocked').innerHTML=chips('blocked');
+  renderVoices();
+  $('#mailState').innerHTML=S.mail?`<span style="color:var(--ok)">מוגדר. נשלח אל ${H(S.mail_to)}</span>`:'<span style="color:var(--bad)">לא מוגדר. צריך להוסיף MAIL_USER ו-MAIL_PASS בהגדרות של Render.</span>';
+}
+function chips(k){const owners=S.owners||[];
+  return `<div class="chips" onclick="this.querySelector('input').focus()">${SE[k].map((p,i)=>`<span class="chip">${H(p)}${k==='unlimited'&&owners.includes(p)?'<em>בעלים</em>':`<button onclick="event.stopPropagation();SE['${k}'].splice(${i},1);setDirty('settings');$('#se_${k}').innerHTML=chips('${k}')" aria-label="הסר">×</button>`}</span>`).join('')}
+  <input type="tel" placeholder="הוסף מספר ולחץ Enter" onkeydown="chipKey(event,'${k}')" onblur="chipAdd(this,'${k}')"></div>`}
+function chipKey(e,k){if(e.key==='Enter'||e.key===','){e.preventDefault();chipAdd(e.target,k,true)}}
+function chipAdd(el,k,refocus){const v=el.value.replace(/\D/g,'');if(!v)return;if(!SE[k].includes(v))SE[k].push(v);setDirty('settings');$('#se_'+k).innerHTML=chips(k);if(refocus)$('#se_'+k+' input').focus()}
+function renderVoices(){
+  const V=SE.voices;
+  $('#voiceList').innerHTML=V.map((v,i)=>`<div class="vrow"><span class="${i===0?'first':'mu2'}" style="font-size:12px;min-width:62px">${i===0?'ברירת מחדל':'קול '+(i+1)}</span><code>${H(v)}</code>
+    <button class="btn ghost sm" onclick="testTts('${H(v)}',this)">השמע בדיקה</button>
+    <button class="btn ghost sm" onclick="mvV(${i},-1)" ${i===0?'disabled':''} aria-label="למעלה">▲</button>
+    <button class="btn ghost sm" onclick="mvV(${i},1)" ${i===V.length-1?'disabled':''} aria-label="למטה">▼</button>
+    <button class="btn danger sm" onclick="SE.voices.splice(${i},1);setDirty('settings');renderVoices()" ${V.length<2?'disabled':''} aria-label="הסר">×</button></div>`).join('')+
+    '<p class="mu2" style="font-size:12px;margin:6px 0 0">״החלף קול״ בשיחה עובר לקול הבא ברשימה. הראשון הוא הקול של מתקשרים חדשים.</p>';
+}
+function mvV(i,d){const j=i+d,V=SE.voices;if(j<0||j>=V.length)return;[V[i],V[j]]=[V[j],V[i]];setDirty('settings');renderVoices()}
+function addVoice(){const v=$('#voiceAdd').value.trim();if(!v)return;if(!/^[a-z]{2}-[A-Z]{2}-\w+$/.test(v))return toast('שם הקול צריך להיות בצורה כמו he-IL-AvriNeural',true);if(!SE.voices.includes(v))SE.voices.push(v);$('#voiceAdd').value='';setDirty('settings');renderVoices()}
+async function saveSettings(){
+  const s=SE;if(!s.voices.length)return toast('צריך לפחות קול אחד',true);
+  await api('/api/settings',{announcement:s.announcement,tts:s.tts,voices:s.voices.join(','),daily_limit:s.daily_limit,record_max:s.record_max,
+    unlimited_phones:s.unlimited.join(','),blocked_phones:s.blocked.join(','),mail_hour:s.mail_hour,model:s.model,vocab:s.vocab});
+  dirty.settings=false;await refresh();loadEditors(false);renderSettings();updateSavebar();toast('ההגדרות נשמרו')
+}
+
+/* ---------- save bar ---------- */
+function saveCurrent(){if(page==='assist')return saveAssist();if(page==='texts')return saveTexts();if(page==='settings')return saveSettings()}
+async function discard(){if(!await ask('לבטל את כל השינויים שלא נשמרו בעמוד הזה?','בטל שינויים',true))return;
+  const k=page;dirty[k]=false;loadEditors(false);if(k==='assist')renderAssist();if(k==='texts'){renderTexts();renderAssist()}if(k==='settings')renderSettings();updateSavebar()}
+window.addEventListener('beforeunload',e=>{if(dirty.assist||dirty.texts||dirty.settings){e.preventDefault();e.returnValue=''}});
+
+/* ================= system ================= */
+function renderSystem(){
+  const M=S.models||[];
+  $('#modelsList').innerHTML=M.length?M.map((m,i)=>`<div class="mrow"><span class="mu2 num" style="width:18px">${i+1}</span><code>${H(m.name)}</code>${S.settings.model===m.name?'<span class="tag or">מועדף</span>':''}${m.dead?'<span class="tag red">לא קיים</span>':m.ok?'<span class="tag green">זמין</span>':'<span class="tag gold">המכסה נגמרה זמנית</span>'}</div>`).join(''):'<div class="empty">עדיין לא התקבלה רשימת מודלים</div>';
+  const tv=$('#ttsVoice'),cur=tv.value;tv.innerHTML=(S.voices||[]).map(v=>`<option>${H(v)}</option>`).join('');if(cur)tv.value=cur;
+}
+const DIAG={gemini:'הבינה (Gemini)',tts:'קול טבעי',yemot:'חיבור לימות המשיח',search:'חיפוש באינטרנט',weather:'מזג אוויר',wiki:'ויקיפדיה'};
+async function runDiag(){
+  const b=$('#diagBtn');b.disabled=true;b.innerHTML='<span class="spin"></span> בודק…';
+  $('#diagOut').innerHTML='<p class="mu">הבדיקה רצה. זה יכול לקחת עד דקה.</p>';
+  try{const d=await api('/api/diag',{});
+    let h='<div class="tiles" style="margin-top:14px">';
+    for(const k in DIAG){const r=d[k]||{};h+=`<div class="tile ${r.ok?'ok':'fail'}"><div class="tt"><span class="st"></span>${DIAG[k]}</div><div class="td">${r.ok?'תקין':'לא עובד'}${r.seconds!=null?`, ${r.seconds} שניות`:''}${r.answer?`<br>ענה: ״${H(r.answer)}״`:''}${r.error?`<br><span style="direction:ltr;display:inline-block">${H(r.error)}</span>`:''}</div></div>`}
+    h+='</div><div class="grid g2" style="margin-top:14px"><div class="tile"><div class="tt">משתני סביבה ב-Render</div><div class="td">';
+    for(const k in (d.env||{})){if(k==='PYTHON_VERSION')continue;h+=`<div class="row" style="justify-content:space-between"><code dir="ltr">${H(k)}</code>${d.env[k]?'<span class="tag green">מוגדר</span>':'<span class="tag red">חסר</span>'}</div>`}
+    h+=`<div class="row" style="justify-content:space-between;margin-top:4px"><span>פייתון</span><code dir="ltr">${H(d.python)}</code></div></div></div><div class="tile"><div class="tt">מצב המודלים</div><div class="td">`;
+    for(const m in (d.model_status||{}))h+=`<div class="row" style="justify-content:space-between"><code dir="ltr">${H(m)}</code><span class="tag ${d.model_status[m]==='ok'?'green':'red'}">${d.model_status[m]==='ok'?'זמין':H(d.model_status[m])}</span></div>`;
+    $('#diagOut').innerHTML=h+'</div></div></div>';
+  }catch(e){$('#diagOut').innerHTML='<p style="color:var(--bad)">הבדיקה לא הסתיימה. ייתכן שהשרת נרדם או עמוס. נסה שוב בעוד דקה.</p>'}
+  b.disabled=false;b.textContent='הרץ בדיקה';
+}
+async function testTts(voice,btn){
+  voice=voice||$('#ttsVoice').value;const out=btn?null:$('#ttsRes');
+  if(btn){btn.disabled=true;btn.innerHTML='<span class="spin"></span>'}else out.textContent='בודק…';
+  try{const d=await api('/api/test_tts',{voice,text:$('#ttsText').value});
+    const msg=d.ok?'הקול עובד':'הקול לא עובד: '+(d.error||'');if(out)out.textContent=msg;else toast(msg,!d.ok)}
+  catch(e){if(out)out.textContent='אין חיבור לשרת'}
+  if(btn){btn.disabled=false;btn.textContent='השמע בדיקה'}
+}
+async function sendMail(){$('#mailRes').textContent='שולח…';try{const d=await api('/api/sendmail',{});$('#mailRes').textContent=d.result}catch(e){$('#mailRes').textContent='נכשל'}}
+async function clearData(what){
+  const msg=what==='log'?'למחוק את כל תוכן השיחות (מה שאמרו ומה שהבינה ענתה)? אי אפשר לשחזר.':'למחוק את יומן השיחות (מי התקשר ומתי)? אי אפשר לשחזר.';
+  if(!await ask(msg,'מחק לצמיתות',true))return;await api('/api/clear',{what});await refresh();toast('נמחק')
+}
+
+/* ================= command palette ================= */
+let palSel=0,palItems=[];
+function openPal(){$('#pal').classList.add('on');$('#scrim').classList.add('on');$('#palQ').value='';palSel=0;renderPal();setTimeout(()=>$('#palQ').focus(),20)}
+function closePal(){$('#pal').classList.remove('on');if(!$('#drawer').classList.contains('on')&&!$('#modal').classList.contains('on'))$('#scrim').classList.remove('on')}
+function renderPal(){
+  const q=$('#palQ').value.trim();
+  const pages=PAGES.map(([k,t])=>({t,sub:'עמוד',run:()=>go(pageId(k))}));
+  const users=(S?S.users:[]).map(u=>({t:u.name,sub:u.phone,run:()=>openUser(u.phone)}));
+  palItems=[...pages,...users].filter(x=>!q||String(x.t).includes(q)||String(x.sub).includes(q)).slice(0,12);
+  if(palSel>=palItems.length)palSel=0;
+  $('#palL').innerHTML=palItems.map((x,i)=>`<li class="${i===palSel?'sel':''}" onclick="palGo(${i})"><span>${H(x.t)}</span><small dir="ltr">${H(x.sub)}</small></li>`).join('')||'<li class="mu">לא נמצא</li>';
+}
+function palGo(i){const x=palItems[i];if(!x)return;closePal();$('#scrim').classList.remove('on');x.run()}
+$('#palQ').addEventListener('keydown',e=>{if(e.key==='ArrowDown'){palSel=Math.min(palItems.length-1,palSel+1);renderPal();e.preventDefault()}else if(e.key==='ArrowUp'){palSel=Math.max(0,palSel-1);renderPal();e.preventDefault()}else if(e.key==='Enter')palGo(palSel)});
+document.addEventListener('keydown',e=>{
+  if($('#app').hidden)return;
+  if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();openPal()}
+  else if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='s'){e.preventDefault();saveCurrent()}
+  else if(e.key==='Escape')closeAll();
+});
+
+boot();
+</script>
+</body>
+</html>
