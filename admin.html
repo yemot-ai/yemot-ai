@@ -1180,13 +1180,13 @@ function renderSystem(){
   $('#modelsList').innerHTML=M.length?M.map((m,i)=>`<div class="mrow"><span class="mu2 num" style="width:18px">${i+1}</span><code>${H(m.name)}</code>${S.settings.model===m.name?'<span class="tag or">מועדף</span>':''}${m.dead?'<span class="tag red">לא קיים</span>':m.ok?'<span class="tag green">זמין</span>':'<span class="tag gold">המכסה נגמרה זמנית</span>'}</div>`).join(''):'<div class="empty">עדיין לא התקבלה רשימת מודלים</div>';
   const tv=$('#ttsVoice'),cur=tv.value;tv.innerHTML=(S.voices||[]).map(v=>`<option>${H(v)}</option>`).join('');if(cur)tv.value=cur;
 }
-const DIAG={gemini:'הבינה (Gemini)',tts:'קול טבעי',yemot:'חיבור לימות המשיח',search:'חיפוש באינטרנט',weather:'מזג אוויר',wiki:'ויקיפדיה'};
+const DIAG={gemini:'הבינה (Gemini)',tts:'קול טבעי',yemot:'חיבור לימות המשיח',search:'חיפוש באינטרנט (בסך הכל)',google:'חיפוש גוגל של Gemini',ddg:'מנועי חיפוש משולבים',bing:'חיפוש בינג',news:'חדשות עדכניות',pages:'קריאת תוכן מאתרים',weather:'מזג אוויר',wiki:'ויקיפדיה'};
 async function runDiag(){
   const b=$('#diagBtn');b.disabled=true;b.innerHTML='<span class="spin"></span> בודק…';
   $('#diagOut').innerHTML='<p class="mu">הבדיקה רצה. זה יכול לקחת עד דקה.</p>';
   try{const d=await api('/api/diag',{});
     let h='<div class="tiles" style="margin-top:14px">';
-    for(const k in DIAG){const r=d[k]||{};h+=`<div class="tile ${r.ok?'ok':'fail'}"><div class="tt"><span class="st"></span>${DIAG[k]}</div><div class="td">${r.ok?'תקין':'לא עובד'}${r.seconds!=null?`, ${r.seconds} שניות`:''}${r.answer?`<br>ענה: ״${H(r.answer)}״`:''}${r.error?`<br><span style="direction:ltr;display:inline-block">${H(r.error)}</span>`:''}</div></div>`}
+    for(const k in DIAG){if(!(k in d))continue;const r=d[k]||{};h+=`<div class="tile ${r.ok?'ok':'fail'}"><div class="tt"><span class="st"></span>${DIAG[k]}</div><div class="td">${r.ok?'תקין':'לא עובד'}${r.seconds!=null?`, ${r.seconds} שניות`:''}${r.answer?`<br>ענה: ״${H(r.answer)}״`:''}${r.error?`<br><span style="direction:ltr;display:inline-block">${H(r.error)}</span>`:''}</div></div>`}
     h+='</div><div class="grid g2" style="margin-top:14px"><div class="tile"><div class="tt">משתני סביבה ב-Render</div><div class="td">';
     for(const k in (d.env||{})){if(k==='PYTHON_VERSION')continue;h+=`<div class="row" style="justify-content:space-between"><code dir="ltr">${H(k)}</code>${d.env[k]?'<span class="tag green">מוגדר</span>':'<span class="tag red">חסר</span>'}</div>`}
     h+=`<div class="row" style="justify-content:space-between;margin-top:4px"><span>פייתון</span><code dir="ltr">${H(d.python)}</code></div></div></div><div class="tile"><div class="tt">מצב המודלים</div><div class="td">`;
