@@ -4,6 +4,7 @@
 - Render (חינם) + Gemini (חינם) + Edge TTS (חינם, קול טבעי)
 - רישום שם לפי מספר טלפון, 7 עוזרים, חיפוש באינטרנט, החלפת קול, אתר ניהול חי
 - חיפוש באינטרנט: חיפוש גוגל של Gemini + כמה מנועי חיפוש חינמיים במקביל + קריאת תוכן האתרים עצמם
+- תחבורה ציבורית: לוחות הזמנים הרשמיים של משרד התחבורה (דרך המאגר הפתוח של הסדנא לידע ציבורי), חינם
 """
 from flask import Flask, request, Response
 from yemot_flow.actions import build_id_list_message, build_read, build_go_to_folder, build_combined_action
@@ -163,6 +164,10 @@ GENERAL_RULES = (
     " בלי כוכביות, בלי רשימות, בלי אימוג'ים ובלי סימני עיצוב."
     " ענה בשפה שבה המשתמש דיבר אליך; ברירת המחדל היא עברית."
     " שמור על שפה מכובדת וצנועה, ואל תעסוק בנושאים לא צנועים."
+    " ענה בדיוק על מה שנשאל, ולא על נושא קרוב או כללי. המשפט הראשון בתשובה צריך כבר לענות על השאלה עצמה, בלי הקדמות."
+    " אם השאלה ממשיכה את השיחה (למשל: ומה עם מחר, וכמה זה עולה), הבן אותה לפי מה שנאמר קודם בשיחה."
+    " אל תמציא עובדות, מספרים, שעות או שמות. אם אינך יודע בוודאות, אמור זאת בקצרה."
+    " אם ההקלטה לא ברורה, חתוכה או שאפשר להבין אותה בכמה דרכים שונות, אל תנחש: בקש במשפט קצר לחזור על השאלה או שאל למה התכוון."
     " יש לך כלי חיפוש באינטרנט. השתמש בו כשהמשתמש מבקש לחפש, או כשהתשובה דורשת מידע עדכני:"
     " מחירים, חנויות, חדשות, מזג אוויר, שעות פתיחה, תחבורה ציבורית, תוצאות, מה קורה עכשיו. אחרי חיפוש תן תשובה מדויקת עם המספרים והשמות שמצאת."
 )
@@ -214,6 +219,7 @@ def get_client():
 
 
 GEMINI_DEADLINE = 14   # שניות מקסימום לפנייה אחת. אחרי זה עוברים למודל הבא, גם אם גוגל עדיין "חושבים"
+STRONG_GRACE = 2.5     # כשהמודל המהיר (lite) ענה ראשון - כמה שניות לחכות לתשובה של המודל החזק יותר שכבר רץ במקביל
 
 
 class Deadline(Exception):
@@ -528,7 +534,7 @@ def speak_file(text, voice_idx, call_id):
 
 # ============================================================ Gemini
 def _one_call(model, system, contents, use_search, think):
-    kw = dict(system_instruction=system, max_output_tokens=400)
+    kw = dict(system_instruction=system, max_output_tokens=600)
     if use_search:
         kw["tools"] = [types.Tool(google_search=types.GoogleSearch())]
     if think == "level":
@@ -547,9 +553,11 @@ def _note_failure(model, use_search, msg):
             MODEL_STATUS[model] = {"until": time.time() + 120}
 
 
-def gemini(system, contents, search=False):
+def gemini(system, contents, search=False, prefer_strong=False):
     """שולח את הפנייה לכמה מודלים במקביל ולוקח את התשובה הראשונה שחוזרת.
-    ככה מודל אחד איטי או תקוע לא מעכב את המתקשר."""
+    ככה מודל אחד איטי או תקוע לא מעכב את המתקשר.
+    prefer_strong: אם המודל המהיר (lite) ענה ראשון והמודל החזק עדיין רץ - מחכים לו עוד כמה שניות,
+    כי התשובה שלו בדרך כלל מדויקת יותר. המודל המהיר עדיין נשלח ראשון, כך שלא נוספת צריכת מכסה."""
     order = list(MODELS)
     pref = SETTINGS.get("model", "")
     if pref:
@@ -561,40 +569,60 @@ def gemini(system, contents, search=False):
     batch = order[:3]
     t0 = time.time()
     print("gemini: racing %s (search=%s)" % (", ".join(batch), search))
-    results = {}
+    answers = {}          # מודל -> תשובה
+    arrival = []          # סדר ההגעה של התשובות
+    finished = set()      # מודלים שסיימו (הצליחו או נכשלו)
     lock = threading.Lock()
     done = threading.Event()
 
     def worker(model):
-        options = ("level", "budget", None)
-        known = MODEL_THINK.get(model)
-        if known in options:
-            options = (known,) + tuple(o for o in options if o != known)
-        for think in options:
-            try:
-                text = _one_call(model, system, contents, search, think)
-                MODEL_THINK[model] = think
-                with lock:
-                    if text and "winner" not in results:
-                        results["winner"] = (model, text)
+        try:
+            options = ("level", "budget", None)
+            known = MODEL_THINK.get(model)
+            if known in options:
+                options = (known,) + tuple(o for o in options if o != known)
+            for think in options:
+                try:
+                    text = _one_call(model, system, contents, search, think)
+                    MODEL_THINK[model] = think
+                    if text:
+                        with lock:
+                            answers[model] = text
+                            arrival.append(model)
                         done.set()
-                return
-            except Exception as e:
-                msg = str(e)
-                print("gemini variant failed (%s search=%s think=%s) after %.1fs: %s" % (model, search, think, time.time() - t0, msg[:120]))
-                _note_failure(model, search, msg)
-                if "NOT_FOUND" in msg or "no longer available" in msg or "RESOURCE_EXHAUSTED" in msg or "429" in msg[:8]:
                     return
-                if "thinking" not in msg.lower() and "level" not in msg.lower() and "budget" not in msg.lower():
-                    return
-        return
+                except Exception as e:
+                    msg = str(e)
+                    print("gemini variant failed (%s search=%s think=%s) after %.1fs: %s" % (model, search, think, time.time() - t0, msg[:120]))
+                    _note_failure(model, search, msg)
+                    if "NOT_FOUND" in msg or "no longer available" in msg or "RESOURCE_EXHAUSTED" in msg or "429" in msg[:8]:
+                        return
+                    if "thinking" not in msg.lower() and "level" not in msg.lower() and "budget" not in msg.lower():
+                        return
+        finally:
+            with lock:
+                finished.add(model)
+                if len(finished) >= len(batch):
+                    done.set()      # כולם נכשלו או סיימו - לא מחכים לחינם עד סוף הזמן
     for m in batch:
         threading.Thread(target=worker, args=(m,), daemon=True).start()
     done.wait(GEMINI_DEADLINE)
-    if "winner" in results:
-        model, text = results["winner"]
+
+    def strong_still_running():
+        return [m for m in batch if "lite" not in m and m not in finished]
+
+    if answers and prefer_strong and all("lite" in m for m in list(answers)) and strong_still_running():
+        end = min(t0 + GEMINI_DEADLINE, time.time() + STRONG_GRACE)
+        while time.time() < end and strong_still_running() and all("lite" in m for m in list(answers)):
+            time.sleep(0.1)
+    with lock:
+        got = dict(answers)
+        arr = list(arrival)
+    if got:
+        strong = [m for m in arr if "lite" not in m]
+        model = strong[0] if (prefer_strong and strong) else arr[0]
         print("gemini: %s answered in %.1fs" % (model, time.time() - t0))
-        return text
+        return got[model]
     rest = order[3:]
     if rest:
         print("gemini: first batch failed, trying %s" % ", ".join(rest[:2]))
@@ -811,6 +839,229 @@ def wiki_search(query):
     except Exception as e:
         print("wiki error:", str(e)[:150])
         return None
+
+
+# ============================================================ תחבורה ציבורית
+# לוחות הזמנים הרשמיים של משרד התחבורה (GTFS), דרך המאגר הפתוח והחינמי של הסדנא לידע ציבורי (Open Bus Stride).
+# בלי מפתח ובלי הרשמה. יודע לענות על:
+#   - קו מסוים (למשל 402 מבני ברק לירושלים): מתי היציאות הבאות, ומתי הוא עובר בעיר המוצא
+#   - תחנה לפי המספר שעל השלט (5 ספרות): אילו קווים מגיעים בשעה וחצי הקרובה ומתי
+#   - מעיר לעיר בלי מספר קו: אילו קווים נוסעים ישירות, ומתי
+STRIDE_API = "https://open-bus-stride-api.hasadna.org.il"
+TRANSIT_WORDS = ("אוטובוס", "תחנה", "רכבת", "לוח זמנים", "לוחות זמנים", "מתי יוצא", "מתי מגיע", "מתי עובר", "קו ")
+TRANSIT_CACHE = {}
+TRANSIT_CACHE_TTL = 120
+
+
+def stride_get(path, params, timeout=9):
+    url = STRIDE_API + path + "?" + urllib.parse.urlencode(params)
+    req = urllib.request.Request(url, headers={"User-Agent": "yemot-ai-line/1.0", "Accept": "application/json"})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        data = json.loads(r.read().decode("utf-8", "ignore"))
+    return data if isinstance(data, list) else []
+
+
+def _il_aware():
+    return datetime.datetime.now(ZoneInfo("Asia/Jerusalem")).replace(microsecond=0)
+
+
+def _hhmm(value):
+    """זמן מהמאגר (בדרך כלל לפי גריניץ') -> שעה בישראל"""
+    try:
+        d = datetime.datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        if d.tzinfo is None:
+            d = d.replace(tzinfo=datetime.timezone.utc)
+        return d.astimezone(ZoneInfo("Asia/Jerusalem")).strftime("%H:%M")
+    except Exception:
+        return ""
+
+
+def _tnorm(s):
+    """השוואת שמות ערים בלי תלות בכתיב מלא/חסר, גרשיים ורווחים (תקווה/תקוה, קרית/קריית)"""
+    s = re.sub(r"[\"'\u05f3\u05f4\s\-_.,()]", "", s or "")
+    return s.replace("ו", "").replace("י", "").lower()
+
+
+def _route_ends(long_name):
+    """'ת. מרכזית בני ברק-בני ברק<->ת. מרכזית ירושלים-ירושלים-1#' -> (מוצא, יעד) בניסוח שאפשר להקריא"""
+    parts = (long_name or "").split("<->")
+    a = parts[0] if parts else ""
+    b = parts[1] if len(parts) > 1 else ""
+    b = re.sub(r"-\d+[#\w]*$", "", b.strip()).rstrip("#")
+    return a.strip().replace("-", ", "), b.strip().replace("-", ", ")
+
+
+def parse_transit(spec, transcript=""):
+    """'402 | בני ברק | ירושלים | -' -> מילון. משלים מספר קו / מספר תחנה גם מתוך התמלול עצמו"""
+    out = {"line": "", "from": "", "to": "", "stop": ""}
+    parts = [p.strip().strip(".") for p in (spec or "").split("|")]
+    for k, p in zip(("line", "from", "to", "stop"), parts):
+        if p and p not in ("-", "לא", "אין", "לא ידוע", "לא ידועה"):
+            out[k] = p
+    out["line"] = re.sub(r"[^0-9א-ת]", "", out["line"])[:5]
+    if out["line"] and not re.search(r"\d", out["line"]):
+        out["line"] = ""
+    out["stop"] = re.sub(r"\D", "", out["stop"])[:6]
+    text = transcript or ""
+    if not out["line"]:
+        m = re.search(r"קו\s*(?:מספר\s*)?(\d{1,3})", text)
+        if m:
+            out["line"] = m.group(1)
+    if not out["stop"]:
+        m = re.search(r"תחנה\s*(?:מספר\s*)?(\d{4,6})", text)
+        if m:
+            out["stop"] = m.group(1)
+    return out
+
+
+def _rides_text(route, now):
+    """היציאות הבאות של מסלול אחד מתחנת המוצא שלו"""
+    rides = stride_get("/gtfs_rides/list", {
+        "gtfs_route_id": route["id"],
+        "start_time_from": (now - datetime.timedelta(minutes=3)).isoformat(),
+        "start_time_to": (now + datetime.timedelta(hours=10)).isoformat(),
+        "order_by": "start_time asc", "limit": 8})
+    rides.sort(key=lambda r: str(r.get("start_time", "")))
+    times = [t for t in (_hhmm(r.get("start_time")) for r in rides) if t][:6]
+    a, b = _route_ends(route.get("route_long_name"))
+    head = "קו %s של %s, מ%s ל%s" % (route.get("route_short_name", ""), route.get("agency_name", ""), a, b)
+    if times:
+        return head + ": היציאות הבאות מתחנת המוצא בשעות " + ", ".join(times)
+    return head + ": לפי הלוח אין יותר יציאות היום"
+
+
+def transit_by_stop(code, line=""):
+    now = _il_aware()
+    params = {"gtfs_stop__code": code,
+              "arrival_time_from": (now - datetime.timedelta(minutes=2)).isoformat(),
+              "arrival_time_to": (now + datetime.timedelta(minutes=90)).isoformat(),
+              "order_by": "arrival_time asc", "limit": 80}
+    if line:
+        params["gtfs_route__route_short_name"] = line
+    rows = stride_get("/gtfs_ride_stops/list", params)
+    if not rows:
+        return None
+    rows.sort(key=lambda r: str(r.get("arrival_time", "")))
+    first = rows[0]
+    out = ["תחנה מספר %s: %s, %s" % (code, first.get("gtfs_stop__name", ""), first.get("gtfs_stop__city", "")),
+           "האוטובוסים שמגיעים לתחנה בשעה וחצי הקרובה, לפי לוח הזמנים הרשמי:"]
+    seen = set()
+    for r in rows:
+        rid = r.get("gtfs_ride_id")
+        if rid in seen:
+            continue
+        seen.add(rid)
+        _, dest = _route_ends(r.get("gtfs_route__route_long_name"))
+        out.append("- קו %s (%s) לכיוון %s: בשעה %s" % (r.get("gtfs_route__route_short_name", ""), r.get("gtfs_route__agency_name", ""),
+                                                      dest, _hhmm(r.get("arrival_time"))))
+        if len(out) >= 16:
+            break
+    return "\n".join(out)
+
+
+def transit_by_line(line, frm="", to=""):
+    now = _il_aware()
+    today = now.strftime("%Y-%m-%d")
+    routes = stride_get("/gtfs_routes/list", {"route_short_name": line, "date_from": today, "date_to": today, "limit": 80})
+    if not routes:
+        return None
+    nf, nt = _tnorm(frm), _tnorm(to)
+
+    def score(r):
+        a, b = _route_ends(r.get("route_long_name"))
+        a, b = _tnorm(a), _tnorm(b)
+        s = 0
+        if nf and nf in a:
+            s += 2
+        if nt and nt in b:
+            s += 2
+        if nf and nf in b:
+            s -= 1      # כנראה הכיוון ההפוך
+        if nt and nt in a:
+            s -= 1
+        return s
+    routes.sort(key=lambda r: -score(r))
+    if nf or nt:
+        best = score(routes[0])
+        chosen = [r for r in routes if score(r) == best][:3]
+    else:
+        chosen = routes[:4]
+    out = ["תוצאות לקו %s (לפי לוח הזמנים הרשמי של היום):" % line]
+    texts = run_parallel([(lambda r=r: _rides_text(r, now)) for r in chosen], 10)
+    out += ["- " + t for t in texts if t]
+    # אם המתקשר עולה באמצע המסלול (לא בתחנת המוצא) - מתי הקו עובר בעיר שלו
+    if frm and chosen:
+        try:
+            ids = set(r["id"] for r in chosen)
+            rows = stride_get("/gtfs_ride_stops/list", {
+                "gtfs_route__route_short_name": line, "gtfs_stop__city": frm,
+                "arrival_time_from": (now - datetime.timedelta(minutes=2)).isoformat(),
+                "arrival_time_to": (now + datetime.timedelta(hours=3)).isoformat(),
+                "order_by": "arrival_time asc", "limit": 200})
+            first_by_ride = {}
+            for r in sorted(rows, key=lambda x: str(x.get("arrival_time", ""))):
+                if r.get("gtfs_ride__gtfs_route_id") in ids and r.get("gtfs_ride_id") not in first_by_ride:
+                    first_by_ride[r.get("gtfs_ride_id")] = r
+            if first_by_ride:
+                items = list(first_by_ride.values())[:6]
+                out.append("- הקו עובר ב%s (בתחנה %s) בשעות: %s" % (
+                    frm, items[0].get("gtfs_stop__name", ""), ", ".join(_hhmm(r.get("arrival_time")) for r in items)))
+        except Exception as e:
+            print("transit mid-route error:", str(e)[:120])
+    return "\n".join(out) if len(out) > 1 else None
+
+
+def transit_by_places(frm, to):
+    now = _il_aware()
+    today = now.strftime("%Y-%m-%d")
+    routes = stride_get("/gtfs_routes/list", {"route_long_name_contains": to, "date_from": today, "date_to": today, "limit": 600}, timeout=12)
+    nf, nt = _tnorm(frm), _tnorm(to)
+    found, seen = [], set()
+    for r in routes:
+        a, b = _route_ends(r.get("route_long_name"))
+        if nf in _tnorm(a) and nt in _tnorm(b):
+            k = (r.get("route_short_name"), r.get("agency_name"))
+            if k in seen:
+                continue
+            seen.add(k)
+            found.append(r)
+    if not found:
+        return None
+    out = ["קווים ישירים מ%s ל%s לפי לוח הזמנים הרשמי: %s" % (
+        frm, to, ", ".join("קו %s של %s" % (r.get("route_short_name", ""), r.get("agency_name", "")) for r in found[:10]))]
+    texts = run_parallel([(lambda r=r: _rides_text(r, now)) for r in found[:3]], 10)
+    out += ["- " + t for t in texts if t]
+    return "\n".join(out)
+
+
+def transit_lookup(spec, transcript=""):
+    """מחזיר טקסט עם נתוני תחבורה ציבורית, או None אם אין מספיק פרטים / לא נמצא"""
+    p = parse_transit(spec, transcript)
+    key = json.dumps(p, sort_keys=True, ensure_ascii=False)
+    cached = TRANSIT_CACHE.get(key)
+    if cached and time.time() - cached[0] < TRANSIT_CACHE_TTL:
+        return cached[1]
+    t0 = time.time()
+    res = None
+    try:
+        if p["stop"]:
+            res = transit_by_stop(p["stop"], p["line"])
+        if not res and p["line"]:
+            res = transit_by_line(p["line"], p["from"], p["to"])
+        if not res and p["from"] and p["to"]:
+            res = transit_by_places(p["from"], p["to"])
+        _search_note("transit", bool(res), "" if res else "לא נמצא במאגר: %s" % key)
+    except Exception as e:
+        _search_note("transit", False, e)
+        print("transit error:", str(e)[:150])
+        res = None
+    print("timing: transit %.1fs - %s - %s" % (time.time() - t0, key, "found" if res else "nothing"))
+    if res:
+        TRANSIT_CACHE[key] = (time.time(), res)
+        if len(TRANSIT_CACHE) > 200:
+            for k in sorted(TRANSIT_CACHE, key=lambda x: TRANSIT_CACHE[x][0])[:80]:
+                TRANSIT_CACHE.pop(k, None)
+    return res
 
 
 # ============================================================ חיפוש באינטרנט
@@ -1097,7 +1348,8 @@ def grounded_answer(system, contents):
 
 
 def answer_with_search(assistant, history, transcript, search_line="", query=""):
-    """שלב חיפוש: מזג אוויר -> Open-Meteo. אחרת חיפוש גוגל של Gemini ומנועים חינמיים + קריאת אתרים - במקביל"""
+    """שלב חיפוש: מזג אוויר -> Open-Meteo. תחבורה ציבורית -> מאגר משרד התחבורה.
+    אחרת חיפוש גוגל של Gemini ומנועים חינמיים + קריאת אתרים - במקביל"""
     base = assistant["prompt"] + GENERAL_RULES + context_line(assistant)
     q = (query or transcript or "").strip()
     t0 = time.time()
@@ -1109,6 +1361,25 @@ def answer_with_search(assistant, history, transcript, search_line="", query="")
             ans = gemini(sys_w, list(history) + [{"role": "user", "parts": [{"text": "השאלה: %s\n\nתחזית מזג אוויר:\n%s" % (transcript, w)}]}])
             if ans:
                 return ans
+    if "תחבור" in search_line:
+        spec = search_line.split(":", 1)[1].strip() if ":" in search_line else ""
+        try:
+            tr = call_with_deadline(lambda: transit_lookup(spec, transcript), 14)
+        except Exception as e:
+            print("transit step error:", str(e)[:120])
+            tr = None
+        if tr:
+            sys_t = base + (" קיבלת נתוני תחבורה ציבורית ממאגר משרד התחבורה: לוח הזמנים הרשמי של היום."
+                            " ענה לפי המידע הזה בלבד: מספר הקו, החברה, הכיוון והשעות. תן את שלוש או ארבע השעות הקרובות, לא יותר."
+                            " אם יש כמה כיוונים או כמה קווים ולא ברור לאיזה המתקשר התכוון, אמור את העיקר ושאל בקצרה לאיזה כיוון."
+                            " ציין במילים ספורות שאלו זמנים לפי לוח הזמנים, ושייתכנו עיכובים. קצר ומתאים להקראה בטלפון.")
+            ans = gemini(sys_t, list(history) + [{"role": "user", "parts": [{"text": "השאלה: %s\nהשעה עכשיו: %s\n\nנתוני תחבורה:\n%s" % (
+                transcript, il_now().strftime("%H:%M"), tr)}]}], prefer_strong=True)
+            if ans:
+                print("search: answered by transit data in %.1fs" % (time.time() - t0))
+                return ans
+        # לא נמצא במאגר - ממשיכים לחיפוש הרגיל באינטרנט (עם זמן מלא משלו)
+        t0 = time.time()
     newsy = any(w in (transcript + " " + q) for w in NEWS_WORDS)
     contents = list(history) + [{"role": "user", "parts": [{"text": transcript}]}]
     sys_g = base + (" חפש באינטרנט, בכל אתר שצריך: חדשות, תחבורה ציבורית ולוחות זמנים, מוזיקה, חנויות, מחירים, שעות פתיחה."
@@ -1171,20 +1442,30 @@ def ask_ai(assistant, history, file_name):
         return "", "none", "סליחה, לא הצלחתי לשמוע את ההקלטה. נסה שוב."
     print("timing: download %.1fs" % (time.time() - t0))
     _bg(yemot_delete, file_name + ".wav")
+    t0 = time.time()
+    audio = clean_audio(audio)     # סינון רעשים והגברה - ה-AI שומע הרבה יותר טוב ומבין נכון את השאלה
+    print("timing: clean audio %.1fs" % (time.time() - t0))
 
     others = "; ".join("%s = %s (מילים: %s)" % (a["id"], a["name"], a.get("keywords", "")) for _, a in active_assistants() if a["id"] != assistant["id"])
     system = assistant["prompt"] + GENERAL_RULES + context_line(assistant) + (
-        " תקבל הקלטה של מה שהמשתמש אמר עכשיו. ההקלטה היא משיחת טלפון באיכות נמוכה (8 קילוהרץ), בעברית מדוברת,"
+        " תקבל הקלטה של מה שהמשתמש אמר עכשיו. ההקלטה היא משיחת טלפון באיכות נמוכה, בעברית מדוברת,"
         " לפעמים עם רעשי רקע. הקשב בתשומת לב מלאה, והשתמש בהקשר של השיחה ובתחום של העוזר כדי להשלים מילים לא ברורות"
         " (שמות של זמרים, מלחינים, מקומות, מונחים). אם משהו באמת לא ברור, שאל בקצרה במקום לנחש."
+        " סדר העבודה: קודם תמלל בדיוק מה נאמר, אחר כך בדוק מה בדיוק המשתמש שואל או מבקש, ורק אז ענה - על זה ולא על משהו אחר."
+        " אם בתמלול חסרות מילים חשובות או שהוא לא הגיוני, אל תענה על ניחוש - בקש בתשובה לחזור על השאלה."
         " ענה בדיוק בפורמט הבא, ארבע שורות:\n"
         "תמלול: <תמלול מדויק של ההקלטה>\n"
         "פעולה: <אחת מהאפשרויות: none | menu | end | voice | switch:מזהה>\n"
-        "חיפוש: <לא | כן: מילות חיפוש קצרות וברורות כמו שכותבים בגוגל | מזג אוויר: שם המקום באנגלית>."
-        " כן = כשהתשובה דורשת חיפוש באינטרנט: המשתמש ביקש לחפש או לבדוק, או שצריך מידע עדכני - מחירים, חדשות, תחבורה ציבורית"
-        " (קווי אוטובוס, רכבות, לוחות זמנים), שעות פתיחה, תוצאות, שירים ואלבומים חדשים, מה קורה עכשיו."
-        " למשל: כן: קו 402 בני ברק ירושלים לוח זמנים. אם השאלה על מזג האוויר, כתוב: מזג אוויר: ואז שם העיר באנגלית (למשל: מזג אוויר: Bnei Brak).\n"
-        "תשובה: <התשובה שלך למשתמש. אם חיפוש = כן, כתוב כאן רק: מחפש>\n"
+        "חיפוש: <לא | כן: מילות חיפוש קצרות וברורות כמו שכותבים בגוגל | מזג אוויר: שם המקום באנגלית"
+        " | תחבורה: מספר קו | עיר או תחנת מוצא | עיר יעד | מספר תחנה>."
+        " תחבורה = כל שאלה על אוטובוסים: מתי יוצא קו, מתי מגיע, אילו קווים נוסעים ממקום למקום, מה מגיע לתחנה."
+        " כתוב ארבעה חלקים מופרדים בקו |, שמות ערים בעברית כמו שכותבים אותם, ובמקום פרט שלא נאמר כתוב -."
+        " מספר תחנה הוא המספר של 5 ספרות שכתוב על שלט התחנה. דוגמאות: תחבורה: 402 | בני ברק | ירושלים | -"
+        " או: תחבורה: - | - | - | 21345 או: תחבורה: - | אלעד | בני ברק | -."
+        " כן = כשהתשובה דורשת חיפוש באינטרנט: המשתמש ביקש לחפש או לבדוק, או שצריך מידע עדכני - מחירים, חדשות, רכבות,"
+        " שעות פתיחה, תוצאות, שירים ואלבומים חדשים, מה קורה עכשיו."
+        " אם השאלה על מזג האוויר, כתוב: מזג אוויר: ואז שם העיר באנגלית (למשל: מזג אוויר: Bnei Brak).\n"
+        "תשובה: <התשובה שלך למשתמש. אם צריך חיפוש (כן / מזג אוויר / תחבורה), כתוב כאן רק: מחפש>\n"
         "כללי הפעולה: menu אם ביקש לחזור לתפריט. end אם ביקש לסיים או להתנתק או אמר להתראות. "
         "voice אם ביקש להחליף קול. switch:מזהה אם ביקש לעבור לעוזר אחר מהרשימה: " + others + ". "
         "אחרת none. כשהפעולה אינה none, כתוב בתשובה משפט קצר מתאים (למשל: בטח, מעביר אותך)."
@@ -1194,7 +1475,7 @@ def ask_ai(assistant, history, file_name):
         "parts": [{"text": "ההקלטה של המשתמש:"}, types.Part.from_bytes(data=audio, mime_type="audio/wav")],
     }]
     t0 = time.time()
-    raw = gemini(system, contents)
+    raw = gemini(system, contents, prefer_strong=True)
     print("timing: gemini(audio) %.1fs" % (time.time() - t0))
     if not raw:
         return "", "none", T("error")
@@ -1203,12 +1484,17 @@ def ask_ai(assistant, history, file_name):
     query = ""
     if m:
         transcript, action, search_line, answer = m.group(1).strip(), m.group(2).strip().lower(), m.group(3).strip(), m.group(4).strip()
-        need_search = ("כן" in search_line) or ("מזג" in search_line)
-        if "כן" in search_line and ":" in search_line:
+        need_search = ("כן" in search_line) or ("מזג" in search_line) or ("תחבור" in search_line)
+        if "כן" in search_line and ":" in search_line and "תחבור" not in search_line:
             query = search_line.split(":", 1)[1].strip().strip(".")
     else:
         transcript, action, search_line = "", "none", ""
         answer = re.sub(r"^(תמלול|פעולה|חיפוש|תשובה)\s*:\s*", "", raw.strip())
+    if not need_search and transcript and action == "none" and any(w in transcript + " " for w in TRANSIT_WORDS):
+        tp = parse_transit("", transcript)
+        if tp["line"] or tp["stop"]:
+            need_search = True    # שאלה על קו או תחנה שהבינה לא סימנה - בודקים במאגר התחבורה
+            search_line = "תחבורה: "
     if not need_search and transcript and action == "none" and any(w in transcript + " " for w in FORCE_SEARCH_WORDS):
         need_search = True        # המשתמש ביקש במפורש לחפש - מחפשים גם אם הבינה לא סימנה
     if need_search and transcript and action == "none":
@@ -1909,10 +2195,11 @@ def api_diag():
         timed(lambda: search_bing("חדשות היום", 3)),
         timed(lambda: search_news("ישראל", 3)),
         timed(lambda: fetch_page_text("https://he.wikipedia.org/wiki/%D7%99%D7%A8%D7%95%D7%A9%D7%9C%D7%99%D7%9D")),
+        timed(lambda: transit_lookup("1 | - | - | -")),
     ], 24)
     if not res[0] or not res[0].get("ok"):
         SEARCH_STATE["ground_until"] = max(was_paused, SEARCH_STATE["ground_until"])
-    labels = ["google", "ddg", "bing", "news", "pages"]
+    labels = ["google", "ddg", "bing", "news", "pages", "transit"]
     for k, r in zip(labels, res):
         err = (SEARCH_STATE["last"].get(k) or {}).get("error", "")
         out[k] = r or {"ok": False, "error": "לא ענה בזמן"}
@@ -1926,6 +2213,21 @@ def api_diag():
     out["wiki"] = {"ok": bool(wiki_search("ישי ריבו")), "seconds": round(time.time() - t0, 1)}
     out["model_status"] = {m: ("לא קיים" if MODEL_STATUS.get(m, {}).get("dead") else ("מכסה" if not model_ok(m) else "ok")) for m in MODELS}
     return J(out)
+
+
+@app.route("/api/test_transit")
+def api_test_transit():
+    """בדיקה ידנית של מאגר התחבורה מהדפדפן, למשל: /api/test_transit?q=402 | בני ברק | ירושלים | -"""
+    g = api_guard()
+    if g:
+        return g
+    q = request.args.get("q", "402 | בני ברק | ירושלים | -")
+    t0 = time.time()
+    try:
+        r = transit_lookup(q)
+        return J({"ok": bool(r), "seconds": round(time.time() - t0, 1), "result": r or "", "parsed": parse_transit(q)})
+    except Exception as e:
+        return J({"ok": False, "seconds": round(time.time() - t0, 1), "error": str(e)[:300]})
 
 
 @app.route("/api/test_tts", methods=["POST"])
