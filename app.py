@@ -1304,46 +1304,59 @@ def web_search(query, max_results=6):
     return "\n".join("- %s: %s (%s)" % (r.get("title", ""), r.get("body", ""), r.get("href", "")) for r in hits)
 
 
+SEARCH_MODEL_UNTIL = {}     # מודל -> זמן שעד אליו לא מנסים בו חיפוש גוגל (המכסה שלו נגמרה)
+GROUND_TOTAL = 26           # שניות מקסימום לכל סבב חיפוש גוגל, על כל המודלים יחד
+
+
 def grounded_answer(system, contents):
-    """חיפוש גוגל המובנה של Gemini. מודל אחד בכל פעם (לא כמה במקביל) כדי לא לשרוף את המכסה היומית החינמית"""
+    """חיפוש גוגל המובנה של Gemini. מודל אחד בכל פעם (לא כמה במקביל) כדי לא לשרוף את המכסה היומית החינמית.
+    אם למודל אחד נגמרה מכסת החיפוש - עוברים למודל הבא ברשימה, עד שאחד מצליח או שכולם נוסו.
+    מודל שהמכסה שלו נגמרה לא מנוסה שוב בחיפוש במשך רבע שעה (רק הוא, לא כל השאר)."""
     if time.time() < SEARCH_STATE["ground_until"]:
         return None
-    order = [m for m in MODELS if model_ok(m)]
+    now = time.time()
+    order = [m for m in MODELS if model_ok(m) and now > SEARCH_MODEL_UNTIL.get(m, 0)]
     order.sort(key=lambda m: 1 if "lite" in m else 0)          # לחיפוש - מודל מלא קודם, הוא מחפש טוב יותר
     pref = SETTINGS.get("model", "")
     if pref and pref in order:
         order = [pref] + [m for m in order if m != pref]
-    quota_hits, tried = 0, 0
-    for m in order[:2]:
-        tried += 1
+    if not order:
+        _search_note("google", False, "המכסה החינמית של חיפוש גוגל נגמרה בכל המודלים זמנית")
+        return None
+    t_start = time.time()
+    for m in order:
+        left = GROUND_TOTAL - (time.time() - t_start)
+        if left < 3:
+            break
         known = MODEL_THINK.get(m, "level")
         thinks = [known] + [t for t in ("level", "budget", None) if t != known]
         for think in thinks:
             try:
-                text = call_with_deadline(lambda m=m, think=think: _one_call(m, system, contents, True, think), 18)
+                text = call_with_deadline(lambda m=m, think=think: _one_call(m, system, contents, True, think), min(18, left))
                 if text:
                     _search_note("google", True)
+                    print("google search: answered by %s" % m)
                     return text
                 break
             except Exception as e:
                 msg = str(e)
                 print("google search failed (%s think=%s): %s" % (m, think, msg[:140]))
                 if "RESOURCE_EXHAUSTED" in msg or "429" in msg[:8] or "quota" in msg.lower():
-                    quota_hits += 1
-                    _search_note("google", False, "המכסה החינמית של חיפוש גוגל נגמרה זמנית")
+                    SEARCH_MODEL_UNTIL[m] = time.time() + 900       # רק המודל הזה בהפסקה; ממשיכים למודל הבא
+                    _search_note("google", False, "המכסה החינמית של חיפוש גוגל נגמרה זמנית ב-%s" % m)
                     break
                 if "NOT_FOUND" in msg or "no longer available" in msg:
                     _note_failure(m, True, msg)
                     break
                 if isinstance(e, Deadline):
-                    _search_note("google", False, "חיפוש גוגל לא ענה בזמן")
+                    _search_note("google", False, "חיפוש גוגל לא ענה בזמן (%s)" % m)
                     break
                 if "thinking" not in msg.lower() and "level" not in msg.lower() and "budget" not in msg.lower():
                     _search_note("google", False, msg)
                     break
-    if tried and quota_hits >= tried:
-        SEARCH_STATE["ground_until"] = time.time() + 900      # רבע שעה בלי חיפוש גוגל; המנועים החינמיים ממשיכים לעבוד
-        print("google search: quota exhausted, pausing 15 minutes")
+    left_models = [m for m in MODELS if model_ok(m) and time.time() > SEARCH_MODEL_UNTIL.get(m, 0)]
+    if not left_models:
+        print("google search: quota exhausted on all models, free engines continue")
     return None
 
 
@@ -1964,7 +1977,8 @@ def api_state():
         "models": [{"name": m, "ok": model_ok(m), "dead": bool(MODEL_STATUS.get(m, {}).get("dead"))}
                    for m in ([SETTINGS["model"]] if SETTINGS.get("model") else []) + [x for x in MODELS if x != SETTINGS.get("model")]],
         "search": {"sources": SEARCH_STATE["last"],
-                   "google_paused_min": max(0, round((SEARCH_STATE["ground_until"] - time.time()) / 60))},
+                   "google_paused_min": max(0, round((SEARCH_STATE["ground_until"] - time.time()) / 60)),
+                   "google_paused_models": {m: max(1, round((u - time.time()) / 60)) for m, u in SEARCH_MODEL_UNTIL.items() if u > time.time()}},
         "live": live_data(),
     })
 
@@ -2189,6 +2203,7 @@ def api_diag():
         return run
     was_paused = SEARCH_STATE["ground_until"]
     SEARCH_STATE["ground_until"] = 0      # בבדיקה מנסים את חיפוש גוגל גם אם הוא בהפסקה
+    SEARCH_MODEL_UNTIL.clear()            # ...ובכל המודלים, כדי לראות אם יש מודל שהחיפוש עדיין זמין בו
     res = run_parallel([
         timed(lambda: grounded_answer("ענה במשפט אחד קצר בעברית.", [{"role": "user", "parts": [{"text": "מה הכותרת הראשית בחדשות בישראל היום?"}]}])),
         timed(lambda: search_ddgs("חדשות היום", 3)),
