@@ -136,7 +136,12 @@ SETTINGS = {
     "record_max": 25,               # שניות הקלטה מקסימום
     "model": "",                    # מודל מועדף (ריק = אוטומטי: הראשון ברשימה)
     "vocab": "",                    # שמות ומונחים כלליים שעוזרים ל-AI להבין את ההקלטות (למשל שמות של חברים, מקומות)
-    "wait_music": "trance",         # מנגינה בזמן ההמתנה לתשובה: trance / bells / custom / off
+    "wait_music": "trance",         # מנגינה בזמן ההמתנה לתשובה: trance / bells / custom / yemot / off
+    "shabbat_mode": "on",           # סגירה אוטומטית בשבת ובחג: on / off
+    "shabbat_city": "בני ברק",      # לפי איזו עיר מחשבים שקיעה, ובאיזו עיר עונים על זמני היום כשלא אמרו עיר
+    "shabbat_before": 30,           # כמה דקות לפני השקיעה בערב שבת/חג הקו נסגר
+    "shabbat_after": 50,            # כמה דקות אחרי השקיעה במוצאי שבת/חג הקו נפתח
+    "keep_rec_days": 3,             # כמה ימים לשמור את ההקלטות של המתקשרים כדי לשמוע אותן באתר (0 = לא לשמור)
 }
 
 # כל הנוסחים שהקו אומר - ניתנים לעריכה באתר הניהול. {name} = שם המתקשר, {assistant} = שם העוזר
@@ -158,6 +163,7 @@ TEXTS = {
     "goodbye": "להתראות {name}",
     "error": "סליחה, יש בעיה זמנית. נסה שוב",
     "not_understood": "לא הבנתי, אפשר לחזור על זה?",
+    "closed": "הקו סגור ב{holiday}, ויחזור לפעול בשעה {time}",
 }
 
 GENERAL_RULES = (
@@ -653,6 +659,232 @@ def hold_mode():
 
 
 threading.Thread(target=setup_wait_music, daemon=True).start()
+
+
+# ============================================================ זמני היום, שבת וחג
+# חישוב אסטרונומי מקומי (בלי אינטרנט ובלי ספריות נוספות). דיוק של כדקה מול לוחות השנה.
+# שבת וחג: הקו נסגר לבד מכמה דקות לפני השקיעה בערב שבת/חג ועד כמה דקות אחרי השקיעה במוצאי שבת/חג.
+ZMANIM_WORDS = ("זמני היום", "שקיעה", "השקיעה", "זריחה", "הזריחה", "נץ", "קריאת שמע", "ק\"ש", "סוף זמן", "הדלקת נרות",
+                "כניסת שבת", "כניסת השבת", "נכנסת שבת", "צאת שבת", "צאת השבת", "יציאת שבת", "יוצאת שבת", "מוצאי שבת",
+                "צאת הכוכבים", "חצות", "מנחה גדולה", "מנחה קטנה", "פלג המנחה", "עלות השחר", "זמן תפילה", "זמן תפילין",
+                "כניסת החג", "צאת החג", "יציאת החג")
+
+
+def sun_time(day, lat, lon, depression, rising):
+    """מתי השמש נמצאת X מעלות מתחת לאופק, בבוקר או בערב (זריחה/שקיעה = 0.833). מחזיר שעון ישראל או None"""
+    import math
+    zen = 90.0 + depression
+    n = day.timetuple().tm_yday
+    lng_hour = lon / 15.0
+    t = n + ((6 if rising else 18) - lng_hour) / 24.0
+    UT = None
+    for _ in range(2):
+        M = (0.9856 * t) - 3.289
+        L = (M + 1.916 * math.sin(math.radians(M)) + 0.020 * math.sin(math.radians(2 * M)) + 282.634) % 360
+        RA = math.degrees(math.atan(0.91764 * math.tan(math.radians(L)))) % 360
+        RA = (RA + (math.floor(L / 90) * 90 - math.floor(RA / 90) * 90)) / 15.0
+        sin_dec = 0.39782 * math.sin(math.radians(L))
+        cos_dec = math.cos(math.asin(sin_dec))
+        cos_h = (math.cos(math.radians(zen)) - sin_dec * math.sin(math.radians(lat))) / (cos_dec * math.cos(math.radians(lat)))
+        if cos_h > 1 or cos_h < -1:
+            return None
+        H = (360 - math.degrees(math.acos(cos_h))) if rising else math.degrees(math.acos(cos_h))
+        T = H / 15.0 + RA - (0.06571 * t) - 6.622
+        UT = (T - lng_hour) % 24
+        t = n + UT / 24.0
+    base = datetime.datetime(day.year, day.month, day.day, tzinfo=datetime.timezone.utc)
+    return (base + datetime.timedelta(hours=UT)).astimezone(ZoneInfo("Asia/Jerusalem"))
+
+
+def place_of(city):
+    """עיר -> (שם, קו רוחב, קו אורך). ברירת מחדל: העיר שבהגדרות"""
+    c = (city or "").strip().strip(".") or SETTINGS.get("shabbat_city", "בני ברק") or "בני ברק"
+    try:
+        g = geocode(c)
+        if g:
+            return g
+    except Exception:
+        pass
+    return CITIES["בני ברק"]
+
+
+def day_zmanim(day, lat, lon):
+    """רשימת (שם הזמן, שעה) ליום אחד"""
+    rise, sset = sun_time(day, lat, lon, 0.833, True), sun_time(day, lat, lon, 0.833, False)
+    alot, tzeit16 = sun_time(day, lat, lon, 16.1, True), sun_time(day, lat, lon, 16.1, False)
+    mish, tzeit = sun_time(day, lat, lon, 11.5, True), sun_time(day, lat, lon, 8.5, False)
+    if not (rise and sset):
+        return []
+    gra = (sset - rise) / 12
+    out = [("עלות השחר", alot), ("זמן ציצית ותפילין (משיכיר)", mish), ("הנץ החמה (זריחה)", rise)]
+    if alot and tzeit16:
+        mga = (tzeit16 - alot) / 12
+        out.append(("סוף זמן קריאת שמע לפי המגן אברהם", alot + mga * 3))
+    out.append(("סוף זמן קריאת שמע לפי הגר\"א", rise + gra * 3))
+    if alot and tzeit16:
+        out.append(("סוף זמן תפילה לפי המגן אברהם", alot + mga * 4))
+    out += [("סוף זמן תפילה לפי הגר\"א", rise + gra * 4), ("חצות היום", rise + gra * 6),
+            ("מנחה גדולה", rise + gra * 6.5), ("מנחה קטנה", rise + gra * 9.5), ("פלג המנחה", rise + gra * 10.75),
+            ("שקיעה", sset), ("צאת הכוכבים", tzeit), ("צאת הכוכבים לרבנו תם (72 דקות)", sset + datetime.timedelta(minutes=72))]
+    return [(n, t) for n, t in out if t]
+
+
+def holy_name(day):
+    """אם היום (לפי התאריך האזרחי) הוא שבת או יום טוב - השם שלו, אחרת ריק"""
+    names_ = []
+    if HAVE_HEB:
+        try:
+            f = hebdates.GregorianDate(day.year, day.month, day.day).to_heb().festival(israel=True, hebrew=True, include_working_days=False)
+            if f:
+                names_.append(f)
+        except Exception as e:
+            print("festival error:", str(e)[:80])
+    if day.weekday() == 5:
+        names_.insert(0, "שבת")
+    return " ו".join(names_)
+
+
+def holy_windows(start_day, days=16):
+    """חלונות הסגירה הקרובים: [(התחלה, סוף, שם)], ימים צמודים (שבת+חג) מאוחדים לחלון אחד"""
+    name_, lat, lon = place_of(SETTINGS.get("shabbat_city", ""))
+    before = datetime.timedelta(minutes=int(SETTINGS.get("shabbat_before", 30) or 0))
+    after = datetime.timedelta(minutes=int(SETTINGS.get("shabbat_after", 50) or 0))
+    wins = []
+    for i in range(-1, days):
+        d = start_day + datetime.timedelta(days=i)
+        nm = holy_name(d)
+        if not nm:
+            continue
+        st = sun_time(d - datetime.timedelta(days=1), lat, lon, 0.833, False) - before
+        en = sun_time(d, lat, lon, 0.833, False) + after
+        if wins and st <= wins[-1][1] + datetime.timedelta(hours=1):
+            wins[-1] = (wins[-1][0], en, wins[-1][2] if nm in wins[-1][2] else wins[-1][2] + " ו" + nm)
+        else:
+            wins.append((st, en, nm))
+    return wins
+
+
+_shabbat_cache = {"t": 0, "v": None}
+
+
+def shabbat_status():
+    """{closed, name, until, next_name, next_start, next_end} - נשמר בזיכרון לדקה"""
+    if time.time() - _shabbat_cache["t"] < 60 and _shabbat_cache["v"]:
+        return _shabbat_cache["v"]
+    now = datetime.datetime.now(ZoneInfo("Asia/Jerusalem"))
+    out = {"enabled": SETTINGS.get("shabbat_mode", "on") == "on", "closed": False, "festivals": HAVE_HEB}
+    try:
+        for st, en, nm in holy_windows(now.date()):
+            if st <= now < en:
+                out.update(closed=True, name=nm, until=en.strftime("%H:%M"), until_day=en.strftime("%d/%m"))
+            elif st > now and "next_start" not in out:
+                out.update(next_name=nm, next_start=st.strftime("%d/%m %H:%M"), next_end=en.strftime("%d/%m %H:%M"))
+    except Exception as e:
+        out["error"] = str(e)[:150]
+        print("shabbat status error:", out["error"])
+    _shabbat_cache.update(t=time.time(), v=out)
+    return out
+
+
+def line_closed():
+    """(סגור עכשיו?, טקסט ההודעה)"""
+    st = shabbat_status()
+    if st.get("enabled") and st.get("closed"):
+        return True, T("closed", holiday=st.get("name", "שבת"), time=st.get("until", ""))
+    return False, ""
+
+
+def zmanim_text(spec="", transcript=""):
+    """זמני היום לעיר ותאריך, + זמני השבת/החג הקרובים. spec: 'עיר | יום'"""
+    parts = [p.strip() for p in (spec or "").split("|")]
+    city = parts[0] if parts and parts[0] not in ("", "-") else ""
+    when = parts[1] if len(parts) > 1 else ""
+    text = (transcript or "") + " " + when
+    if not city:
+        for c in sorted({k for k in CITIES if re.search(r"[א-ת]", k)}, key=len, reverse=True):
+            if c in transcript:
+                city = c
+                break
+    name_, lat, lon = place_of(city)
+    today = il_now().date()
+    m = re.search(r"(\d{4})-(\d{1,2})-(\d{1,2})", when)
+    if m:
+        day = datetime.date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+    elif "מחרתיים" in text:
+        day = today + datetime.timedelta(days=2)
+    elif "מחר" in text:
+        day = today + datetime.timedelta(days=1)
+    else:
+        day = today
+    lines = ["מיקום: %s%s" % (name_, "" if city else " (ברירת המחדל של הקו, המתקשר לא אמר עיר)")]
+    heb = ""
+    if HAVE_HEB:
+        try:
+            heb = " (" + hebdates.GregorianDate(day.year, day.month, day.day).to_heb().hebrew_date_string() + ")"
+        except Exception:
+            pass
+    days_he = ["שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת", "ראשון"]
+    lines.append("זמני היום ליום %s %s%s:" % (days_he[day.weekday()], day.strftime("%d/%m/%Y"), heb))
+    for n, t in day_zmanim(day, lat, lon):
+        lines.append("- %s: %s" % (n, t.strftime("%H:%M")))
+    # השבת או החג הקרובים
+    for i in range(0, 12):
+        d = today + datetime.timedelta(days=i)
+        nm = holy_name(d)
+        if not nm:
+            continue
+        eve = d - datetime.timedelta(days=1)
+        if holy_name(eve):
+            continue
+        sset = sun_time(eve, lat, lon, 0.833, False)
+        last = d
+        while holy_name(last + datetime.timedelta(days=1)):
+            last += datetime.timedelta(days=1)
+        end_set = sun_time(last, lat, lon, 0.833, False)
+        end_tz = sun_time(last, lat, lon, 8.5, False)
+        if "ירושלים" in name_:
+            candles = "הדלקת נרות (מנהג ירושלים, 40 דקות לפני השקיעה): %s" % (sset - datetime.timedelta(minutes=40)).strftime("%H:%M")
+        else:
+            candles = ("הדלקת נרות: המנהג משתנה ממקום למקום - 20 דקות לפני השקיעה: %s, 30 דקות לפני: %s, 40 דקות לפני: %s"
+                       % tuple((sset - datetime.timedelta(minutes=x)).strftime("%H:%M") for x in (20, 30, 40)))
+        lines.append("%s הקרוב/ה (%s): שקיעה בערב %s בשעה %s. %s. יציאה (צאת הכוכבים): %s, לרבנו תם: %s." % (
+            nm, d.strftime("%d/%m"), days_he[eve.weekday()], sset.strftime("%H:%M"), candles,
+            end_tz.strftime("%H:%M") if end_tz else "", (end_set + datetime.timedelta(minutes=72)).strftime("%H:%M")))
+        break
+    return "\n".join(lines)
+
+
+# ============================================================ הקלטות לבדיקה
+def keep_days():
+    try:
+        return max(0, int(SETTINGS.get("keep_rec_days", 3) or 0))
+    except (ValueError, TypeError):
+        return 0
+
+
+def recordings_cleanup():
+    """מוחק מימות הקלטות ישנות מכמה ימים שהוגדרו (עד 40 בכל סבב)"""
+    days = keep_days()
+    cutoff = il_now() - datetime.timedelta(days=days)
+    todo = []
+    with _lock:
+        for l in LOG:
+            if l.get("rec"):
+                try:
+                    t = datetime.datetime.strptime(l["time"], "%d/%m/%Y %H:%M")
+                except Exception:
+                    continue
+                if days == 0 or t < cutoff:
+                    todo.append(l)
+                    if len(todo) >= 40:
+                        break
+        for l in todo:
+            rec = l.pop("rec", "")
+            if rec:
+                _bg(yemot_delete, rec + ".wav")
+    if todo:
+        save_log()
+        print("recordings: deleted %d old" % len(todo))
 
 
 # ============================================================ קול טבעי
@@ -1593,6 +1825,22 @@ def answer_with_search(assistant, history, transcript, search_line="", query="")
             ans = gemini(sys_w, list(history) + [{"role": "user", "parts": [{"text": "השאלה: %s\n\nתחזית מזג אוויר:\n%s" % (transcript, w)}]}])
             if ans:
                 return ans
+    if "זמנים" in search_line:
+        spec = search_line.split(":", 1)[1].strip() if ":" in search_line else ""
+        try:
+            zt = zmanim_text(spec, transcript)
+        except Exception as e:
+            print("zmanim error:", str(e)[:120])
+            zt = None
+        if zt:
+            sys_z = base + (" קיבלת זמני היום שחושבו במדויק לפי מיקום השמש. ענה רק לפי המידע הזה, ורק על מה שנשאל:"
+                            " אם שאלו על זמן אחד - תן רק אותו, עם שם העיר. אם יש כמה שיטות (גר\"א ומגן אברהם) אמור את שתיהן בקצרה."
+                            " בהדלקת נרות, אם המקום אינו ירושלים, אמור שהמנהג משתנה ממקום למקום ותן את הזמנים לפי 20, 30 ו-40 דקות."
+                            " אם המתקשר לא אמר עיר, ציין לאיזו עיר הזמנים ושאפשר לשאול על עיר אחרת. קצר ומתאים להקראה בטלפון.")
+            ans = gemini(sys_z, list(history) + [{"role": "user", "parts": [{"text": "השאלה: %s\n\n%s" % (transcript, zt)}]}], prefer_strong=True)
+            if ans:
+                print("search: answered by zmanim in %.1fs" % (time.time() - t0))
+                return ans
     if "תחבור" in search_line:
         spec = search_line.split(":", 1)[1].strip() if ":" in search_line else ""
         try:
@@ -1673,7 +1921,8 @@ def ask_ai(assistant, history, file_name):
         print("download error:", e)
         return "", "none", "סליחה, לא הצלחתי לשמוע את ההקלטה. נסה שוב."
     print("timing: download %.1fs" % (time.time() - t0))
-    _bg(yemot_delete, file_name + ".wav")
+    if keep_days() == 0:
+        _bg(yemot_delete, file_name + ".wav")      # אחרת ההקלטה נשמרת כמה ימים, כדי שאפשר יהיה לשמוע אותה באתר
     t0 = time.time()
     audio = clean_audio(audio)     # סינון רעשים והגברה - ה-AI שומע הרבה יותר טוב ומבין נכון את השאלה
     print("timing: clean audio %.1fs" % (time.time() - t0))
@@ -1689,7 +1938,9 @@ def ask_ai(assistant, history, file_name):
         "תמלול: <תמלול מדויק של ההקלטה>\n"
         "פעולה: <אחת מהאפשרויות: none | menu | end | voice | switch:מזהה>\n"
         "חיפוש: <לא | כן: מילות חיפוש קצרות וברורות כמו שכותבים בגוגל | מזג אוויר: שם המקום באנגלית"
-        " | תחבורה: מספר קו | עיר או תחנת מוצא | עיר יעד | מספר תחנה>."
+        " | תחבורה: מספר קו | עיר או תחנת מוצא | עיר יעד | מספר תחנה | זמנים: עיר בעברית | היום / מחר / תאריך>."
+        " זמנים = כל שאלה על זמני היום: שקיעה, זריחה, נץ, סוף זמן קריאת שמע ותפילה, חצות, מנחה, פלג המנחה, צאת הכוכבים,"
+        " הדלקת נרות, כניסת ויציאת שבת או חג. למשל: זמנים: ירושלים | מחר. אם לא נאמרה עיר כתוב: זמנים: - | היום."
         " תחבורה = כל שאלה על אוטובוסים: מתי יוצא קו, מתי מגיע, אילו קווים נוסעים ממקום למקום, מה מגיע לתחנה."
         " כתוב ארבעה חלקים מופרדים בקו |, שמות ערים בעברית כמו שכותבים אותם, ובמקום פרט שלא נאמר כתוב -."
         " מספר תחנה הוא המספר של 5 ספרות שכתוב על שלט התחנה. דוגמאות: תחבורה: 402 | בני ברק | ירושלים | -"
@@ -1697,7 +1948,7 @@ def ask_ai(assistant, history, file_name):
         " כן = כשהתשובה דורשת חיפוש באינטרנט: המשתמש ביקש לחפש או לבדוק, או שצריך מידע עדכני - מחירים, חדשות, רכבות,"
         " שעות פתיחה, תוצאות, שירים ואלבומים חדשים, מה קורה עכשיו."
         " אם השאלה על מזג האוויר, כתוב: מזג אוויר: ואז שם העיר באנגלית (למשל: מזג אוויר: Bnei Brak).\n"
-        "תשובה: <התשובה שלך למשתמש. אם צריך חיפוש (כן / מזג אוויר / תחבורה), כתוב כאן רק: מחפש>\n"
+        "תשובה: <התשובה שלך למשתמש. אם צריך חיפוש (כן / מזג אוויר / תחבורה / זמנים), כתוב כאן רק: מחפש>\n"
         "כללי הפעולה: menu אם ביקש לחזור לתפריט. end אם ביקש לסיים או להתנתק או אמר להתראות. "
         "voice אם ביקש להחליף קול. switch:מזהה אם ביקש לעבור לעוזר אחר מהרשימה: " + others + ". "
         "אחרת none. כשהפעולה אינה none, כתוב בתשובה משפט קצר מתאים (למשל: בטח, מעביר אותך)."
@@ -1716,8 +1967,8 @@ def ask_ai(assistant, history, file_name):
     query = ""
     if m:
         transcript, action, search_line, answer = m.group(1).strip(), m.group(2).strip().lower(), m.group(3).strip(), m.group(4).strip()
-        need_search = ("כן" in search_line) or ("מזג" in search_line) or ("תחבור" in search_line)
-        if "כן" in search_line and ":" in search_line and "תחבור" not in search_line:
+        need_search = ("כן" in search_line) or ("מזג" in search_line) or ("תחבור" in search_line) or ("זמנים" in search_line)
+        if "כן" in search_line and ":" in search_line and "תחבור" not in search_line and "זמנים" not in search_line:
             query = search_line.split(":", 1)[1].strip().strip(".")
     else:
         transcript, action, search_line = "", "none", ""
@@ -1727,6 +1978,10 @@ def ask_ai(assistant, history, file_name):
         if tp["line"] or tp["stop"]:
             need_search = True    # שאלה על קו או תחנה - קודם מאגר התחבורה, גם אם הבינה סימנה חיפוש רגיל
             search_line = "תחבורה: "
+    if transcript and action == "none" and "תחבור" not in search_line and "זמנים" not in search_line and "מזג" not in search_line \
+            and any(w in transcript for w in ZMANIM_WORDS):
+        need_search = True        # שאלה על זמני היום - עונים מחישוב מדויק, לא מהזיכרון של הבינה
+        search_line = "זמנים: "
     if not need_search and transcript and action == "none" and any(w in transcript + " " for w in FORCE_SEARCH_WORDS):
         need_search = True        # המשתמש ביקש במפורש לחפש - מחפשים גם אם הבינה לא סימנה
     if need_search and transcript and action == "none":
@@ -1860,6 +2115,10 @@ def ai_worker(pending, state, assistant, history, file_name, call_id, voice_idx)
     try:
         transcript, action, answer = ask_ai(assistant, history, file_name)
         state["pending_q"], state["pending_a"] = transcript, answer   # מוצג באתר עוד לפני שהקול מוכן
+        if keep_days() and transcript:
+            pending["rec"] = file_name          # ההקלטה נשמרת כמה ימים - אפשר לשמוע אותה באתר
+        elif keep_days():
+            _bg(yemot_delete, file_name + ".wav")
         tts = None
         if action in ("none", "voice") or action.startswith("switch"):
             v = voice_idx
@@ -1889,6 +2148,10 @@ def cleanup_loop():
                     calls.pop(cid, None)
         except Exception as e:
             print("cleanup error:", e)
+        try:
+            recordings_cleanup()
+        except Exception as e:
+            print("recordings cleanup error:", e)
         time.sleep(600)
 
 
@@ -1928,6 +2191,15 @@ def yemot():
             with _lock:
                 calls.pop(call_id, None)
             return R(build_combined_action([build_id_list_message([("text", T("blocked"))]), build_go_to_folder("hangup")]))
+        try:
+            closed, closed_msg = line_closed()
+        except Exception as e:
+            print("shabbat check error:", e)
+            closed = False
+        if closed:      # שבת או חג - הודעה וניתוק (שיחה שכבר התחילה לפני הכניסה ממשיכה כרגיל)
+            with _lock:
+                calls.pop(call_id, None)
+            return R(build_combined_action([build_id_list_message([("text", closed_msg)]), build_go_to_folder("hangup")]))
 
     if state["played"]:
         for f in state["played"]:
@@ -2022,7 +2294,7 @@ def yemot():
             state["history"] = state["history"][-12:]
             with _lock:
                 LOG.append({"time": now_str(), "phone": phone, "name": name, "call": call_id,
-                            "persona": assistant["name"], "q": transcript, "a": answer})
+                            "persona": assistant["name"], "q": transcript, "a": answer, "rec": pending.get("rec", "")})
                 del LOG[:-LOG_MAX]
             save_log()
 
@@ -2207,6 +2479,7 @@ def api_state():
         "charts": {"per_day": per_day, "per_assistant": sorted(per_a.items(), key=lambda x: -x[1])[:8],
                    "top_users": [[users.get(p, p), n] for p, n in sorted(per_user.items(), key=lambda x: -x[1])[:10]]},
         "voices": voice_list(), "mail": bool(MAIL_USER and MAIL_PASS), "mail_to": MAIL_TO, "owners": OWNER_PHONES,
+        "shabbat": shabbat_status(), "cities": sorted({k for k in CITIES if re.search(r"[א-ת]", k)}),
         "models": [{"name": m, "ok": model_ok(m), "dead": bool(MODEL_STATUS.get(m, {}).get("dead"))}
                    for m in ([SETTINGS["model"]] if SETTINGS.get("model") else []) + [x for x in MODELS if x != SETTINGS.get("model")]],
         "search": {"sources": SEARCH_STATE["last"],
@@ -2278,6 +2551,17 @@ def api_settings():
     SETTINGS["vocab"] = clean_for_tts(str(d.get("vocab", "")))[:1500]
     wm = str(d.get("wait_music", "trance"))
     SETTINGS["wait_music"] = "trance" if wm == "on" else (wm if wm in ("trance", "bells", "custom", "yemot", "off") else "trance")
+    if "shabbat_mode" in d:
+        SETTINGS["shabbat_mode"] = "off" if d.get("shabbat_mode") == "off" else "on"
+    if "shabbat_city" in d:
+        SETTINGS["shabbat_city"] = clean_for_tts(str(d.get("shabbat_city") or "בני ברק"))[:40] or "בני ברק"
+    if "shabbat_before" in d:
+        SETTINGS["shabbat_before"] = num("shabbat_before", 0, 120, 30)
+    if "shabbat_after" in d:
+        SETTINGS["shabbat_after"] = num("shabbat_after", 0, 180, 50)
+    if "keep_rec_days" in d:
+        SETTINGS["keep_rec_days"] = num("keep_rec_days", 0, 30, 3)
+    _shabbat_cache["t"] = 0
     save_settings()
     return J({"ok": True})
 
@@ -2461,6 +2745,23 @@ def api_diag():
     out["weather"] = {"ok": bool(weather_lookup("Bnei Brak")), "seconds": round(time.time() - t0, 1)}
     t0 = time.time()
     out["wiki"] = {"ok": bool(wiki_search("ישי ריבו")), "seconds": round(time.time() - t0, 1)}
+    try:
+        nm, lat, lon = place_of(SETTINGS.get("shabbat_city", ""))
+        ss = sun_time(il_now().date(), lat, lon, 0.833, False)
+        out["zmanim"] = {"ok": bool(ss), "answer": "שקיעה היום ב%s: %s" % (nm, ss.strftime("%H:%M") if ss else "?")}
+    except Exception as e:
+        out["zmanim"] = {"ok": False, "error": str(e)[:200]}
+    _shabbat_cache["t"] = 0
+    st = shabbat_status()
+    if st.get("enabled"):
+        if st.get("error"):
+            out["shabbat"] = {"ok": False, "error": st["error"]}
+        else:
+            msg = ("סגור עכשיו (%s) עד %s" % (st.get("name"), st.get("until"))) if st.get("closed") else \
+                  ("ייסגר ב%s לכבוד %s" % (st.get("next_start", "?"), st.get("next_name", "")))
+            out["shabbat"] = {"ok": True, "answer": msg}
+            if not st.get("festivals"):
+                out["shabbat"] = {"ok": False, "answer": msg, "error": "רק שבתות: חסרה הספרייה pyluach ב-requirements.txt, ולכן חגים לא מזוהים"}
     st = music_style()
     if st in WAIT_FILES:
         name = WAIT_FILES[st]
@@ -2486,6 +2787,45 @@ def api_test_transit():
         return J({"ok": bool(r), "seconds": round(time.time() - t0, 1), "result": r or "", "parsed": parse_transit(q)})
     except Exception as e:
         return J({"ok": False, "seconds": round(time.time() - t0, 1), "error": str(e)[:300]})
+
+
+@app.route("/api/rec")
+def api_rec():
+    """השמעת הקלטה של מתקשר באתר הניהול (מורידים מימות וממירים לפורמט שכל דפדפן מנגן)"""
+    g = api_guard()
+    if g:
+        return g
+    f = request.args.get("f", "")
+    if not re.match(r"^ai_[0-9A-Za-z_]+$", f):
+        return J({"error": "bad name"}, 400)
+    try:
+        data = yemot_download(f + ".wav")
+    except Exception as e:
+        return J({"error": str(e)[:200]}, 502)
+    if len(data) < 500 or data[:40].lstrip().startswith(b"{"):
+        return J({"error": "ההקלטה כבר נמחקה"}, 404)
+    if HAVE_TTS:
+        try:
+            ff = imageio_ffmpeg.get_ffmpeg_exe()
+            p = subprocess.run([ff, "-loglevel", "error", "-i", "pipe:0", "-ar", "16000", "-ac", "1", "-acodec", "pcm_s16le", "-f", "wav", "pipe:1"],
+                               input=data, capture_output=True, timeout=20)
+            if p.returncode == 0 and len(p.stdout) > 500:
+                data = p.stdout
+        except Exception as e:
+            print("rec convert error:", str(e)[:100])
+    return Response(data, mimetype="audio/wav", headers={"Cache-Control": "private, max-age=3600"})
+
+
+@app.route("/api/test_zmanim")
+def api_test_zmanim():
+    """בדיקה מהדפדפן: /api/test_zmanim?city=ירושלים&day=מחר"""
+    g = api_guard()
+    if g:
+        return g
+    try:
+        return J({"ok": True, "result": zmanim_text("%s | %s" % (request.args.get("city", "-"), request.args.get("day", "היום")))})
+    except Exception as e:
+        return J({"ok": False, "error": str(e)[:300]})
 
 
 @app.route("/api/test_tts", methods=["POST"])
