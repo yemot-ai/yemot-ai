@@ -646,6 +646,9 @@ mark{background:var(--or);color:#000;border-radius:3px;padding:0 2px}
               <div class="ph"><h3>קול</h3>
                 <label class="switch"><input type="checkbox" id="se_tts"><i></i><span>קול טבעי</span></label></div>
               <p class="mu" style="margin-top:-6px;font-size:13px">כשהקול הטבעי כבוי, הקו משתמש בהקראה של ימות המשיח. זה מהיר יותר אבל פחות טבעי.</p>
+              <label class="f"><span>מנגינה בזמן ההמתנה לתשובה</span><select id="se_wait_music">
+                <option value="trance">טראנס, בלי מילים</option><option value="bells">פעמונים רכים</option><option value="custom">מנגינה משלי (ai_wait_music.wav)</option><option value="off">בלי מנגינה, רק ״רק רגע״</option></select>
+                <small>מתנגנת אחרי ״רק רגע״. למנגינה משלך: מעלים לשלוחה בימות קובץ בשם ai_wait_music.wav, ועד שהוא עולה מתנגן טראנס.</small></label>
               <div id="voiceList"></div>
               <div class="row" style="margin-top:8px">
                 <input type="text" id="voiceAdd" list="voiceSug" placeholder="שם קול להוספה" style="flex:1;direction:ltr;text-align:left">
@@ -1257,7 +1260,7 @@ function loadEditors(force){
   if(force||!dirty.assist)A=JSON.parse(JSON.stringify(S.assistants));
   if(force||!dirty.texts)TX=Object.assign({},S.texts);
   if(force||!dirty.settings){const s=S.settings;SE={announcement:s.announcement||'',tts:s.tts||'on',voices:(s.voices||'').split(',').map(x=>x.trim()).filter(Boolean),daily_limit:s.daily_limit,record_max:s.record_max,
-    unlimited:(s.unlimited_phones||'').split(',').filter(Boolean),blocked:(s.blocked_phones||'').split(',').filter(Boolean),mail_hour:s.mail_hour,model:s.model||'',vocab:s.vocab||''}}
+    unlimited:(s.unlimited_phones||'').split(',').filter(Boolean),blocked:(s.blocked_phones||'').split(',').filter(Boolean),mail_hour:s.mail_hour,model:s.model||'',vocab:s.vocab||'',wait_music:(s.wait_music==='on'||!s.wait_music)?'trance':s.wait_music}}
   if(force)dirty={assist:false,texts:false,settings:false};
 }
 function setDirty(k){dirty[k]=true;updateSavebar()}
@@ -1353,6 +1356,7 @@ function renderSettings(){
   bind('announcement','announcement');bind('daily_limit','daily_limit',1);bind('record_max','record_max',1);bind('mail_hour','mail_hour',1);bind('vocab','vocab');
   $('#vocabCnt').textContent=(s.vocab||'').length+'/1500';
   const tt=$('#se_tts');tt.checked=s.tts==='on';tt.onchange=()=>{s.tts=tt.checked?'on':'off';setDirty('settings')};
+  const wm=$('#se_wait_music');wm.value=s.wait_music;wm.onchange=()=>{s.wait_music=wm.value;setDirty('settings')};
   const m=$('#se_model');const models=(S.models||[]).map(x=>x.name);if(s.model&&!models.includes(s.model))models.unshift(s.model);
   m.innerHTML='<option value="">אוטומטי (מומלץ)</option>'+models.map(x=>`<option value="${H(x)}">${H(x)}</option>`).join('');m.value=s.model;m.onchange=()=>{s.model=m.value;setDirty('settings')};
   $('#se_unlimited').innerHTML=chips('unlimited');$('#se_blocked').innerHTML=chips('blocked');
@@ -1378,7 +1382,7 @@ function addVoice(){const v=$('#voiceAdd').value.trim();if(!v)return;if(!/^[a-z]
 async function saveSettings(){
   const s=SE;if(!s.voices.length)return toast('צריך לפחות קול אחד',true);
   await api('/api/settings',{announcement:s.announcement,tts:s.tts,voices:s.voices.join(','),daily_limit:s.daily_limit,record_max:s.record_max,
-    unlimited_phones:s.unlimited.join(','),blocked_phones:s.blocked.join(','),mail_hour:s.mail_hour,model:s.model,vocab:s.vocab});
+    unlimited_phones:s.unlimited.join(','),blocked_phones:s.blocked.join(','),mail_hour:s.mail_hour,model:s.model,vocab:s.vocab,wait_music:s.wait_music});
   dirty.settings=false;await refresh();loadEditors(false);renderSettings();updateSavebar();toast('ההגדרות נשמרו')
 }
 
@@ -1482,7 +1486,7 @@ function renderSystem(){
   $('#modelsList').innerHTML=M.length?M.map((m,i)=>`<div class="mrow"><span class="mu2 num" style="width:18px">${i+1}</span><code>${H(m.name)}</code>${S.settings.model===m.name?'<span class="tag or">מועדף</span>':''}${gp[m.name]?`<span class="tag" title="חיפוש גוגל במודל הזה מושהה כי נגמרה המכסה">חיפוש מושהה ${gp[m.name]} דק׳</span>`:''}${m.dead?'<span class="tag red">לא קיים</span>':m.ok?'<span class="tag green">זמין</span>':'<span class="tag gold">המכסה נגמרה זמנית</span>'}</div>`).join(''):'<div class="empty">עדיין לא התקבלה רשימת מודלים</div>';
   const tv=$('#ttsVoice'),cur=tv.value;tv.innerHTML=(S.voices||[]).map(v=>`<option>${H(v)}</option>`).join('');if(cur)tv.value=cur;
 }
-const DIAG={gemini:'הבינה (Gemini)',tts:'קול טבעי',yemot:'חיבור לימות המשיח',search:'חיפוש באינטרנט (בסך הכל)',transit:'תחבורה ציבורית',google:'חיפוש גוגל של Gemini',ddg:'מנועי חיפוש משולבים',bing:'חיפוש בינג',news:'חדשות עדכניות',pages:'קריאת תוכן מאתרים',weather:'מזג אוויר',wiki:'ויקיפדיה'};
+const DIAG={gemini:'הבינה (Gemini)',tts:'קול טבעי',yemot:'חיבור לימות המשיח',search:'חיפוש באינטרנט (בסך הכל)',transit:'תחבורה ציבורית',google:'חיפוש גוגל של Gemini',ddg:'מנועי חיפוש משולבים',bing:'חיפוש בינג',news:'חדשות עדכניות',pages:'קריאת תוכן מאתרים',weather:'מזג אוויר',wiki:'ויקיפדיה',wait_music:'מנגינת המתנה'};
 const CRIT=['gemini','yemot','search'];
 const WHY={
   gemini:'הקו לא יכול לענות. בדוק את GEMINI_API_KEY ב-Render, או שנגמרה המכסה בכל המודלים.',
@@ -1493,13 +1497,14 @@ const WHY={
   google:'בדרך כלל המכסה החינמית היומית נגמרה. היא מתחדשת בערך ב-10 בבוקר, ובינתיים המנועים החינמיים עונים.',
   bing:'בינג חוסם בקשות משרתים. המנועים המשולבים כבר כוללים אותו.',
   ddg:'יש מקורות חיפוש אחרים שעונים במקומו.',news:'יש מקורות חיפוש אחרים שעונים במקומו.',pages:'התשובות יתבססו על תקצירי החיפוש בלבד.',
-  weather:'שאלות על מזג אוויר יעברו לחיפוש רגיל.',wiki:'יש מקורות חיפוש אחרים שעונים במקומו.'
+  weather:'שאלות על מזג אוויר יעברו לחיפוש רגיל.',
+  wait_music:'המנגינה שנבחרה לא נמצאת בשלוחה. השרת מעלה את הטראנס והפעמונים לבד כשהוא עולה; מנגינה משלך צריך להעלות בשם ai_wait_music.wav.',wiki:'יש מקורות חיפוש אחרים שעונים במקומו.'
 };
 function ago(ms){const m=Math.round((Date.now()-ms)/60000);if(m<1)return 'עכשיו';if(m<60)return `לפני ${m} דק׳`;const h=Math.round(m/60);if(h<24)return `לפני ${h} שעות`;return `לפני ${Math.round(h/24)} ימים`}
 function renderDiag(d,at){
   const searchOk=d.search&&d.search.ok;
   let h='<div class="tiles" style="margin-top:14px">';
-  for(const k in DIAG){if(!(k in d))continue;const r=d[k]||{};const soft=!r.ok&&!CRIT.includes(k)&&(k==='tts'||k==='weather'||k==='transit'||searchOk);
+  for(const k in DIAG){if(!(k in d))continue;const r=d[k]||{};const soft=!r.ok&&!CRIT.includes(k)&&(k==='tts'||k==='weather'||k==='transit'||k==='wait_music'||searchOk);
     h+=`<div class="tile ${r.ok?'ok':soft?'soft':'fail'}"><div class="tt"><span class="st"></span>${DIAG[k]}</div><div class="td">${r.ok?'תקין':soft?'לא עובד, יש גיבוי':'לא עובד'}${r.seconds!=null?`, ${r.seconds} שניות`:''}${r.answer&&k!=='transit'?`<br>ענה: ״${H(r.answer)}״`:''}${r.error?`<br><span style="direction:ltr;display:inline-block">${H(r.error)}</span>`:''}</div>${!r.ok&&WHY[k]?`<div class="why">${WHY[k]}</div>`:''}</div>`}
   h+='</div><div class="grid g2" style="margin-top:14px"><div class="tile"><div class="tt">משתני סביבה ב-Render</div><div class="td">';
   for(const k in (d.env||{})){if(k==='PYTHON_VERSION')continue;h+=`<div class="row" style="justify-content:space-between"><code dir="ltr">${H(k)}</code>${d.env[k]?'<span class="tag green">מוגדר</span>':'<span class="tag red">חסר</span>'}</div>`}
