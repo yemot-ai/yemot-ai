@@ -647,8 +647,8 @@ mark{background:var(--or);color:#000;border-radius:3px;padding:0 2px}
                 <label class="switch"><input type="checkbox" id="se_tts"><i></i><span>קול טבעי</span></label></div>
               <p class="mu" style="margin-top:-6px;font-size:13px">כשהקול הטבעי כבוי, הקו משתמש בהקראה של ימות המשיח. זה מהיר יותר אבל פחות טבעי.</p>
               <label class="f"><span>מנגינה בזמן ההמתנה לתשובה</span><select id="se_wait_music">
-                <option value="trance">טראנס, בלי מילים</option><option value="bells">פעמונים רכים</option><option value="custom">מנגינה משלי (ai_wait_music.wav)</option><option value="off">בלי מנגינה, רק ״רק רגע״</option></select>
-                <small>מתנגנת אחרי ״רק רגע״. למנגינה משלך: מעלים לשלוחה בימות קובץ בשם ai_wait_music.wav, ועד שהוא עולה מתנגן טראנס.</small></label>
+                <option value="yemot">מוזיקה בהמתנה של ימות (נעצרת מיד כשהתשובה מוכנה)</option><option value="trance">טראנס, בלי מילים</option><option value="bells">פעמונים רכים</option><option value="custom">מנגינה משלי (ai_wait_music.wav)</option><option value="off">בלי מנגינה, רק ״רק רגע״</option></select>
+                <small>במצב ״מוזיקה בהמתנה של ימות״ צריך להוסיף בשלוחה את ההגדרה api_wait_answer_music_on_hold=yes. בשאר המצבים המנגינה מתנגנת עד סופה גם אם התשובה כבר מוכנה. למנגינה משלך: מעלים לשלוחה קובץ בשם ai_wait_music.wav.</small></label>
               <div id="voiceList"></div>
               <div class="row" style="margin-top:8px">
                 <input type="text" id="voiceAdd" list="voiceSug" placeholder="שם קול להוספה" style="flex:1;direction:ltr;text-align:left">
