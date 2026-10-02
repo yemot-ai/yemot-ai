@@ -341,10 +341,10 @@ def yemot_write_text(file_name, text):
         print("write text error:", e)
 
 
-def yemot_upload_file(file_name, data, mime="audio/wav"):
-    """העלאת קובץ קול לשלוחה (multipart)"""
+def yemot_upload_file(file_name, data, mime="audio/wav", full_path=None):
+    """העלאת קובץ קול לשלוחה (multipart). full_path - נתיב מלא אחר (למשל תיקיית מוזיקה בהמתנה)"""
     boundary = "----yemot" + uuid.uuid4().hex
-    fields = {"token": YEMOT_TOKEN, "path": yemot_path(file_name), "convertAudio": "1"}
+    fields = {"token": YEMOT_TOKEN, "path": full_path or yemot_path(file_name), "convertAudio": "1"}
     body = io.BytesIO()
     for k, v in fields.items():
         body.write(("--%s\r\nContent-Disposition: form-data; name=\"%s\"\r\n\r\n%s\r\n" % (boundary, k, v)).encode())
@@ -465,6 +465,11 @@ threading.Thread(target=discover_loop, daemon=True).start()
 #   trance - קטע טראנס אינסטרומנטלי (138 BPM): בס דרום, בס בהיסט, היי-האט וארפג'יו סינתי עם "שאיבה"
 #   bells  - פעמונים רכים
 #   custom - קובץ משלכם: מעלים לשלוחה קובץ בשם ai_wait_music.wav (השרת אף פעם לא דורס אותו)
+#   yemot  - "מוזיקה בהמתנה" של ימות עצמם: ימות מנגנים בזמן שהשרת חושב, והמנגינה נעצרת ברגע שהתשובה מוכנה.
+#            דורש בשלוחה (ext.ini):  api_wait_answer_music_on_hold=yes
+#            השרת מעלה את הטראנס גם לתיקייה /ai_moh, כדי שאפשר יהיה להפוך אותה למוזיקה בהמתנה באתר של ימות
+MOH_FOLDER = "ai_moh"
+HOLD_WAIT = 12        # במצב yemot: כמה שניות השרת "מחזיק" את הבקשה (ימות מנגנים בינתיים). פחות מזמן הניתוק של ימות
 WAIT_FILES = {"trance": "ai_wait_trance", "bells": "ai_wait_bells", "custom": "ai_wait_music"}
 MUSIC_READY = {}      # שם קובץ -> קיים בשלוחה
 
@@ -601,6 +606,17 @@ def setup_wait_music():
                     yemot_upload_file(name + ".wav", maker())
                     time.sleep(2)
                 MUSIC_READY[name] = music_exists(name)
+            if MUSIC_READY.get("ai_wait_trance") and not MUSIC_READY.get("moh"):
+                try:
+                    moh_path = "ivr2:/%s/ai_wait_trance.wav" % MOH_FOLDER
+                    url = YEMOT_API + "DownloadFile?" + urllib.parse.urlencode({"token": YEMOT_TOKEN, "path": moh_path})
+                    with urllib.request.urlopen(url, timeout=20) as r:
+                        have = r.read(2000)
+                    if len(have) < 1000 or have[:40].lstrip().startswith(b"{"):
+                        yemot_upload_file("ai_wait_trance.wav", make_trance(), full_path=moh_path)
+                    MUSIC_READY["moh"] = True
+                except Exception as e:
+                    print("moh folder upload error:", str(e)[:120])
             print("wait music:", MUSIC_READY)
             if all(MUSIC_READY.get(n) for n in makers):
                 return
@@ -629,6 +645,11 @@ def music_file():
 
 def music_on():
     return music_file() is not None
+
+
+def hold_mode():
+    """מצב "מוזיקה בהמתנה של ימות": השרת מחזיק את הבקשה עד שהתשובה מוכנה, וימות מנגנים בינתיים"""
+    return music_style() == "yemot"
 
 
 threading.Thread(target=setup_wait_music, daemon=True).start()
@@ -1083,9 +1104,16 @@ def parse_transit(spec, transcript=""):
         if m:
             out["line"] = m.group(1)
     if not out["stop"]:
-        m = re.search(r"תחנה\s*(?:מספר\s*)?(\d{4,6})", text)
+        m = re.search(r"תחנה\s*(?:מספר\s*)?(\d{4,6})", text) or re.search(r"\b(\d{5})\b", text)
         if m:
             out["stop"] = m.group(1)
+    if text and (not out["to"] or not out["from"]):
+        heb = sorted({k for k in CITIES if re.search(r"[א-ת]", k)}, key=len, reverse=True)
+        for c in heb:
+            if not out["to"] and re.search(r"(?:^|\s)(?:ל|אל\s|עד\s)" + re.escape(c), text):
+                out["to"] = c
+            if not out["from"] and re.search(r"(?:^|\s)(?:מ|מתחנת\s.*?ב)" + re.escape(c), text):
+                out["from"] = c
     return out
 
 
@@ -1105,23 +1133,39 @@ def _rides_text(route, now):
     return head + ": לפי הלוח אין יותר יציאות היום"
 
 
-def transit_by_stop(code, line=""):
+def transit_by_stop(code, line="", to=""):
+    """הקווים שעוברים בתחנה. מחפש קודם בשלוש השעות הקרובות; אם אין כמעט כלום (לילה, שבת) - עד 14 שעות קדימה,
+    כך שגם "מתי האוטובוס הראשון" מקבל תשובה"""
     now = _il_aware()
-    params = {"gtfs_stop__code": code,
-              "arrival_time_from": (now - datetime.timedelta(minutes=2)).isoformat(),
-              "arrival_time_to": (now + datetime.timedelta(minutes=90)).isoformat(),
-              "order_by": "arrival_time asc", "limit": 80}
-    if line:
-        params["gtfs_route__route_short_name"] = line
-    rows = stride_get("/gtfs_ride_stops/list", params)
+    rows = []
+    for hours, limit in ((3, 120), (14, 300)):
+        params = {"gtfs_stop__code": code,
+                  "arrival_time_from": (now - datetime.timedelta(minutes=2)).isoformat(),
+                  "arrival_time_to": (now + datetime.timedelta(hours=hours)).isoformat(),
+                  "order_by": "arrival_time asc", "limit": limit}
+        if line:
+            params["gtfs_route__route_short_name"] = line
+        rows = stride_get("/gtfs_ride_stops/list", params, timeout=12)
+        if len(rows) >= 4:
+            break
     if not rows:
         return None
     rows.sort(key=lambda r: str(r.get("arrival_time", "")))
     first = rows[0]
+    nt = _tnorm(to)
+    picked, note = rows, ""
+    if nt:
+        match = [r for r in rows if nt in _tnorm(_route_ends(r.get("gtfs_route__route_long_name"))[1])]
+        if match:
+            picked, note = match, " (רק קווים שנוסעים ל%s)" % to
+        else:
+            note = " (לא נמצא קו מהתחנה הזו שהיעד הסופי שלו הוא %s, הנה כל הקווים)" % to
+    first_time = _hhmm(picked[0].get("arrival_time"))
     out = ["תחנה מספר %s: %s, %s" % (code, first.get("gtfs_stop__name", ""), first.get("gtfs_stop__city", "")),
-           "האוטובוסים שמגיעים לתחנה בשעה וחצי הקרובה, לפי לוח הזמנים הרשמי:"]
+           "השעה עכשיו: %s. האוטובוס הבא/הראשון מהתחנה: %s." % (now.strftime("%H:%M"), first_time),
+           "האוטובוסים הקרובים בתחנה לפי לוח הזמנים הרשמי%s:" % note]
     seen = set()
-    for r in rows:
+    for r in picked:
         rid = r.get("gtfs_ride_id")
         if rid in seen:
             continue
@@ -1129,7 +1173,7 @@ def transit_by_stop(code, line=""):
         _, dest = _route_ends(r.get("gtfs_route__route_long_name"))
         out.append("- קו %s (%s) לכיוון %s: בשעה %s" % (r.get("gtfs_route__route_short_name", ""), r.get("gtfs_route__agency_name", ""),
                                                       dest, _hhmm(r.get("arrival_time"))))
-        if len(out) >= 16:
+        if len(out) >= 18:
             break
     return "\n".join(out)
 
@@ -1220,7 +1264,7 @@ def transit_lookup(spec, transcript=""):
     res = None
     try:
         if p["stop"]:
-            res = transit_by_stop(p["stop"], p["line"])
+            res = transit_by_stop(p["stop"], p["line"], p["to"])
         if not res and p["line"]:
             res = transit_by_line(p["line"], p["from"], p["to"])
         if not res and p["from"] and p["to"]:
@@ -1678,10 +1722,10 @@ def ask_ai(assistant, history, file_name):
     else:
         transcript, action, search_line = "", "none", ""
         answer = re.sub(r"^(תמלול|פעולה|חיפוש|תשובה)\s*:\s*", "", raw.strip())
-    if not need_search and transcript and action == "none" and any(w in transcript + " " for w in TRANSIT_WORDS):
+    if transcript and action == "none" and "תחבור" not in search_line and any(w in transcript + " " for w in TRANSIT_WORDS):
         tp = parse_transit("", transcript)
         if tp["line"] or tp["stop"]:
-            need_search = True    # שאלה על קו או תחנה שהבינה לא סימנה - בודקים במאגר התחבורה
+            need_search = True    # שאלה על קו או תחנה - קודם מאגר התחבורה, גם אם הבינה סימנה חיפוש רגיל
             search_line = "תחבורה: "
     if not need_search and transcript and action == "none" and any(w in transcript + " " for w in FORCE_SEARCH_WORDS):
         need_search = True        # המשתמש ביקש במפורש לחפש - מחפשים גם אם הבינה לא סימנה
@@ -1790,11 +1834,19 @@ def wait_message(state):
     i = state.get("wait_i", 0)
     state["wait_i"] = i + 1
     state["n"] += 1
-    parts = [("text", phrases[i % len(phrases)])]
-    if music_on():
-        parts.append(("file", music_file()))      # "רק רגע" ואז מנגינה קצרה, במקום שקט
+    mf = music_file()
+    if hold_mode():
+        parts = [("text", phrases[i % len(phrases)])]     # ימות ממשיכים לנגן כשהשרת שוב מחזיק את הבקשה
+        gap = 1
+    elif mf:
+        # המנגינה מתחילה מיד; "רק רגע" נאמר לפניה רק בכל פעם שלישית (בפעם השנייה, החמישית...), כדי שלא יחזור שוב ושוב
+        parts = ([("text", phrases[(i // 3) % len(phrases)])] if i % 3 == 1 else []) + [("file", mf)]
+        gap = 1
+    else:
+        parts = [("text", phrases[i % len(phrases)])]
+        gap = 2
     return build_read(parts, mode="tap", val_name="w_%d" % state["n"],
-                      max_digits=1, min_digits=1, sec_wait=2, amount_attempts=1, allow_empty="Ok", empty_val="None")
+                      max_digits=1, min_digits=1, sec_wait=gap, amount_attempts=1, allow_empty="Ok", empty_val="None")
 
 
 def goodbye(call_id, name, state=None):
@@ -1942,14 +1994,17 @@ def yemot():
             state["pending"] = pending
             state["wait_i"] = 0
             _bg(ai_worker, pending, state, assistant, list(state["history"]), state["file"], call_id, state["voice"])
-            pending["event"].wait(11)
+            if hold_mode():
+                pending["event"].wait(HOLD_WAIT)   # ימות מנגנים מוזיקה בהמתנה, ונעצרים ברגע שהתשובה חוזרת
+            elif not music_on():
+                pending["event"].wait(11)      # עם מנגינה - לא מחכים בכלל: המנגינה מתחילה מיד אחרי הסולמית
 
         if not pending["done"]:
             if time.time() - pending["started"] > 75:
                 state["pending"] = None
                 return R(listen(state, T("too_long")))
             if state["wait_i"] > 0:
-                pending["event"].wait(1.5 if music_on() else 6)   # עם מנגינה - המנגינה ממלאת את זמן ההמתנה
+                pending["event"].wait(HOLD_WAIT if hold_mode() else (1.5 if music_on() else 6))   # עם מנגינה - המנגינה ממלאת את זמן ההמתנה
             if not pending["done"]:
                 return R(wait_message(state))
 
@@ -2222,7 +2277,7 @@ def api_settings():
     SETTINGS["model"] = re.sub(r"[^a-z0-9.\-]", "", str(d.get("model", "")).lower())[:60]
     SETTINGS["vocab"] = clean_for_tts(str(d.get("vocab", "")))[:1500]
     wm = str(d.get("wait_music", "trance"))
-    SETTINGS["wait_music"] = "trance" if wm == "on" else (wm if wm in ("trance", "bells", "custom", "off") else "trance")
+    SETTINGS["wait_music"] = "trance" if wm == "on" else (wm if wm in ("trance", "bells", "custom", "yemot", "off") else "trance")
     save_settings()
     return J({"ok": True})
 
