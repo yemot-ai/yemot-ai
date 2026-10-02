@@ -136,6 +136,7 @@ SETTINGS = {
     "record_max": 25,               # שניות הקלטה מקסימום
     "model": "",                    # מודל מועדף (ריק = אוטומטי: הראשון ברשימה)
     "vocab": "",                    # שמות ומונחים כלליים שעוזרים ל-AI להבין את ההקלטות (למשל שמות של חברים, מקומות)
+    "wait_music": "trance",         # מנגינה בזמן ההמתנה לתשובה: trance / bells / custom / off
 }
 
 # כל הנוסחים שהקו אומר - ניתנים לעריכה באתר הניהול. {name} = שם המתקשר, {assistant} = שם העוזר
@@ -457,6 +458,180 @@ try:
 except Exception as _e:
     print('gemini client init error:', _e)
 threading.Thread(target=discover_loop, daemon=True).start()
+
+
+# ============================================================ מנגינת המתנה
+# בזמן שהבינה חושבת, אחרי "רק רגע" מתנגנת מנגינה קצרה בלי מילים. השרת מייצר בעצמו מנגינות מקוריות ומעלה אותן לשלוחה:
+#   trance - קטע טראנס אינסטרומנטלי (138 BPM): בס דרום, בס בהיסט, היי-האט וארפג'יו סינתי עם "שאיבה"
+#   bells  - פעמונים רכים
+#   custom - קובץ משלכם: מעלים לשלוחה קובץ בשם ai_wait_music.wav (השרת אף פעם לא דורס אותו)
+WAIT_FILES = {"trance": "ai_wait_trance", "bells": "ai_wait_bells", "custom": "ai_wait_music"}
+MUSIC_READY = {}      # שם קובץ -> קיים בשלוחה
+
+
+def _wav_bytes(buf, rate, level=0.45):
+    import struct
+    import wave
+    peak = max(abs(x) for x in buf) or 1
+    n = len(buf)
+    fin, fout = int(rate * 0.02), int(rate * 0.15)
+    frames = bytearray()
+    for i, x in enumerate(buf):
+        g = min(1.0, i / fin if fin else 1.0, (n - i) / fout if fout else 1.0)
+        frames += struct.pack("<h", int(x / peak * level * 32767 * g))
+    out = io.BytesIO()
+    w = wave.open(out, "wb")
+    w.setnchannels(1)
+    w.setsampwidth(2)
+    w.setframerate(rate)
+    w.writeframes(bytes(frames))
+    w.close()
+    return out.getvalue()
+
+
+def make_bells():
+    """מנגינת פעמונים רכה ומקורית, כ-4 שניות"""
+    import math
+    rate = 8000
+    notes = [(440.0, 0.0), (523.25, 0.3), (659.25, 0.6), (880.0, 0.9), (783.99, 1.35), (659.25, 1.65),
+             (587.33, 1.95), (659.25, 2.4), (523.25, 2.7), (440.0, 3.0)]
+    total = int(rate * 4.2)
+    buf = [0.0] * total
+    for freq, start in notes:
+        s0 = int(start * rate)
+        for i in range(int(rate * 1.1)):
+            j = s0 + i
+            if j >= total:
+                break
+            t = i / rate
+            env = math.exp(-t * 4.2) * min(1.0, t * 200)
+            buf[j] += env * (math.sin(2 * math.pi * freq * t) + 0.3 * math.sin(2 * math.pi * freq * 2 * t))
+    return _wav_bytes(buf, rate, 0.32)
+
+
+def make_trance():
+    """קטע טראנס מקורי בלי מילים: 2 תיבות ב-138 BPM (כ-3.5 שניות), לה מינור -> פה מז'ור.
+    כל הצלילים בנויים כך שיישמעו גם בקו טלפון (שמעביר רק 300-3400 הרץ): לבס ולתוף יש הרמוניות גבוהות."""
+    import math
+    import random
+    rate = 8000
+    bpm = 138.0
+    s16 = 60.0 / bpm / 4
+    total = int(rate * s16 * 32)
+    buf = [0.0] * total
+    rnd = random.Random(7)
+    two_pi = 2 * math.pi
+
+    def saw(f, t, nyq=3600.0, nmax=9):
+        out = 0.0
+        k = 1
+        while k <= nmax and f * k < nyq:
+            out += math.sin(two_pi * f * k * t) / k
+            k += 1
+        return out
+
+    def add(start, length, fn):
+        s0 = int(start * rate)
+        for i in range(int(length * rate)):
+            j = s0 + i
+            if j >= total:
+                break
+            buf[j] += fn(i / rate)
+
+    A2, F2 = 110.0, 87.31
+    chords = [[440.0, 523.25, 659.25, 880.0], [349.23, 440.0, 523.25, 698.46]]   # Am, F
+    arp = [0, 1, 2, 3, 2, 1, 0, 2, 1, 3, 2, 0, 3, 2, 1, 2]
+    for n in range(32):
+        st = n * s16
+        bar = n // 16
+        if n % 4 == 0:      # בס דרום (קיק) עם "קליק" שנשמע בטלפון
+            def kick(t):
+                f = 50 + 160 * math.exp(-t * 28)
+                ph = two_pi * (50 * t + 160 * (1 - math.exp(-t * 28)) / 28)
+                return 1.1 * math.exp(-t * 9) * (math.sin(ph) + 0.35 * math.sin(2 * ph) + 0.2 * math.sin(3 * ph)) + (0.25 * math.exp(-t * 400) if f else 0)
+            add(st, 0.32, kick)
+        if n % 4 == 2:      # בס בהיסט + היי-האט
+            root = A2 if bar == 0 else F2
+            add(st, s16 * 1.8, lambda t, r=root: 0.55 * min(1.0, t * 300) * math.exp(-t * 6) * saw(r, t, nmax=14))
+            noise = [rnd.uniform(-1, 1) for _ in range(int(rate * 0.06))]
+            add(st, 0.06, lambda t, nz=noise: 0.22 * math.exp(-t * 70) * (nz[int(t * rate)] - nz[int(t * rate) - 1] if int(t * rate) > 0 else 0))
+        f = chords[bar][arp[n % 16]]
+        since_kick = (n % 4) * s16
+
+        def lead(t, f=f, sk=since_kick):
+            pump = 0.3 + 0.7 * min(1.0, (sk + t) / 0.18)                # "שאיבה" מול הקיק
+            env = min(1.0, t * 400) * math.exp(-t * 11)
+            return 0.42 * pump * env * (saw(f, t) + saw(f * 1.006, t) + saw(f * 0.994, t)) / 3
+        add(st, s16 * 1.6, lead)
+    for n in range(0, 32, 2):     # שכבת "פאד" רכה של האקורד
+        st = n * s16
+        bar = n // 16
+        for f in chords[bar][:3]:
+            add(st, s16 * 2, lambda t, f=f: 0.06 * math.sin(two_pi * f * t) * min(1.0, t * 40))
+    # מסנן נמוכים: בטלפון ממילא לא שומעים מתחת ל-300 הרץ, אז העוצמה הולכת לצלילים שכן נשמעים
+    a = 1 / (1 + 2 * math.pi * 260 / rate)
+    for _ in range(2):
+        prev_x = prev_y = 0.0
+        for i, v in enumerate(buf):
+            prev_y = a * (prev_y + v - prev_x)
+            prev_x = v
+            buf[i] = prev_y
+    return _wav_bytes(buf, rate, 0.5)
+
+
+def music_exists(name):
+    try:
+        data = yemot_download(name + ".wav")
+        return len(data) > 1000 and not data[:40].lstrip().startswith(b"{")
+    except Exception:
+        return False
+
+
+def setup_wait_music():
+    if not YEMOT_TOKEN:
+        return
+    makers = {"ai_wait_trance": make_trance, "ai_wait_bells": make_bells}
+    for _ in range(5):
+        try:
+            MUSIC_READY["ai_wait_music"] = music_exists("ai_wait_music")
+            for name, maker in makers.items():
+                if MUSIC_READY.get(name):
+                    continue
+                if not music_exists(name):
+                    yemot_upload_file(name + ".wav", maker())
+                    time.sleep(2)
+                MUSIC_READY[name] = music_exists(name)
+            print("wait music:", MUSIC_READY)
+            if all(MUSIC_READY.get(n) for n in makers):
+                return
+        except Exception as e:
+            print("wait music error:", str(e)[:150])
+        time.sleep(30)
+
+
+def music_style():
+    st = SETTINGS.get("wait_music", "trance")
+    return "trance" if st == "on" else st
+
+
+def music_file():
+    """הקובץ שינוגן בהמתנה, או None. מנגינה משלכם שעוד לא הועלתה -> מנגנים טראנס במקומה"""
+    st = music_style()
+    if st not in WAIT_FILES:
+        return None
+    name = WAIT_FILES[st]
+    if MUSIC_READY.get(name):
+        return name
+    if st == "custom" and MUSIC_READY.get(WAIT_FILES["trance"]):
+        return WAIT_FILES["trance"]
+    return None
+
+
+def music_on():
+    return music_file() is not None
+
+
+threading.Thread(target=setup_wait_music, daemon=True).start()
 
 
 # ============================================================ קול טבעי
@@ -1615,7 +1790,10 @@ def wait_message(state):
     i = state.get("wait_i", 0)
     state["wait_i"] = i + 1
     state["n"] += 1
-    return build_read([("text", phrases[i % len(phrases)])], mode="tap", val_name="w_%d" % state["n"],
+    parts = [("text", phrases[i % len(phrases)])]
+    if music_on():
+        parts.append(("file", music_file()))      # "רק רגע" ואז מנגינה קצרה, במקום שקט
+    return build_read(parts, mode="tap", val_name="w_%d" % state["n"],
                       max_digits=1, min_digits=1, sec_wait=2, amount_attempts=1, allow_empty="Ok", empty_val="None")
 
 
@@ -1771,7 +1949,7 @@ def yemot():
                 state["pending"] = None
                 return R(listen(state, T("too_long")))
             if state["wait_i"] > 0:
-                pending["event"].wait(6)
+                pending["event"].wait(1.5 if music_on() else 6)   # עם מנגינה - המנגינה ממלאת את זמן ההמתנה
             if not pending["done"]:
                 return R(wait_message(state))
 
@@ -2043,6 +2221,8 @@ def api_settings():
     SETTINGS["voices"] = ",".join(csv_list(str(d.get("voices", "")))) or DEFAULT_VOICES
     SETTINGS["model"] = re.sub(r"[^a-z0-9.\-]", "", str(d.get("model", "")).lower())[:60]
     SETTINGS["vocab"] = clean_for_tts(str(d.get("vocab", "")))[:1500]
+    wm = str(d.get("wait_music", "trance"))
+    SETTINGS["wait_music"] = "trance" if wm == "on" else (wm if wm in ("trance", "bells", "custom", "off") else "trance")
     save_settings()
     return J({"ok": True})
 
@@ -2226,6 +2406,14 @@ def api_diag():
     out["weather"] = {"ok": bool(weather_lookup("Bnei Brak")), "seconds": round(time.time() - t0, 1)}
     t0 = time.time()
     out["wiki"] = {"ok": bool(wiki_search("ישי ריבו")), "seconds": round(time.time() - t0, 1)}
+    st = music_style()
+    if st in WAIT_FILES:
+        name = WAIT_FILES[st]
+        MUSIC_READY[name] = music_exists(name)
+        got = music_file()
+        out["wait_music"] = {"ok": bool(got), "answer": got or ""}
+        if not MUSIC_READY[name]:
+            out["wait_music"]["error"] = "הקובץ %s.wav לא נמצא בשלוחה%s" % (name, ", מנגן טראנס במקומו" if got else "")
     out["model_status"] = {m: ("לא קיים" if MODEL_STATUS.get(m, {}).get("dead") else ("מכסה" if not model_ok(m) else "ok")) for m in MODELS}
     return J(out)
 
