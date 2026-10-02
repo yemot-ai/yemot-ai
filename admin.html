@@ -240,6 +240,12 @@ a.btn{text-decoration:none}
 .persona{align-self:center;font-size:12px;color:var(--or2);background:var(--s2);border:1px solid var(--line);padding:1px 12px;border-radius:99px;margin:6px 0}
 mark{background:var(--or);color:#000;border-radius:3px;padding:0 2px}
 .bb.target{outline:2px solid var(--or);outline-offset:3px}
+.play{display:inline-grid;place-items:center;width:26px;height:26px;border-radius:50%;border:1px solid var(--orL);background:var(--s2);color:var(--or2);cursor:pointer;padding:0;vertical-align:middle;margin-inline-start:8px;flex:none}
+.play:hover{border-color:var(--or)}.play.on{background:var(--or);color:#000}
+.bb.u .play{float:left;margin:0 10px 0 0}
+.closedbar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;background:linear-gradient(90deg,#1a1405,#0c0c0c);border:1px solid #4a3c0c;border-radius:var(--r);padding:14px 20px;margin-bottom:16px}
+.closedbar b{font-size:17px;color:var(--warn)}
+.closedbar span{color:var(--mu)}
 
 /* ---------- two-pane conversations ---------- */
 .cv{display:grid;grid-template-columns:340px minmax(0,1fr);gap:16px;height:calc(100vh - 210px);min-height:480px}
@@ -498,6 +504,7 @@ mark{background:var(--or);color:#000;border-radius:3px;padding:0 2px}
 
       <!-- ===== DASHBOARD ===== -->
       <section class="page" id="p-dash">
+        <div class="closedbar" id="closedBar" hidden></div>
         <div class="readout" id="readout"></div>
         <div class="scope">
           <div class="sh"><h3>דופק הקו</h3><span class="rate" id="scopeRate"></span>
@@ -632,8 +639,20 @@ mark{background:var(--or);color:#000;border-radius:3px;padding:0 2px}
                 <label class="f"><span>הודעות ליום לכל מתקשר</span><input type="number" id="se_daily_limit" min="0"><small>0 = בלי הגבלה</small></label>
                 <label class="f"><span>אורך הקלטה מקסימלי (שניות)</span><input type="number" id="se_record_max" min="5" max="120"></label>
               </div>
+              <label class="f"><span>כמה ימים לשמור את ההקלטות של המתקשרים</span><input type="number" id="se_keep_rec_days" min="0" max="30" style="max-width:140px"><small>כדי לשמוע באתר מה המתקשר אמר באמת. 0 = ההקלטות נמחקות מיד, כמו קודם.</small></label>
               <label class="f"><span>מספרים בלי הגבלה</span><div id="se_unlimited"></div></label>
               <label class="f"><span>מספרים חסומים</span><div id="se_blocked"></div></label>
+            </div>
+            <div class="panel">
+              <div class="ph"><h3>שבת וחג</h3><label class="switch"><input type="checkbox" id="se_shabbat_mode"><i></i><span>סגירה אוטומטית</span></label></div>
+              <p class="mu" style="margin-top:-6px;font-size:13px">הקו נסגר לבד בערב שבת וחג ונפתח במוצאי שבת וחג, לפי שעת השקיעה בעיר שנבחרה. מי שמתקשר בזמן הזה שומע הודעה ומתנתק. שיחה שהתחילה לפני הכניסה ממשיכה עד סופה.</p>
+              <label class="f"><span>עיר לחישוב השקיעה (וגם ברירת המחדל כשמתקשר שואל על זמני היום בלי לומר עיר)</span><input type="text" id="se_shabbat_city" list="citySug"></label>
+              <datalist id="citySug"></datalist>
+              <div class="grid g2">
+                <label class="f"><span>הקו נסגר X דקות לפני השקיעה</span><input type="number" id="se_shabbat_before" min="0" max="120"></label>
+                <label class="f"><span>הקו נפתח X דקות אחרי השקיעה במוצאי שבת</span><input type="number" id="se_shabbat_after" min="0" max="180"></label>
+              </div>
+              <p class="mu" id="shabbatState" style="margin:0;font-size:14px"></p>
             </div>
             <div class="panel">
               <div class="ph"><h3>סיכום יומי במייל</h3></div>
@@ -688,6 +707,11 @@ mark{background:var(--or);color:#000;border-radius:3px;padding:0 2px}
               </div>
               <div class="row" style="margin-top:10px"><button class="btn ghost" id="trBtn" onclick="testTransit()">בדוק מה הקו יענה</button><span id="trRes" class="mu"></span></div>
               <div class="tres" id="trOut" hidden></div>
+            </div>
+            <div class="panel">
+              <div class="ph"><h3>בדיקת זמני היום</h3></div>
+              <div class="row"><input type="text" id="zmCity" list="citySug" placeholder="עיר" style="flex:1"><select id="zmDay" style="max-width:140px"><option>היום</option><option>מחר</option><option>מחרתיים</option></select><button class="btn ghost" onclick="testZmanim()">הצג</button></div>
+              <div class="tres" id="zmOut" hidden></div>
             </div>
             <div class="panel">
               <div class="ph"><h3>בדיקת קול</h3></div>
@@ -772,12 +796,12 @@ const PAGES=[['dash','לוח בקרה'],['users','משתמשים'],['conv','שי
 const PID={pad:'assist'};
 const pageId=k=>PID[k]||k;
 
-const TXT_DEF={first_time:"שלום, זו הפעם הראשונה שלך בקו. אמור את שמך הפרטי, ובסיום הקש סולמית",ask_name_again:"אמור את שמך הפרטי, ובסיום הקש סולמית",name_saved:"נעים להכיר {name}, השם נשמר",menu_hello:"שלום {name}.",menu_item:"הקש {digit} ל{assistant}.",menu_end:"הקש 9 לסיום.",enter:"אתה עם {assistant}. דבר אחרי הצפצוף, ובסיום הקש סולמית",listening:"אני מקשיב",not_heard:"לא שמעתי אותך",wait:"רק רגע, עוד רגע, רק שניה, כבר עונה, עוד שניה, רגע אחד",too_long:"סליחה, זה לוקח יותר מדי זמן. אפשר לנסות שוב",limit:"הגעת למכסת ההודעות היומית שלך. אפשר לנסות שוב מחר",blocked:"המספר שלך אינו מורשה להשתמש בקו",voice_changed:"הקול הוחלף",goodbye:"להתראות {name}",error:"סליחה, יש בעיה זמנית. נסה שוב",not_understood:"לא הבנתי, אפשר לחזור על זה?"};
+const TXT_DEF={first_time:"שלום, זו הפעם הראשונה שלך בקו. אמור את שמך הפרטי, ובסיום הקש סולמית",ask_name_again:"אמור את שמך הפרטי, ובסיום הקש סולמית",name_saved:"נעים להכיר {name}, השם נשמר",menu_hello:"שלום {name}.",menu_item:"הקש {digit} ל{assistant}.",menu_end:"הקש 9 לסיום.",enter:"אתה עם {assistant}. דבר אחרי הצפצוף, ובסיום הקש סולמית",listening:"אני מקשיב",not_heard:"לא שמעתי אותך",wait:"רק רגע, עוד רגע, רק שניה, כבר עונה, עוד שניה, רגע אחד",too_long:"סליחה, זה לוקח יותר מדי זמן. אפשר לנסות שוב",limit:"הגעת למכסת ההודעות היומית שלך. אפשר לנסות שוב מחר",blocked:"המספר שלך אינו מורשה להשתמש בקו",voice_changed:"הקול הוחלף",goodbye:"להתראות {name}",error:"סליחה, יש בעיה זמנית. נסה שוב",not_understood:"לא הבנתי, אפשר לחזור על זה?",closed:"הקו סגור ב{holiday}, ויחזור לפעול בשעה {time}"};
 const TXT_GROUPS=[
  ['היכרות ורישום',{first_time:'מתקשר חדש: בקשת שם',ask_name_again:'בקשת שם בפעם נוספת',name_saved:'אחרי שהשם נשמר'}],
  ['תפריט',{menu_hello:'פתיחת התפריט',menu_item:'שורה לכל עוזר',menu_end:'סיום התפריט'}],
  ['בזמן שיחה',{enter:'כניסה לעוזר',listening:'מקשיב (כשאין תשובה להשמיע)',not_heard:'לא נקלטה הקלטה',wait:'הודעות המתנה (מתחלפות, מופרדות בפסיק)',not_understood:'לא הובן',voice_changed:'אחרי החלפת קול'}],
- ['חסימות ותקלות',{limit:'הגעה למכסה היומית',blocked:'מספר חסום',too_long:'התשובה מתעכבת',error:'תקלה זמנית'}],
+ ['חסימות ותקלות',{limit:'הגעה למכסה היומית',blocked:'מספר חסום',too_long:'התשובה מתעכבת',error:'תקלה זמנית',closed:'הקו סגור בשבת או בחג'}],
  ['סיום',{goodbye:'פרידה'}]
 ];
 
@@ -925,6 +949,9 @@ function renderLive(){
   $('#readout').innerHTML=[['עכשיו על הקו',d.active.length,''],['שיחות היום',d.calls_today,cmp(d.calls_today,yCalls)+callsSpark],['הודעות היום',d.msgs_today,cmp(d.msgs_today,yMsgs)+msgsSpark],['משתמשים רשומים',d.users,pendingNotes?`<small>${pendingNotes} הודעות ממתינות</small>`:''],['סך הכל שיחות',d.calls_total,''],['סך הכל הודעות',d.msgs_total,'']]
     .map(([t,v,x])=>`<div><span>${t}</span><b>${Number(v).toLocaleString('he-IL')}</b>${x}</div>`).join('');
   $('#srvTime').textContent='שעון השרת: '+d.time;
+  const sh=S.shabbat||{},cb=$('#closedBar');
+  cb.hidden=!(sh.enabled&&sh.closed);
+  if(!cb.hidden)cb.innerHTML=`<b>הקו סגור עכשיו ל${H(sh.name||'שבת')}</b><span>ייפתח שוב ב-${H(sh.until_day||'')} בשעה ${H(sh.until||'')}. מי שמתקשר שומע הודעה ומתנתק.</span>`;
   const nl=$('#navLive');if(nl){nl.hidden=!d.active.length;nl.textContent=d.active.length}
   document.title=(d.active.length?`(${d.active.length}) `:'')+'מרכזיית הקו';
   const pend={};Object.values(ACT).forEach(a=>{if(a&&a.phone)pend[a.phone]=a});
@@ -1209,7 +1236,7 @@ function renderPane(p){
     if(ck!==lastCall){h+=`<div class="daysep">שיחה ב-${H(m.time)}</div>`;lastCall=ck;lastP=''}
     if(m.persona!==lastP){h+=`<div class="persona">${H(m.persona)}</div>`;lastP=m.persona}
     const k=key(m),fl=!!flags[k],pr=probOf(m);
-    h+=`<div class="bb u" data-k="${H(k)}">${hl(m.q,q)}<small>${H((m.time||'').slice(11))}</small></div><div class="bb m ${fl?'flagged':pr&&!resolved[k]?'prob':''}" title="${pr&&!fl?H(pr):''}">${hl(m.a,q)}<button class="fl" onclick="toggleFlag(${i})" aria-label="${fl?'בטל סימון':'סמן לבדיקה'}" title="${fl?'בטל סימון':'סמן את התשובה לבדיקה'}">${svg(IC.flag,13)}</button></div>`;
+    h+=`<div class="bb u" data-k="${H(k)}">${m.rec?playBtn(m.rec):''}${hl(m.q,q)}<small>${H((m.time||'').slice(11))}</small></div><div class="bb m ${fl?'flagged':pr&&!resolved[k]?'prob':''}" title="${pr&&!fl?H(pr):''}">${hl(m.a,q)}<button class="fl" onclick="toggleFlag(${i})" aria-label="${fl?'בטל סימון':'סמן לבדיקה'}" title="${fl?'בטל סימון':'סמן את התשובה לבדיקה'}">${svg(IC.flag,13)}</button></div>`;
   });
   if(live&&live.state==='מחכה לתשובה'){const pd=Object.values(ACT).find(a=>a&&a.phone===p.phone)||{};
     if(pd.pending_q)h+=`<div class="bb u" style="opacity:.7">${H(pd.pending_q)}<small>עכשיו</small></div>`;
@@ -1260,7 +1287,8 @@ function loadEditors(force){
   if(force||!dirty.assist)A=JSON.parse(JSON.stringify(S.assistants));
   if(force||!dirty.texts)TX=Object.assign({},S.texts);
   if(force||!dirty.settings){const s=S.settings;SE={announcement:s.announcement||'',tts:s.tts||'on',voices:(s.voices||'').split(',').map(x=>x.trim()).filter(Boolean),daily_limit:s.daily_limit,record_max:s.record_max,
-    unlimited:(s.unlimited_phones||'').split(',').filter(Boolean),blocked:(s.blocked_phones||'').split(',').filter(Boolean),mail_hour:s.mail_hour,model:s.model||'',vocab:s.vocab||'',wait_music:(s.wait_music==='on'||!s.wait_music)?'trance':s.wait_music}}
+    unlimited:(s.unlimited_phones||'').split(',').filter(Boolean),blocked:(s.blocked_phones||'').split(',').filter(Boolean),mail_hour:s.mail_hour,model:s.model||'',vocab:s.vocab||'',wait_music:(s.wait_music==='on'||!s.wait_music)?'trance':s.wait_music,
+    shabbat_mode:s.shabbat_mode||'on',shabbat_city:s.shabbat_city||'בני ברק',shabbat_before:s.shabbat_before??30,shabbat_after:s.shabbat_after??50,keep_rec_days:s.keep_rec_days??3}}
   if(force)dirty={assist:false,texts:false,settings:false};
 }
 function setDirty(k){dirty[k]=true;updateSavebar()}
@@ -1326,22 +1354,22 @@ async function saveAssist(){
 
 /* ================= texts ================= */
 function renderTexts(){
-  const sample={name:'משה',assistant:'העוזר הכללי',digit:'1'};
+  const sample={name:'משה',assistant:'העוזר הכללי',digit:'1',holiday:'שבת',time:'19:12'};
   let h='';
   for(const [g,items] of TXT_GROUPS){
     h+=`<h3 style="margin:${h?'26px':'0'} 0 4px;color:var(--or2);font-size:15px">${g}</h3>`;
     for(const k in items){
-      const v=TX[k]??'';const ph=['name','assistant','digit'].filter(x=>TXT_DEF[k].includes('{'+x+'}')||v.includes('{'+x+'}'));
+      const v=TX[k]??'';const ph=['name','assistant','digit','holiday','time'].filter(x=>(TXT_DEF[k]||'').includes('{'+x+'}')||v.includes('{'+x+'}'));
       h+=`<div class="tx-item"><div class="tl"><span>${items[k]}</span><div class="row" style="gap:6px">
         ${ph.map(x=>`<div class="ph-chips"><button onclick="insPh('${k}','${x}')" title="הוסף">{${x}}</button></div>`).join('')}
-        ${v!==TXT_DEF[k]?`<button class="btn ghost sm" onclick="TX['${k}']=TXT_DEF['${k}'];setDirty('texts');renderTexts()">החזר לברירת מחדל</button>`:''}</div></div>
+        ${TXT_DEF[k]!==undefined&&v!==TXT_DEF[k]?`<button class="btn ghost sm" onclick="TX['${k}']=TXT_DEF['${k}'];setDirty('texts');renderTexts()">החזר לברירת מחדל</button>`:''}</div></div>
         <input type="text" id="tx_${k}" value="${H(v)}" oninput="TX['${k}']=this.value;setDirty('texts');pvTx('${k}')">
         <div class="pv" id="pv_${k}">${pvHtml(k,sample)}</div></div>`;
     }
   }
   $('#textsList').innerHTML=h;
 }
-function pvHtml(k,s){s=s||{name:'משה',assistant:'העוזר הכללי',digit:'1'};const v=TX[k]||'';
+function pvHtml(k,s){s=s||{name:'משה',assistant:'העוזר הכללי',digit:'1',holiday:'שבת',time:'19:12'};const v=TX[k]||'';
   if(k==='wait')return 'יתחלפו: '+v.split(',').map(x=>x.trim()).filter(Boolean).map(x=>`<b>${H(x)}</b>`).join(' / ');
   if(!/\{/.test(v))return '';
   return 'יישמע כך: '+H(v).replace(/\{(\w+)\}/g,(m,x)=>s[x]?`<b>${H(s[x])}</b>`:m)}
@@ -1353,6 +1381,10 @@ async function saveTexts(){await api('/api/texts',TX);dirty.texts=false;await re
 function renderSettings(){
   const s=SE;
   const bind=(id,k,num)=>{const el=$('#se_'+id);el.value=s[k];el.oninput=()=>{s[k]=num?+el.value:el.value;setDirty('settings');if(k==='vocab')$('#vocabCnt').textContent=el.value.length+'/1500'}};
+  bind('shabbat_city','shabbat_city');bind('shabbat_before','shabbat_before',1);bind('shabbat_after','shabbat_after',1);bind('keep_rec_days','keep_rec_days',1);
+  const sm=$('#se_shabbat_mode');sm.checked=s.shabbat_mode!=='off';sm.onchange=()=>{s.shabbat_mode=sm.checked?'on':'off';setDirty('settings')};
+  $('#citySug').innerHTML=(S.cities||[]).map(c=>`<option value="${H(c)}">`).join('');
+  $('#shabbatState').innerHTML=shabbatText();
   bind('announcement','announcement');bind('daily_limit','daily_limit',1);bind('record_max','record_max',1);bind('mail_hour','mail_hour',1);bind('vocab','vocab');
   $('#vocabCnt').textContent=(s.vocab||'').length+'/1500';
   const tt=$('#se_tts');tt.checked=s.tts==='on';tt.onchange=()=>{s.tts=tt.checked?'on':'off';setDirty('settings')};
@@ -1382,7 +1414,8 @@ function addVoice(){const v=$('#voiceAdd').value.trim();if(!v)return;if(!/^[a-z]
 async function saveSettings(){
   const s=SE;if(!s.voices.length)return toast('צריך לפחות קול אחד',true);
   await api('/api/settings',{announcement:s.announcement,tts:s.tts,voices:s.voices.join(','),daily_limit:s.daily_limit,record_max:s.record_max,
-    unlimited_phones:s.unlimited.join(','),blocked_phones:s.blocked.join(','),mail_hour:s.mail_hour,model:s.model,vocab:s.vocab,wait_music:s.wait_music});
+    unlimited_phones:s.unlimited.join(','),blocked_phones:s.blocked.join(','),mail_hour:s.mail_hour,model:s.model,vocab:s.vocab,wait_music:s.wait_music,
+    shabbat_mode:s.shabbat_mode,shabbat_city:s.shabbat_city,shabbat_before:s.shabbat_before,shabbat_after:s.shabbat_after,keep_rec_days:s.keep_rec_days});
   dirty.settings=false;await refresh();loadEditors(false);renderSettings();updateSavebar();toast('ההגדרות נשמרו')
 }
 
@@ -1474,11 +1507,40 @@ function renderInsights(){
   $('#insFlags').innerHTML=FL.length?FL.map(([k,f],i)=>probRow(f,'סימנת לבדיקה',`<button class="btn ghost sm" onclick="openMsg(window._flags[${i}][1])">פתח</button><button class="btn ghost sm" onclick="unflag(${i})">הסר</button>`)).join('')
     :'<div class="empty">עוד לא סימנת תשובות. במסך השיחות, עמוד עם העכבר על תשובה ולחץ על הדגל.</div>';
 }
-function probRow(l,r,btns){return `<div class="pr"><div class="pq">${H(l.q)}</div><div class="pb">${btns}</div><div class="pa">${H(l.a)}</div><div class="pm"><span class="tag gold">${H(r)}</span><span>${H(l.name)}</span><span>${H(l.persona)}</span><span>${H(l.time)}</span></div></div>`}
+function probRow(l,r,btns){if(l.rec)btns=playBtn(l.rec)+btns;return `<div class="pr"><div class="pq">${H(l.q)}</div><div class="pb">${btns}</div><div class="pa">${H(l.a)}</div><div class="pm"><span class="tag gold">${H(r)}</span><span>${H(l.name)}</span><span>${H(l.persona)}</span><span>${H(l.time)}</span></div></div>`}
 function resolveP(i){const p=window._probs[i];if(!p)return;const k=key(p.l);if(resolved[k])delete resolved[k];else resolved[k]=1;store.set('yai_resolved',resolved);renderInsights();updateNavBadges()}
 function unflag(i){const f=window._flags[i];if(!f)return;delete flags[f[0]];store.set('yai_flags',flags);renderInsights()}
 function topicGo(i){const t=window._topics[i];if(!t)return;const w=Object.entries(t.w).sort((a,b)=>b[1]-a[1])[0];if(w)searchConv(w[0]);else go('conv')}
 function searchConv(w){resetConv(true);$('#cq').value=w;convPhone='';convLimit=150;go('conv')}
+
+/* ================= recordings & shabbat ================= */
+let player=null,playingF='';
+function playBtn(f){return `<button class="play ${playingF===f?'on':''}" data-f="${H(f)}" onclick="event.stopPropagation();playRec('${H(f)}',this)" title="השמע את ההקלטה של המתקשר" aria-label="השמע הקלטה">${playingF===f?'■':'▶'}</button>`}
+function playRec(f,btn){
+  const reset=()=>{playingF='';document.querySelectorAll('.play.on').forEach(b=>{b.classList.remove('on');b.textContent='▶'})};
+  if(player){player.pause();player=null}
+  if(playingF===f){reset();return}
+  reset();playingF=f;document.querySelectorAll(`.play[data-f="${f}"]`).forEach(b=>{b.classList.add('on');b.textContent='■'});
+  player=new Audio('/api/rec?f='+encodeURIComponent(f));
+  player.onended=reset;
+  player.onerror=()=>{reset();toast('ההקלטה כבר נמחקה או שאין חיבור לימות',true)};
+  player.play().catch(()=>{});
+}
+function shabbatText(){
+  const sh=S.shabbat||{};
+  if(!sh.enabled)return 'הסגירה האוטומטית כבויה.';
+  if(sh.error)return `<span style="color:var(--bad)">שגיאה בחישוב: ${H(sh.error)}</span>`;
+  let t=sh.closed?`<b style="color:var(--warn)">הקו סגור עכשיו ל${H(sh.name)}</b>, ייפתח ב-${H(sh.until_day||'')} בשעה ${H(sh.until)}.`
+    :sh.next_start?`הסגירה הבאה: <b>${H(sh.next_name)}</b>, מ-${H(sh.next_start)} עד ${H(sh.next_end)}.`:'';
+  if(!sh.festivals)t+=' <span style="color:var(--warn)">כרגע מזוהות רק שבתות: צריך להוסיף pyluach לקובץ requirements.txt כדי שגם חגים ייסגרו.</span>';
+  return t+' <span class="mu2">(החישוב מתעדכן אחרי שמירה)</span>';
+}
+async function testZmanim(){
+  const out=$('#zmOut');out.hidden=false;out.textContent='מחשב…';
+  try{const r=await fetch('/api/test_zmanim?city='+encodeURIComponent($('#zmCity').value.trim()||'-')+'&day='+encodeURIComponent($('#zmDay').value),{credentials:'same-origin'});
+    if(r.status===404){out.textContent='השרת עוד לא מכיר את הבדיקה הזו. צריך להעלות ל-GitHub את app.py המעודכן.';return}
+    const d=await r.json();out.textContent=d.ok?d.result:'שגיאה: '+(d.error||'')}catch(e){out.textContent='אין חיבור לשרת'}
+}
 
 /* ================= system ================= */
 function renderSystem(){
@@ -1486,7 +1548,7 @@ function renderSystem(){
   $('#modelsList').innerHTML=M.length?M.map((m,i)=>`<div class="mrow"><span class="mu2 num" style="width:18px">${i+1}</span><code>${H(m.name)}</code>${S.settings.model===m.name?'<span class="tag or">מועדף</span>':''}${gp[m.name]?`<span class="tag" title="חיפוש גוגל במודל הזה מושהה כי נגמרה המכסה">חיפוש מושהה ${gp[m.name]} דק׳</span>`:''}${m.dead?'<span class="tag red">לא קיים</span>':m.ok?'<span class="tag green">זמין</span>':'<span class="tag gold">המכסה נגמרה זמנית</span>'}</div>`).join(''):'<div class="empty">עדיין לא התקבלה רשימת מודלים</div>';
   const tv=$('#ttsVoice'),cur=tv.value;tv.innerHTML=(S.voices||[]).map(v=>`<option>${H(v)}</option>`).join('');if(cur)tv.value=cur;
 }
-const DIAG={gemini:'הבינה (Gemini)',tts:'קול טבעי',yemot:'חיבור לימות המשיח',search:'חיפוש באינטרנט (בסך הכל)',transit:'תחבורה ציבורית',google:'חיפוש גוגל של Gemini',ddg:'מנועי חיפוש משולבים',bing:'חיפוש בינג',news:'חדשות עדכניות',pages:'קריאת תוכן מאתרים',weather:'מזג אוויר',wiki:'ויקיפדיה',wait_music:'מנגינת המתנה'};
+const DIAG={gemini:'הבינה (Gemini)',tts:'קול טבעי',yemot:'חיבור לימות המשיח',search:'חיפוש באינטרנט (בסך הכל)',transit:'תחבורה ציבורית',google:'חיפוש גוגל של Gemini',ddg:'מנועי חיפוש משולבים',bing:'חיפוש בינג',news:'חדשות עדכניות',pages:'קריאת תוכן מאתרים',weather:'מזג אוויר',wiki:'ויקיפדיה',wait_music:'מנגינת המתנה',zmanim:'זמני היום',shabbat:'שבת וחג'};
 const CRIT=['gemini','yemot','search'];
 const WHY={
   gemini:'הקו לא יכול לענות. בדוק את GEMINI_API_KEY ב-Render, או שנגמרה המכסה בכל המודלים.',
@@ -1498,13 +1560,15 @@ const WHY={
   bing:'בינג חוסם בקשות משרתים. המנועים המשולבים כבר כוללים אותו.',
   ddg:'יש מקורות חיפוש אחרים שעונים במקומו.',news:'יש מקורות חיפוש אחרים שעונים במקומו.',pages:'התשובות יתבססו על תקצירי החיפוש בלבד.',
   weather:'שאלות על מזג אוויר יעברו לחיפוש רגיל.',
+  zmanim:'שאלות על זמני היום יענו מהידע של הבינה בלבד, ועלולות להיות לא מדויקות.',
+  shabbat:'הקו לא יזהה חגים, רק שבתות. מוסיפים שורה עם המילה pyluach לקובץ requirements.txt ב-GitHub.',
   wait_music:'המנגינה שנבחרה לא נמצאת בשלוחה. השרת מעלה את הטראנס והפעמונים לבד כשהוא עולה; מנגינה משלך צריך להעלות בשם ai_wait_music.wav.',wiki:'יש מקורות חיפוש אחרים שעונים במקומו.'
 };
 function ago(ms){const m=Math.round((Date.now()-ms)/60000);if(m<1)return 'עכשיו';if(m<60)return `לפני ${m} דק׳`;const h=Math.round(m/60);if(h<24)return `לפני ${h} שעות`;return `לפני ${Math.round(h/24)} ימים`}
 function renderDiag(d,at){
   const searchOk=d.search&&d.search.ok;
   let h='<div class="tiles" style="margin-top:14px">';
-  for(const k in DIAG){if(!(k in d))continue;const r=d[k]||{};const soft=!r.ok&&!CRIT.includes(k)&&(k==='tts'||k==='weather'||k==='transit'||k==='wait_music'||searchOk);
+  for(const k in DIAG){if(!(k in d))continue;const r=d[k]||{};const soft=!r.ok&&!CRIT.includes(k)&&(k==='tts'||k==='weather'||k==='transit'||k==='wait_music'||k==='shabbat'||searchOk);
     h+=`<div class="tile ${r.ok?'ok':soft?'soft':'fail'}"><div class="tt"><span class="st"></span>${DIAG[k]}</div><div class="td">${r.ok?'תקין':soft?'לא עובד, יש גיבוי':'לא עובד'}${r.seconds!=null?`, ${r.seconds} שניות`:''}${r.answer&&k!=='transit'?`<br>ענה: ״${H(r.answer)}״`:''}${r.error?`<br><span style="direction:ltr;display:inline-block">${H(r.error)}</span>`:''}</div>${!r.ok&&WHY[k]?`<div class="why">${WHY[k]}</div>`:''}</div>`}
   h+='</div><div class="grid g2" style="margin-top:14px"><div class="tile"><div class="tt">משתני סביבה ב-Render</div><div class="td">';
   for(const k in (d.env||{})){if(k==='PYTHON_VERSION')continue;h+=`<div class="row" style="justify-content:space-between"><code dir="ltr">${H(k)}</code>${d.env[k]?'<span class="tag green">מוגדר</span>':'<span class="tag red">חסר</span>'}</div>`}
