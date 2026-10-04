@@ -1086,12 +1086,18 @@ def clean_audio(wav):
 
 
 def hebrew_today():
+    """התאריך העברי של עכשיו. אחרי השקיעה (לפי השקיעה האמיתית בעיר של הקו, לא שעה קבועה) - כבר היום העברי הבא"""
     if not HAVE_HEB:
         return ""
     try:
         d = il_now()
         h = hebdates.GregorianDate(d.year, d.month, d.day).to_heb()
-        after_sunset = d.hour >= 19
+        try:
+            _, lat, lon = place_of(SETTINGS.get("shabbat_city", ""))
+            sset = sun_time(d.date(), lat, lon, 0.833, False)
+            after_sunset = bool(sset) and d >= sset.replace(tzinfo=None)
+        except Exception:
+            after_sunset = d.hour >= 19      # גיבוי בלבד, אם החישוב נכשל
         s = h.hebrew_date_string()
         if after_sunset:
             s += " (אחרי השקיעה - כבר " + (h + 1).hebrew_date_string() + ")"
@@ -1275,10 +1281,21 @@ def wiki_search(query):
 #   - קו מסוים (למשל 402 מבני ברק לירושלים): מתי היציאות הבאות, ומתי הוא עובר בעיר המוצא
 #   - תחנה לפי המספר שעל השלט (5 ספרות): אילו קווים מגיעים בשעה וחצי הקרובה ומתי
 #   - מעיר לעיר בלי מספר קו: אילו קווים נוסעים ישירות, ומתי
+# המאגר מעדכן לפעמים את הלוח של היום באיחור. במקרה כזה לוקחים את הלוח של אותו יום בשבוע שעבר (בדרך כלל זהה),
+# ומציינים זאת בתשובה.
 STRIDE_API = "https://open-bus-stride-api.hasadna.org.il"
 TRANSIT_WORDS = ("אוטובוס", "תחנה", "רכבת", "לוח זמנים", "לוחות זמנים", "מתי יוצא", "מתי מגיע", "מתי עובר", "קו ")
 TRANSIT_CACHE = {}
 TRANSIT_CACHE_TTL = 120
+TRANSIT_SHIFTS = (0, 7, 14)     # כמה ימים אחורה לחפש לוח, אם הלוח של היום עוד לא נטען (תמיד אותו יום בשבוע)
+
+
+def _shift_note(days):
+    """הערה לתשובה כשהשעות נלקחו מהלוח של אותו יום בשבוע שעבר"""
+    if not days:
+        return ""
+    return ("הערה: לוח הזמנים של היום עוד לא עודכן במאגר, לכן השעות לפי הלוח של אותו יום בשבוע לפני %d ימים"
+            " (בדרך כלל הוא זהה)." % days)
 
 
 def stride_get(path, params, timeout=9):
@@ -1365,20 +1382,40 @@ def _rides_text(route, now):
     return head + ": לפי הלוח אין יותר יציאות היום"
 
 
+def _routes_for(params, timeout=9):
+    """מסלולים לפי הלוח של היום; אם הלוח של היום עוד לא נטען - לפי אותו יום בשבוע שעבר. מחזיר (מסלולים, כמה ימים אחורה)"""
+    now = _il_aware()
+    for days in TRANSIT_SHIFTS:
+        d = (now - datetime.timedelta(days=days)).strftime("%Y-%m-%d")
+        p = dict(params)
+        p.update(date_from=d, date_to=d)
+        routes = stride_get("/gtfs_routes/list", p, timeout=timeout)
+        if routes:
+            if days:
+                print("transit: today's schedule missing, using %d days ago" % days)
+            return routes, days
+    return [], 0
+
+
 def transit_by_stop(code, line="", to=""):
     """הקווים שעוברים בתחנה. מחפש קודם בשלוש השעות הקרובות; אם אין כמעט כלום (לילה, שבת) - עד 14 שעות קדימה,
     כך שגם "מתי האוטובוס הראשון" מקבל תשובה"""
     now = _il_aware()
-    rows = []
-    for hours, limit in ((3, 120), (14, 300)):
-        params = {"gtfs_stop__code": code,
-                  "arrival_time_from": (now - datetime.timedelta(minutes=2)).isoformat(),
-                  "arrival_time_to": (now + datetime.timedelta(hours=hours)).isoformat(),
-                  "order_by": "arrival_time asc", "limit": limit}
-        if line:
-            params["gtfs_route__route_short_name"] = line
-        rows = stride_get("/gtfs_ride_stops/list", params, timeout=12)
-        if len(rows) >= 4:
+    rows, shift = [], 0
+    for days in TRANSIT_SHIFTS:
+        base = now - datetime.timedelta(days=days)
+        for hours, limit in ((3, 120), (14, 300)):
+            params = {"gtfs_stop__code": code,
+                      "arrival_time_from": (base - datetime.timedelta(minutes=2)).isoformat(),
+                      "arrival_time_to": (base + datetime.timedelta(hours=hours)).isoformat(),
+                      "order_by": "arrival_time asc", "limit": limit}
+            if line:
+                params["gtfs_route__route_short_name"] = line
+            rows = stride_get("/gtfs_ride_stops/list", params, timeout=12)
+            if len(rows) >= 4:
+                break
+        if rows:
+            shift = days
             break
     if not rows:
         return None
@@ -1407,15 +1444,16 @@ def transit_by_stop(code, line="", to=""):
                                                       dest, _hhmm(r.get("arrival_time"))))
         if len(out) >= 18:
             break
+    if shift:
+        out.append(_shift_note(shift))
     return "\n".join(out)
 
 
 def transit_by_line(line, frm="", to=""):
-    now = _il_aware()
-    today = now.strftime("%Y-%m-%d")
-    routes = stride_get("/gtfs_routes/list", {"route_short_name": line, "date_from": today, "date_to": today, "limit": 80})
+    routes, shift = _routes_for({"route_short_name": line, "limit": 80})
     if not routes:
         return None
+    base = _il_aware() - datetime.timedelta(days=shift)     # "עכשיו" ביום של הלוח שנמצא
     nf, nt = _tnorm(frm), _tnorm(to)
 
     def score(r):
@@ -1438,7 +1476,7 @@ def transit_by_line(line, frm="", to=""):
     else:
         chosen = routes[:4]
     out = ["תוצאות לקו %s (לפי לוח הזמנים הרשמי של היום):" % line]
-    texts = run_parallel([(lambda r=r: _rides_text(r, now)) for r in chosen], 10)
+    texts = run_parallel([(lambda r=r: _rides_text(r, base)) for r in chosen], 10)
     out += ["- " + t for t in texts if t]
     # אם המתקשר עולה באמצע המסלול (לא בתחנת המוצא) - מתי הקו עובר בעיר שלו
     if frm and chosen:
@@ -1446,8 +1484,8 @@ def transit_by_line(line, frm="", to=""):
             ids = set(r["id"] for r in chosen)
             rows = stride_get("/gtfs_ride_stops/list", {
                 "gtfs_route__route_short_name": line, "gtfs_stop__city": frm,
-                "arrival_time_from": (now - datetime.timedelta(minutes=2)).isoformat(),
-                "arrival_time_to": (now + datetime.timedelta(hours=3)).isoformat(),
+                "arrival_time_from": (base - datetime.timedelta(minutes=2)).isoformat(),
+                "arrival_time_to": (base + datetime.timedelta(hours=3)).isoformat(),
                 "order_by": "arrival_time asc", "limit": 200})
             first_by_ride = {}
             for r in sorted(rows, key=lambda x: str(x.get("arrival_time", ""))):
@@ -1459,13 +1497,16 @@ def transit_by_line(line, frm="", to=""):
                     frm, items[0].get("gtfs_stop__name", ""), ", ".join(_hhmm(r.get("arrival_time")) for r in items)))
         except Exception as e:
             print("transit mid-route error:", str(e)[:120])
-    return "\n".join(out) if len(out) > 1 else None
+    if len(out) <= 1:
+        return None
+    if shift:
+        out.append(_shift_note(shift))
+    return "\n".join(out)
 
 
 def transit_by_places(frm, to):
-    now = _il_aware()
-    today = now.strftime("%Y-%m-%d")
-    routes = stride_get("/gtfs_routes/list", {"route_long_name_contains": to, "date_from": today, "date_to": today, "limit": 600}, timeout=12)
+    routes, shift = _routes_for({"route_long_name_contains": to, "limit": 600}, timeout=12)
+    base = _il_aware() - datetime.timedelta(days=shift)
     nf, nt = _tnorm(frm), _tnorm(to)
     found, seen = [], set()
     for r in routes:
@@ -1480,8 +1521,10 @@ def transit_by_places(frm, to):
         return None
     out = ["קווים ישירים מ%s ל%s לפי לוח הזמנים הרשמי: %s" % (
         frm, to, ", ".join("קו %s של %s" % (r.get("route_short_name", ""), r.get("agency_name", "")) for r in found[:10]))]
-    texts = run_parallel([(lambda r=r: _rides_text(r, now)) for r in found[:3]], 10)
+    texts = run_parallel([(lambda r=r: _rides_text(r, base)) for r in found[:3]], 10)
     out += ["- " + t for t in texts if t]
+    if shift:
+        out.append(_shift_note(shift))
     return "\n".join(out)
 
 
@@ -1527,6 +1570,7 @@ SEARCH_CACHE = {}                                # שאילתה -> (זמן, תו
 SEARCH_CACHE_TTL = 600
 SEARCH_BUDGET = 30          # שניות מקסימום לכל שלב החיפוש (כדי שהשיחה לא תיפול)
 GROUND_GRACE = 8            # כמה שניות לחכות לחיפוש גוגל לפני שמסתפקים בתשובה מהמנועים החינמיים
+ENGINES_WAIT = 13           # כמה שניות לחכות למנועי החיפוש החינמיים (בבדיקה הם לקחו כ-11 שניות; קודם חיכינו רק 9)
 SKIP_DOMAINS = ("youtube.com", "youtu.be", "facebook.com", "instagram.com", "tiktok.com", "twitter.com", "x.com",
                 "news.google.com", "linkedin.com", "pinterest.")
 NEWS_WORDS = ("חדשות", "מה קרה", "מה חדש", "מה נשמע ב", "עדכון", "עדכונים", "מבזק", "היום", "אתמול", "הלילה", "עכשיו",
@@ -1584,9 +1628,24 @@ def _strip_tags(s):
     return re.sub(r"\s+", " ", html.unescape(re.sub(r"(?s)<[^>]+>", " ", s or ""))).strip()
 
 
+def _main_part(page):
+    """מוצא את גוף התוכן של הדף (המאמר עצמו), בלי תפריטים צדדיים ורשימות שפות. אם לא נמצא - כל הדף"""
+    i = page.find('id="mw-content-text"')          # ויקיפדיה ואתרי ויקי
+    if i > 0:
+        j = page.find(">", i)
+        if j > 0:
+            return page[j + 1:]
+    for pat in (r"(?is)<article\b[^>]*>(.*?)</article\s*>", r"(?is)<main\b[^>]*>(.*?)</main\s*>"):
+        m = re.search(pat, page)
+        if m and len(_strip_tags(m.group(1))) > 400:
+            return m.group(1)
+    return page
+
+
 def html_to_text(page):
     """הופך דף אינטרנט לטקסט נקי: בלי תפריטים, סקריפטים וכפתורים"""
-    page = re.sub(r"(?is)<(script|style|noscript|svg|head|nav|footer|form|iframe)\b[^>]*>.*?</\1\s*>", " ", page)
+    page = _main_part(page)
+    page = re.sub(r"(?is)<(script|style|noscript|svg|head|nav|footer|form|iframe|aside|button|select)\b[^>]*>.*?</\1\s*>", " ", page)
     page = re.sub(r"(?is)<br\s*/?>|</(p|div|li|h[1-6]|tr|section|article)\s*>", "\n", page)
     page = re.sub(r"(?s)<[^>]+>", " ", page)
     page = html.unescape(page)
@@ -1708,7 +1767,7 @@ def gather_web(query, newsy=False):
     tasks = [lambda: search_ddgs(query), lambda: search_bing(query)]
     if newsy:
         tasks.append(lambda: search_news(query))
-    res = run_parallel(tasks, 9)
+    res = run_parallel(tasks, ENGINES_WAIT)
     hits, seen = [], set()
     for h in (res[0] or []) + (res[1] or []):
         href = h.get("href", "")
@@ -1811,10 +1870,14 @@ def grounded_answer(system, contents):
     return None
 
 
+ONLY_ANSWER = (" כתוב רק את התשובה עצמה, בדיוק כפי שאומרים אותה למתקשר: בלי לחזור על השאלה, בלי לתאר מה חיפשת או מה עשית,"
+               " בלי כותרות כמו 'שאלה:', 'חיפוש:' או 'תשובה:' ובלי פירוט של שלבי העבודה.")
+
+
 def answer_with_search(assistant, history, transcript, search_line="", query=""):
     """שלב חיפוש: מזג אוויר -> Open-Meteo. תחבורה ציבורית -> מאגר משרד התחבורה.
     אחרת חיפוש גוגל של Gemini ומנועים חינמיים + קריאת אתרים - במקביל"""
-    base = assistant["prompt"] + GENERAL_RULES + context_line(assistant)
+    base = assistant["prompt"] + GENERAL_RULES + context_line(assistant) + ONLY_ANSWER
     q = (query or transcript or "").strip()
     t0 = time.time()
     if "מזג" in search_line:
@@ -1911,6 +1974,47 @@ def answer_with_search(assistant, history, transcript, search_line="", query="")
 
 ACTION_RE = re.compile(r"תמלול\s*:\s*(.*?)\s*\n\s*פעולה\s*:\s*(.*?)\s*\n\s*חיפוש\s*:\s*(.*?)\s*\n\s*תשובה\s*:\s*(.*)", re.S)
 
+# שדות הפורמט, גם כשהבינה מוסיפה כוכביות, מקפים או נקודתיים מסוג אחר
+_FIELD_RE = re.compile(r"^[ \t*_#>\-•]*(תמלול|פעולה|חיפוש|תשובה)[ \t*_]*[:：]", re.M)
+# שורות "מאחורי הקלעים" שאסור להקריא למתקשר
+META_LABELS = ("תמלול", "פעולה", "חיפוש", "תשובה", "השאלה שלך", "השאלה", "שאלה", "שאלת", "מה שנמצא באינטרנט", "תוצאות חיפוש",
+               "תוצאות החיפוש", "נתוני תחבורה", "תחזית מזג אוויר", "מילות חיפוש", "מקורות", "מקור",
+               "transcript", "action", "search", "answer", "question", "query")
+_META_RE = re.compile(r"^(%s)\s*[:：]" % "|".join(re.escape(x) for x in META_LABELS), re.I)
+VALID_ACTIONS = ("none", "menu", "end", "voice")
+
+
+def parse_fields(raw):
+    """מפרק את תשובת הבינה לשדות (תמלול / פעולה / חיפוש / תשובה) גם כשהפורמט לא מדויק:
+    כוכביות, שורה חסרה, סדר אחר. מחזיר מילון, או None אם אין בכלל שדות"""
+    text = (raw or "").replace("\r", "")
+    matches = list(_FIELD_RE.finditer(text))
+    if not matches:
+        return None
+    out = {}
+    for i, m in enumerate(matches):
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
+        val = text[m.end():end].strip().strip("*_").strip()
+        if m.group(1) not in out:
+            out[m.group(1)] = val
+    return out
+
+
+def strip_meta(text):
+    """מנקה מהתשובה כל מה שהוא "מאחורי הקלעים" (שאלת..., חיפוש..., תמלול...) - רק התשובה עצמה מוקראת"""
+    t = re.sub(r"[*_`#]", "", (text or "").replace("\r", ""))
+    last = None
+    for m in re.finditer(r"(?:^|\n)[ \t\-•>]*תשובה[ \t]*[:：]", t):
+        last = m
+    if last:
+        t = t[last.end():]          # אם יש "תשובה:" - מקריאים רק את מה שאחריה
+    keep = []
+    for ln in t.split("\n"):
+        s = ln.strip().lstrip("-•> ").strip()
+        if s and not _META_RE.match(s):
+            keep.append(s)
+    return " ".join(keep).strip()
+
 
 def ask_ai(assistant, history, file_name):
     """מחזיר (תמלול, פעולה, תשובה). פעולה: none / menu / end / voice / switch:id"""
@@ -1962,17 +2066,20 @@ def ask_ai(assistant, history, file_name):
     print("timing: gemini(audio) %.1fs" % (time.time() - t0))
     if not raw:
         return "", "none", T("error")
-    m = ACTION_RE.search(raw)
+    f = parse_fields(raw)
     need_search = False
     query = ""
-    if m:
-        transcript, action, search_line, answer = m.group(1).strip(), m.group(2).strip().lower(), m.group(3).strip(), m.group(4).strip()
+    if f:
+        transcript, search_line, answer = f.get("תמלול", ""), f.get("חיפוש", ""), f.get("תשובה", "")
+        action = ((f.get("פעולה", "") or "none").strip().lower().split() or ["none"])[0].strip(".,")
+        if action not in VALID_ACTIONS and not action.startswith("switch"):
+            action = "none"
         need_search = ("כן" in search_line) or ("מזג" in search_line) or ("תחבור" in search_line) or ("זמנים" in search_line)
         if "כן" in search_line and ":" in search_line and "תחבור" not in search_line and "זמנים" not in search_line:
             query = search_line.split(":", 1)[1].strip().strip(".")
     else:
         transcript, action, search_line = "", "none", ""
-        answer = re.sub(r"^(תמלול|פעולה|חיפוש|תשובה)\s*:\s*", "", raw.strip())
+        answer = raw.strip()
     if transcript and action == "none" and "תחבור" not in search_line and any(w in transcript + " " for w in TRANSIT_WORDS):
         tp = parse_transit("", transcript)
         if tp["line"] or tp["stop"]:
@@ -1984,13 +2091,14 @@ def ask_ai(assistant, history, file_name):
         search_line = "זמנים: "
     if not need_search and transcript and action == "none" and any(w in transcript + " " for w in FORCE_SEARCH_WORDS):
         need_search = True        # המשתמש ביקש במפורש לחפש - מחפשים גם אם הבינה לא סימנה
+    if not need_search and transcript and action == "none" and answer.strip(" .") == "מחפש":
+        need_search = True        # הבינה כתבה "מחפש" אבל שכחה את שורת החיפוש - מחפשים לפי השאלה עצמה
     if need_search and transcript and action == "none":
         t0 = time.time()
         found = answer_with_search(assistant, history, transcript, search_line, query)
         print("timing: search step %.1fs" % (time.time() - t0))
         if found:
-            m2 = ACTION_RE.search(found)
-            answer = m2.group(4).strip() if m2 else re.sub(r"^(תמלול|פעולה|חיפוש|תשובה)\s*:\s*", "", found.strip())
+            answer = strip_meta(found)
     if answer.strip() in ("מחפש", "מחפש.", "מחפש..."):
         answer = T("error")
     low = transcript.lower()
@@ -2010,6 +2118,7 @@ def ask_ai(assistant, history, file_name):
     if action.startswith("switch"):
         aid = action.split(":", 1)[1].strip() if ":" in action else ""
         action = "switch:" + aid if any(a["id"] == aid for _, a in active_assistants()) else "none"
+    answer = strip_meta(answer)      # הגנה אחרונה: לא מקריאים "שאלת... חיפוש..." וכדומה
     if not answer:
         answer = T("not_understood")
     return transcript, action, clean_for_tts(answer)
