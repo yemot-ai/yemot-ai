@@ -973,35 +973,60 @@ def _one_call(model, system, contents, use_search, think):
     return r.text
 
 
+HEDGE_DELAY = 3.0      # כמה שניות המודל החזק עובד לבד, לפני שמצרפים אליו מודל גיבוי מהיר. חוסך מכסה בלי לפגוע במהירות
+MAX_TRIES = 4          # כמה מודלים לכל היותר מנסים לפנייה אחת
+
+
+def _quota_pause(msg):
+    """כמה שניות לתת למודל לנוח אחרי שנגמרה לו מכסה.
+    מכסה יומית - עד שהיא מתחדשת (חצות בשעון קליפורניה, בערך 10 בבוקר בישראל), כדי לא לבזבז זמן של מתקשרים על ניסיונות שנכשלים.
+    מכסה לדקה - לפי הזמן שגוגל מבקשים, או דקה."""
+    low = msg.lower()
+    if "perday" in low or "per day" in low or "daily" in low:
+        try:
+            pt = datetime.datetime.now(ZoneInfo("America/Los_Angeles"))
+            nxt = (pt + datetime.timedelta(days=1)).replace(hour=0, minute=2, second=0, microsecond=0)
+            return max(300, (nxt - pt).total_seconds())
+        except Exception:
+            return 3600
+    m = re.search(r"retry(?:delay)?['\"]?\s*(?:in|:)\s*['\"]?(\d+(?:\.\d+)?)\s*s", low)
+    if m:
+        return min(600, float(m.group(1)) + 2)
+    return 65
+
+
 def _note_failure(model, use_search, msg):
     if "NOT_FOUND" in msg or "no longer available" in msg or "not found" in msg:
         MODEL_STATUS[model] = {"dead": True}
     elif "RESOURCE_EXHAUSTED" in msg or msg.startswith("429"):
         if not use_search:
-            MODEL_STATUS[model] = {"until": time.time() + 120}
+            MODEL_STATUS[model] = {"until": time.time() + _quota_pause(msg)}
 
 
 def gemini(system, contents, search=False, prefer_strong=False):
-    """שולח את הפנייה לכמה מודלים במקביל ולוקח את התשובה הראשונה שחוזרת.
-    ככה מודל אחד איטי או תקוע לא מעכב את המתקשר.
-    prefer_strong: אם המודל המהיר (lite) ענה ראשון והמודל החזק עדיין רץ - מחכים לו עוד כמה שניות,
-    כי התשובה שלו בדרך כלל מדויקת יותר. המודל המהיר עדיין נשלח ראשון, כך שלא נוספת צריכת מכסה."""
-    order = list(MODELS)
+    """שולח את הפנייה קודם למודל החזק ביותר שזמין. אם הוא לא ענה תוך כמה שניות - מצרפים במקביל מודל מהיר (גיבוי),
+    ולוקחים את התשובה הראשונה. מודל שנכשל (מכסה, תקלה) - עוברים מיד לבא בתור.
+    ככה המתקשר מקבל את התשובה המדויקת של המודל החזק, לא מחכה למודל תקוע, והמכסה החינמית לא נשרפת פי שלושה
+    (קודם כל פנייה נשלחה לשלושה מודלים, והמודלים החזקים נגמרו מוקדם ביום).
+    prefer_strong: אם המודל המהיר ענה ראשון והחזק עדיין רץ - מחכים לו עוד כמה שניות, כי התשובה שלו מדויקת יותר."""
+    order = [m for m in MODELS if model_ok(m)]
+    strong = [m for m in order if "lite" not in m]
+    lite = [m for m in order if "lite" in m]
+    queue = strong[:1] + lite[:1] + strong[1:] + lite[1:]
     pref = SETTINGS.get("model", "")
-    if pref:
-        order = [pref] + [m for m in order if m != pref]
-    order = [m for m in order if model_ok(m)]
-    if not order:
+    if pref and model_ok(pref):
+        queue = [pref] + [m for m in queue if m != pref]
+    queue = queue[:MAX_TRIES]
+    if not queue:
         print("Gemini error: no available models")
         return None
-    batch = order[:3]
     t0 = time.time()
-    print("gemini: racing %s (search=%s)" % (", ".join(batch), search))
     answers = {}          # מודל -> תשובה
     arrival = []          # סדר ההגעה של התשובות
+    launched = []         # מודלים שכבר נשלחה אליהם הפנייה
     finished = set()      # מודלים שסיימו (הצליחו או נכשלו)
     lock = threading.Lock()
-    done = threading.Event()
+    wake = threading.Event()
 
     def worker(model):
         try:
@@ -1017,7 +1042,6 @@ def gemini(system, contents, search=False, prefer_strong=False):
                         with lock:
                             answers[model] = text
                             arrival.append(model)
-                        done.set()
                     return
                 except Exception as e:
                     msg = str(e)
@@ -1030,41 +1054,62 @@ def gemini(system, contents, search=False, prefer_strong=False):
         finally:
             with lock:
                 finished.add(model)
-                if len(finished) >= len(batch):
-                    done.set()      # כולם נכשלו או סיימו - לא מחכים לחינם עד סוף הזמן
-    for m in batch:
+            wake.set()
+
+    def launch_next(want_fast=False):
+        """שולח למודל הבא בתור. גיבוי למודל איטי -> מודל מהיר. מחליף למודל שנכשל -> קודם מודל חזק אחר"""
+        with lock:
+            left = [m for m in queue if m not in launched]
+            if not left:
+                return False
+            if want_fast:
+                pick = [m for m in left if "lite" in m]
+            else:
+                pick = [m for m in left if "lite" not in m] if not launched or "lite" not in launched[-1] else []
+            m = (pick or left)[0]
+            launched.append(m)
+        print("gemini: asking %s (search=%s) at %.1fs" % (m, search, time.time() - t0))
         threading.Thread(target=worker, args=(m,), daemon=True).start()
-    done.wait(GEMINI_DEADLINE)
+        return True
+
+    def running():
+        with lock:
+            return [m for m in launched if m not in finished]
+
+    launch_next()
+    hedge_at = t0 + HEDGE_DELAY
+    deadline = t0 + GEMINI_DEADLINE
+    while time.time() < deadline:
+        with lock:
+            have = bool(answers)
+        if have:
+            break
+        now_running = running()
+        if not now_running:
+            if not launch_next():
+                break                       # כל המודלים בתור נכשלו
+            continue
+        if time.time() >= hedge_at and len(now_running) < 2:
+            launch_next(want_fast=True)     # החזק מתעכב - מצרפים גיבוי מהיר
+        wake.wait(0.15)
+        wake.clear()
 
     def strong_still_running():
-        return [m for m in batch if "lite" not in m and m not in finished]
+        return [m for m in running() if "lite" not in m]
 
     if answers and prefer_strong and all("lite" in m for m in list(answers)) and strong_still_running():
-        end = min(t0 + GEMINI_DEADLINE, time.time() + STRONG_GRACE)
+        end = min(deadline, time.time() + STRONG_GRACE)
         while time.time() < end and strong_still_running() and all("lite" in m for m in list(answers)):
             time.sleep(0.1)
     with lock:
         got = dict(answers)
         arr = list(arrival)
     if got:
-        strong = [m for m in arr if "lite" not in m]
-        model = strong[0] if (prefer_strong and strong) else arr[0]
+        strong_ans = [m for m in arr if "lite" not in m]
+        model = strong_ans[0] if (prefer_strong and strong_ans) else arr[0]
         print("gemini: %s answered in %.1fs" % (model, time.time() - t0))
         return got[model]
-    rest = order[3:]
-    if rest:
-        print("gemini: first batch failed, trying %s" % ", ".join(rest[:2]))
-        for m in rest[:2]:
-            try:
-                text = call_with_deadline(lambda: _one_call(m, system, contents, search, "level"), GEMINI_DEADLINE)
-                if text:
-                    print("gemini: %s answered in %.1fs" % (m, time.time() - t0))
-                    return text
-            except Exception as e:
-                msg = str(e)
-                print("gemini variant failed (%s) %s" % (m, msg[:120]))
-                _note_failure(m, search, msg)
-    print("Gemini error: no model answered within %.0fs" % (time.time() - t0))
+    print("Gemini error: no model answered within %.0fs (tried %s)" % (time.time() - t0, ", ".join(launched)))
     return None
 
 
@@ -1852,7 +1897,7 @@ def grounded_answer(system, contents):
                 msg = str(e)
                 print("google search failed (%s think=%s): %s" % (m, think, msg[:140]))
                 if "RESOURCE_EXHAUSTED" in msg or "429" in msg[:8] or "quota" in msg.lower():
-                    SEARCH_MODEL_UNTIL[m] = time.time() + 900       # רק המודל הזה בהפסקה; ממשיכים למודל הבא
+                    SEARCH_MODEL_UNTIL[m] = time.time() + max(900, _quota_pause(msg))   # רק המודל הזה בהפסקה (מכסה יומית - עד שמתחדשת)
                     _search_note("google", False, "המכסה החינמית של חיפוש גוגל נגמרה זמנית ב-%s" % m)
                     break
                 if "NOT_FOUND" in msg or "no longer available" in msg:
