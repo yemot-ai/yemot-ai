@@ -1615,11 +1615,15 @@ SEARCH_CACHE = {}                                # שאילתה -> (זמן, תו
 SEARCH_CACHE_TTL = 600
 SEARCH_BUDGET = 30          # שניות מקסימום לכל שלב החיפוש (כדי שהשיחה לא תיפול)
 GROUND_GRACE = 8            # כמה שניות לחכות לחיפוש גוגל לפני שמסתפקים בתשובה מהמנועים החינמיים
-ENGINES_WAIT = 13           # כמה שניות לחכות למנועי החיפוש החינמיים (בבדיקה הם לקחו כ-11 שניות; קודם חיכינו רק 9)
+ENGINES_WAIT = 9            # מקסימום שניות למנועי החיפוש החינמיים (בדרך כלל הם חוזרים תוך 2-4 שניות, כי כולם רצים במקביל)
+PAGE_WAIT = 4               # מקסימום שניות לקריאת דף אחד מתוך התוצאות (הדפים נקראים במקביל)
 SKIP_DOMAINS = ("youtube.com", "youtu.be", "facebook.com", "instagram.com", "tiktok.com", "twitter.com", "x.com",
                 "news.google.com", "linkedin.com", "pinterest.")
 NEWS_WORDS = ("חדשות", "מה קרה", "מה חדש", "מה נשמע ב", "עדכון", "עדכונים", "מבזק", "היום", "אתמול", "הלילה", "עכשיו",
               "השבוע", "בחירות", "פיגוע", "תאונה", "תוצאה", "תוצאות", "משחק", "שביתה")
+DONT_KNOW_WORDS = ("לא יודע", "אינני יודע", "איני יודע", "לא יודעת", "אין לי מידע", "אין לי פרטים", "אין לי נתונים",
+                   "אין בידי", "אין ברשותי", "לא מכיר", "אינני מכיר", "איני מכיר", "לא ידוע לי", "לא מצאתי", "לא הצלחתי למצוא",
+                   "אינני בטוח", "לא בטוח מה", "אין לי גישה", "לא נמצא בידי", "אין לי ידע")
 FORCE_SEARCH_WORDS = ("תחפש", "חפש ", "תבדוק באינטרנט", "בדוק באינטרנט", "באינטרנט", "בגוגל", "תגגל")
 
 
@@ -1706,22 +1710,81 @@ def _domain(url):
         return ""
 
 
+DDGS_ENGINES = ("google", "brave", "duckduckgo", "yahoo", "mojeek")   # מנועים שמחזירים תוצאות טובות בעברית
+DDGS_GRACE = 1.5    # אחרי שהמנוע הראשון החזיר תוצאות - כמה שניות לחכות לשאר, כדי לאסוף תוצאות ממקורות נוספים
+
+
+def _ddgs_one(query, n, backend):
+    try:
+        res = DDGS(timeout=6).text(query, region="il-he", max_results=n, backend=backend)
+    except TypeError:
+        res = DDGS().text(query, region="il-he", max_results=n, backend=backend)
+    return [{"title": r.get("title", ""), "body": r.get("body", ""), "href": r.get("href", "")} for r in (res or [])]
+
+
 def search_ddgs(query, n=6):
-    """DDGS: מנוע שמשלב כמה מנועי חיפוש (בינג, ברייב, גוגל, יאהו ועוד) ומחליף ביניהם אוטומטית"""
+    """DDGS: כמה מנועי חיפוש (גוגל, ברייב, דאקדאקגו, יאהו, מוג'יק) - כולם במקביל.
+    קודם המצב "auto" הריץ רק שניים בכל פעם ובסבבים, והתחיל בוויקיפדיה, ולכן לקח כ-11 שניות.
+    עכשיו: ברגע שמנוע אחד החזיר תוצאות מחכים עוד רגע קצר לשאר, ומאחדים את כל התוצאות. אם כולם נכשלו - מנסים את "auto" כגיבוי."""
     if not HAVE_DDGS:
         return []
-    try:
+    t0 = time.time()
+    results = {}
+    lock = threading.Lock()
+    wake = threading.Event()
+
+    def run(engine):
         try:
-            res = DDGS().text(query, region="il-he", max_results=n, backend="auto")
-        except TypeError:
-            res = DDGS().text(query, region="il-he", max_results=n)
-        out = [{"title": r.get("title", ""), "body": r.get("body", ""), "href": r.get("href", "")} for r in (res or [])]
-        _search_note("ddg", bool(out), "" if out else "לא חזרו תוצאות")
-        return out
-    except Exception as e:
-        _search_note("ddg", False, e)
-        print("ddgs error:", str(e)[:150])
-        return []
+            got = _ddgs_one(query, n, engine)
+        except Exception as e:
+            print("ddgs %s error: %s" % (engine, str(e)[:100]))
+            got = []
+        with lock:
+            results[engine] = got
+        wake.set()
+    for eng in DDGS_ENGINES:
+        threading.Thread(target=run, args=(eng,), daemon=True).start()
+    first_hit = None
+    end = t0 + ENGINES_WAIT
+    while time.time() < end:
+        with lock:
+            done = len(results)
+            hits = sum(len(v) for v in results.values())
+        if done >= len(DDGS_ENGINES):
+            break
+        if hits and first_hit is None:
+            first_hit = time.time()
+        if first_hit and time.time() - first_hit >= DDGS_GRACE and hits >= n:
+            break
+        if first_hit and time.time() - first_hit >= DDGS_GRACE * 2:
+            break
+        wake.wait(0.1)
+        wake.clear()
+    out, seen = [], set()
+    with lock:
+        ordered = [results.get(e) or [] for e in DDGS_ENGINES]
+    for i in range(max([len(x) for x in ordered] or [0])):
+        for lst in ordered:
+            if i < len(lst):
+                h = lst[i]          # לסירוגין בין המנועים - כך התוצאות המובילות של כל מנוע נכנסות ראשונות
+                k = (h.get("href") or "").split("?")[0].rstrip("/")
+                if k and k not in seen:
+                    seen.add(k)
+                    out.append(h)
+    if not out:
+        try:
+            try:
+                res = DDGS().text(query, region="il-he", max_results=n, backend="auto")
+            except TypeError:
+                res = DDGS().text(query, region="il-he", max_results=n)
+            out = [{"title": r.get("title", ""), "body": r.get("body", ""), "href": r.get("href", "")} for r in (res or [])]
+        except Exception as e:
+            print("ddgs auto error:", str(e)[:150])
+    with lock:
+        which = [e for e in DDGS_ENGINES if results.get(e)]
+    print("timing: ddgs %.1fs - %d results (%s)" % (time.time() - t0, len(out), ", ".join(which) or "auto"))
+    _search_note("ddg", bool(out), "" if out else "לא חזרו תוצאות")
+    return out[:max(n, 10)]
 
 
 def _bing_url(u):
@@ -1790,7 +1853,7 @@ def search_news(query, n=6):
 def fetch_page_text(url):
     """נכנס לאתר וקורא את התוכן שלו (כמו שג'מיני קורא דפים)"""
     try:
-        ctype, page = http_get(url, timeout=6)
+        ctype, page = http_get(url, timeout=PAGE_WAIT)
         if "html" not in ctype.lower() and not page.lstrip()[:200].lower().startswith(("<!doctype", "<html")):
             return None
         t = html_to_text(page)
@@ -1828,8 +1891,8 @@ def gather_web(query, newsy=False):
     if not hits and not news:
         extra = wiki_search(query)
     urls = [h["href"] for h in hits if h["href"].startswith("http") and not any(d in h["href"] for d in SKIP_DOMAINS)
-            and not h["href"].lower().endswith(".pdf")][:3]
-    pages = run_parallel([(lambda u=u: fetch_page_text(u)) for u in urls], 7) if urls else []
+            and not h["href"].lower().endswith(".pdf")][:4]
+    pages = run_parallel([(lambda u=u: fetch_page_text(u)) for u in urls], PAGE_WAIT + 1) if urls else []
     parts = []
     if hits:
         parts.append("תוצאות חיפוש:\n" + "\n".join("- %s: %s (%s)" % (h["title"], h["body"], _domain(h["href"])) for h in hits[:8]))
@@ -1984,12 +2047,16 @@ def answer_with_search(assistant, history, transcript, search_line="", query="")
     def run_free():
         try:
             data = gather_web(q, newsy)
+            if not data and transcript and transcript.strip() != q:
+                data = gather_web(transcript, newsy)      # לא נמצא כלום - מנסים שוב בניסוח של המתקשר עצמו
             if not data:
                 box["f"] = None
                 return
             sys2 = base + (" חיפשת באינטרנט וקיבלת את המידע שלמטה: תוצאות חיפוש ותוכן שנקרא מתוך האתרים עצמם."
                            " ענה על השאלה לפי המידע הזה, עם המספרים, השעות והשמות שמופיעים בו, קצר ומתאים להקראה בטלפון."
-                           " אל תקרא כתובות אינטרנט. אפשר לציין מאיזה אתר המידע. אם המידע לא מספיק לתשובה מדויקת, אמור בקצרה מה כן מצאת.")
+                           " אל תקרא כתובות אינטרנט. אפשר לציין מאיזה אתר המידע."
+                           " אל תענה רק 'לא מצאתי': אם המידע חלקי, תן את כל מה שכן נמצא ושעונה על השאלה,"
+                           " והשלם מהידע שלך רק דברים שאתה בטוח בהם. אל תמציא מספרים, שעות או מחירים.")
             box["f"] = gemini(sys2, list(history) + [{"role": "user", "parts": [{"text": "השאלה: %s\n\nמה שנמצא באינטרנט:\n%s" % (transcript, data[:12000])}]}])
         except Exception as e:
             print("free search step error:", e)
@@ -2096,6 +2163,8 @@ def ask_ai(assistant, history, file_name):
         " או: תחבורה: - | - | - | 21345 או: תחבורה: - | אלעד | בני ברק | -."
         " כן = כשהתשובה דורשת חיפוש באינטרנט: המשתמש ביקש לחפש או לבדוק, או שצריך מידע עדכני - מחירים, חדשות, רכבות,"
         " שעות פתיחה, תוצאות, שירים ואלבומים חדשים, מה קורה עכשיו."
+        " כתוב כן גם כששואלים על משהו מסוים שאינך מכיר היטב ובוודאות: בית כנסת, ישיבה, מוסד, רב או אדם, חנות או עסק,"
+        " רחוב, שכונה, אירוע, ספר או שיר מסוים. במקרים כאלה לעולם אל תענה 'אינני יודע' בלי לחפש קודם."
         " אם השאלה על מזג האוויר, כתוב: מזג אוויר: ואז שם העיר באנגלית (למשל: מזג אוויר: Bnei Brak).\n"
         "תשובה: <התשובה שלך למשתמש. אם צריך חיפוש (כן / מזג אוויר / תחבורה / זמנים), כתוב כאן רק: מחפש>\n"
         "כללי הפעולה: menu אם ביקש לחזור לתפריט. end אם ביקש לסיים או להתנתק או אמר להתראות. "
@@ -2136,6 +2205,8 @@ def ask_ai(assistant, history, file_name):
         search_line = "זמנים: "
     if not need_search and transcript and action == "none" and any(w in transcript + " " for w in FORCE_SEARCH_WORDS):
         need_search = True        # המשתמש ביקש במפורש לחפש - מחפשים גם אם הבינה לא סימנה
+    if not need_search and transcript and action == "none" and any(w in answer for w in DONT_KNOW_WORDS):
+        need_search = True        # הבינה ענתה "לא יודע" בלי לחפש - מחפשים באינטרנט (לפי השאלה עצמה) לפני שמוותרים
     if not need_search and transcript and action == "none" and answer.strip(" .") == "מחפש":
         need_search = True        # הבינה כתבה "מחפש" אבל שכחה את שורת החיפוש - מחפשים לפי השאלה עצמה
     if need_search and transcript and action == "none":
