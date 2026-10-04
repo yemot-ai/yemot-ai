@@ -163,6 +163,7 @@ TEXTS = {
     "goodbye": "להתראות {name}",
     "error": "סליחה, יש בעיה זמנית. נסה שוב",
     "not_understood": "לא הבנתי, אפשר לחזור על זה?",
+    "name_not_understood": "לא הצלחתי להבין את השם.",
     "closed": "הקו סגור ב{holiday}, ויחזור לפעול בשעה {time}",
 }
 
@@ -377,11 +378,31 @@ def save_names():
     _bg(yemot_write_text, "ai_names.txt", data)
 
 
+LOG_SAVE_EVERY = 20       # היומן נשמר בימות לכל היותר פעם ב-20 שניות (במקום בכל שיחה והודעה), כדי לא להעמיס על החיבור לימות
+_log_dirty = threading.Event()
+
+
 def save_log():
-    with _lock:
-        lines = [json.dumps({"t": "log", **l}, ensure_ascii=False) for l in LOG[-LOG_MAX:]]
-        lines += [json.dumps({"t": "call", **c}, ensure_ascii=False) for c in CALLS[-LOG_MAX:]]
-    _bg(yemot_write_text, "ai_log.txt", "\n".join(lines))
+    """מסמן שהיומן השתנה. השמירה עצמה נעשית ברקע, בכותב אחד בלבד - כך שמירה ישנה אף פעם לא דורסת חדשה"""
+    _log_dirty.set()
+
+
+def _log_writer_loop():
+    while True:
+        _log_dirty.wait()
+        time.sleep(LOG_SAVE_EVERY)          # אוספים את כל השינויים של הזמן הזה לשמירה אחת
+        _log_dirty.clear()
+        try:
+            with _lock:
+                lines = [json.dumps({"t": "log", **l}, ensure_ascii=False) for l in LOG[-LOG_MAX:]]
+                lines += [json.dumps({"t": "call", **c}, ensure_ascii=False) for c in CALLS[-LOG_MAX:]]
+            yemot_write_text("ai_log.txt", "\n".join(lines))
+        except Exception as e:
+            print("log save error:", e)
+            _log_dirty.set()                # ננסה שוב בסבב הבא
+
+
+threading.Thread(target=_log_writer_loop, daemon=True).start()
 
 
 def save_settings():
@@ -1113,6 +1134,33 @@ def gemini(system, contents, search=False, prefer_strong=False):
     return None
 
 
+def is_silent(wav):
+    """האם ההקלטה ריקה: קצרה מאוד או שקטה לגמרי (המתקשר הקיש סולמית בלי לדבר).
+    בודק לפני סינון הרעשים. בכל ספק מחזיר False - וההקלטה נשלחת לבינה כרגיל"""
+    try:
+        import wave
+        import array
+        w = wave.open(io.BytesIO(wav))
+        if w.getsampwidth() != 2 or w.getframerate() <= 0:
+            return False
+        dur = w.getnframes() / float(w.getframerate())
+        frames = w.readframes(w.getnframes())
+        if dur < 0.3:
+            return True
+        a = array.array("h")
+        a.frombytes(frames[:len(frames) // 2 * 2])
+        if sys.byteorder == "big":
+            a.byteswap()
+        if not a:
+            return True
+        peak = max(abs(x) for x in a)
+        sample = a[::4] or a
+        rms = (sum(x * x for x in sample) / len(sample)) ** 0.5
+        return peak < 400 and rms < 40
+    except Exception:
+        return False
+
+
 def clean_audio(wav):
     """שיפור הקלטת טלפון לפני שליחה ל-AI: סינון רעש, הגברה אחידה, דגימה ל-16 קילוהרץ. אם נכשל - מחזיר את המקור"""
     if not HAVE_TTS:
@@ -1172,11 +1220,17 @@ def transcribe_name(file_name):
         print("download error:", e)
         return ""
     _bg(yemot_delete, file_name + ".wav")
+    if is_silent(audio):
+        print("name recording is empty/silent")
+        return ""
     audio = clean_audio(audio)
     text = gemini("בהקלטה טלפונית באיכות נמוכה אדם אומר את שמו הפרטי בעברית (שם ישראלי או יהודי נפוץ). "
-                  "החזר רק את השם הפרטי, מילה אחת או שתיים, בלי שום תוספת.",
+                  "החזר רק את השם הפרטי, מילה אחת או שתיים, בלי שום תוספת. אם לא נאמר שם או שלא ברור מה נאמר, החזר רק: -",
                   [types.Part.from_bytes(data=audio, mime_type="audio/wav")])
-    return clean_for_tts(text or "")[:30]
+    name = clean_for_tts(text or "")[:30].strip(" .,-'\"")
+    if not name or len(name.split()) > 3 or any(w in name for w in ("לא ", "אין ", "ברור", "שם פרטי", "הקלטה")):
+        return ""             # לא שם - נבקש מהמתקשר לומר שוב
+    return name
 
 
 def http_json(url, timeout=8):
@@ -1989,10 +2043,12 @@ def answer_with_search(assistant, history, transcript, search_line="", query="")
     q = (query or transcript or "").strip()
     t0 = time.time()
     if "מזג" in search_line:
-        place = search_line.split(":", 1)[1].strip() if ":" in search_line else ""
-        w = weather_lookup(place or "Tel Aviv")
+        place = search_line.split(":", 1)[1].strip(" -.") if ":" in search_line else ""
+        no_city = not place
+        w = weather_lookup(place or SETTINGS.get("shabbat_city") or "בני ברק")   # בלי עיר - העיר של הקו
         if w:
-            sys_w = base + " קיבלת תחזית מזג אוויר. ענה על השאלה לפי המידע הזה, קצר ומתאים להקראה בטלפון."
+            sys_w = base + " קיבלת תחזית מזג אוויר. ענה על השאלה לפי המידע הזה, קצר ומתאים להקראה בטלפון." + (
+                " המתקשר לא אמר עיר: ציין לאיזו עיר התחזית, ושאפשר לשאול על עיר אחרת." if no_city else "")
             ans = gemini(sys_w, list(history) + [{"role": "user", "parts": [{"text": "השאלה: %s\n\nתחזית מזג אוויר:\n%s" % (transcript, w)}]}])
             if ans:
                 return ans
@@ -2139,6 +2195,9 @@ def ask_ai(assistant, history, file_name):
     print("timing: download %.1fs" % (time.time() - t0))
     if keep_days() == 0:
         _bg(yemot_delete, file_name + ".wav")      # אחרת ההקלטה נשמרת כמה ימים, כדי שאפשר יהיה לשמוע אותה באתר
+    if is_silent(audio):
+        print("recording is empty/silent - answering at once without AI")
+        return "", "none", T("not_heard")
     t0 = time.time()
     audio = clean_audio(audio)     # סינון רעשים והגברה - ה-AI שומע הרבה יותר טוב ומבין נכון את השאלה
     print("timing: clean audio %.1fs" % (time.time() - t0))
@@ -2165,7 +2224,8 @@ def ask_ai(assistant, history, file_name):
         " שעות פתיחה, תוצאות, שירים ואלבומים חדשים, מה קורה עכשיו."
         " כתוב כן גם כששואלים על משהו מסוים שאינך מכיר היטב ובוודאות: בית כנסת, ישיבה, מוסד, רב או אדם, חנות או עסק,"
         " רחוב, שכונה, אירוע, ספר או שיר מסוים. במקרים כאלה לעולם אל תענה 'אינני יודע' בלי לחפש קודם."
-        " אם השאלה על מזג האוויר, כתוב: מזג אוויר: ואז שם העיר באנגלית (למשל: מזג אוויר: Bnei Brak).\n"
+        " אם השאלה על מזג האוויר, כתוב: מזג אוויר: ואז שם העיר באנגלית (למשל: מזג אוויר: Bnei Brak)."
+        " אם המתקשר לא אמר עיר, אל תנחש עיר - כתוב: מזג אוויר: -\n"
         "תשובה: <התשובה שלך למשתמש. אם צריך חיפוש (כן / מזג אוויר / תחבורה / זמנים), כתוב כאן רק: מחפש>\n"
         "כללי הפעולה: menu אם ביקש לחזור לתפריט. end אם ביקש לסיים או להתנתק או אמר להתראות. "
         "voice אם ביקש להחליף קול. switch:מזהה אם ביקש לעבור לעוזר אחר מהרשימה: " + others + ". "
@@ -2459,7 +2519,12 @@ def yemot():
     if state["stage"] == "ask_name":
         if not has_value:
             return R(record(state, "name", ("text", T("ask_name_again"))))
-        name = transcribe_name(state["file"]) or "אורח"
+        name = transcribe_name(state["file"])
+        if not name:
+            state["name_tries"] = state.get("name_tries", 0) + 1
+            if state["name_tries"] < 3:     # לא הובן - מבקשים שוב (עד פעמיים)
+                return R(record(state, "name", ("text", T("name_not_understood") + " " + T("ask_name_again"))))
+            return R(menu(state, "אורח"))   # עדיין לא הובן - ממשיכים בלי לשמור, ובשיחה הבאה נשאל שוב
         names[phone] = name
         save_names()
         return R(menu(state, name, prefix=T("name_saved", name=name)))
