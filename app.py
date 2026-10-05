@@ -1781,7 +1781,7 @@ def _ddgs_one(query, n, backend):
     return [{"title": r.get("title", ""), "body": r.get("body", ""), "href": r.get("href", "")} for r in (res or [])]
 
 
-def search_ddgs(query, n=6):
+def search_ddgs(query, n=6, on_hits=None):
     """DDGS: כמה מנועי חיפוש (גוגל, ברייב, דאקדאקגו, יאהו, מוג'יק) - כולם במקביל.
     קודם המצב "auto" הריץ רק שניים בכל פעם ובסבבים, והתחיל בוויקיפדיה, ולכן לקח כ-11 שניות.
     עכשיו: ברגע שמנוע אחד החזיר תוצאות מחכים עוד רגע קצר לשאר, ומאחדים את כל התוצאות. אם כולם נכשלו - מנסים את "auto" כגיבוי."""
@@ -1798,6 +1798,11 @@ def search_ddgs(query, n=6):
         except Exception as e:
             print("ddgs %s error: %s" % (engine, str(e)[:100]))
             got = []
+        if on_hits and got:
+            try:
+                on_hits(got)            # מתחילים לקרוא את האתרים מהתוצאות האלה כבר עכשיו, בזמן שהמנועים האחרים עוד מחפשים
+            except Exception:
+                pass
         with lock:
             results[engine] = got
         wake.set()
@@ -1860,7 +1865,7 @@ def _bing_url(u):
     return u
 
 
-def search_bing(query, n=6):
+def search_bing(query, n=6, on_hits=None):
     """חיפוש ישיר בבינג (גיבוי כשמנועים אחרים חסומים)"""
     try:
         _, page = http_get("https://www.bing.com/search?" + urllib.parse.urlencode(
@@ -1875,6 +1880,11 @@ def search_bing(query, n=6):
             if len(out) >= n:
                 break
         _search_note("bing", bool(out), "" if out else "לא חזרו תוצאות")
+        if on_hits and out:
+            try:
+                on_hits(out)
+            except Exception:
+                pass
         return out
     except Exception as e:
         _search_note("bing", False, e)
@@ -1922,6 +1932,14 @@ def fetch_page_text(url):
         return None
 
 
+PREFETCH_MAX = 8     # כמה אתרים לכל היותר מתחילים לקרוא מראש, לפני שכל המנועים סיימו
+
+
+def _page_ok(u):
+    """אתר שכדאי להיכנס אליו ולקרוא את התוכן שלו"""
+    return bool(u) and u.startswith("http") and not any(d in u for d in SKIP_DOMAINS) and not u.lower().endswith(".pdf")
+
+
 def gather_web(query, newsy=False):
     """אוסף מידע מהאינטרנט: כמה מנועי חיפוש במקביל + תוכן האתרים המובילים. מחזיר טקסט או None"""
     key = (query or "").strip().lower()
@@ -1931,7 +1949,30 @@ def gather_web(query, newsy=False):
     if cached and time.time() - cached[0] < SEARCH_CACHE_TTL:
         return cached[1]
     t0 = time.time()
-    tasks = [lambda: search_ddgs(query), lambda: search_bing(query)]
+    # קריאת אתרים מוקדמת: ברגע שמנוע כלשהו מחזיר תוצאות, מתחילים לקרוא את האתרים שלו ברקע, בזמן שהמנועים האחרים עוד מחפשים.
+    # בסוף בוחרים בדיוק את אותם אתרים כמו קודם (לפי כל התוצאות מכל המנועים), כך שהתשובה מבוססת על אותו מידע - רק מהר יותר.
+    pre = {}
+    pre_lock = threading.Lock()
+
+    def prefetch(hits, force=False):
+        for h in hits or []:
+            u = h.get("href", "")
+            if not _page_ok(u):
+                continue
+            with pre_lock:
+                if u in pre or (not force and len(pre) >= PREFETCH_MAX):
+                    continue
+                slot = {"ev": threading.Event(), "text": None}
+                pre[u] = slot
+
+            def run(u=u, slot=slot):
+                try:
+                    slot["text"] = fetch_page_text(u)
+                finally:
+                    slot["ev"].set()
+            threading.Thread(target=run, daemon=True).start()
+
+    tasks = [lambda: search_ddgs(query, on_hits=prefetch), lambda: search_bing(query, on_hits=prefetch)]
     if newsy:
         tasks.append(lambda: search_news(query))
     res = run_parallel(tasks, ENGINES_WAIT)
@@ -1949,9 +1990,18 @@ def gather_web(query, newsy=False):
     extra = None
     if not hits and not news:
         extra = wiki_search(query)
-    urls = [h["href"] for h in hits if h["href"].startswith("http") and not any(d in h["href"] for d in SKIP_DOMAINS)
-            and not h["href"].lower().endswith(".pdf")][:4]
-    pages = run_parallel([(lambda u=u: fetch_page_text(u)) for u in urls], PAGE_WAIT + 1) if urls else []
+    urls = [h["href"] for h in hits if _page_ok(h["href"])][:4]
+    prefetch([{"href": u} for u in urls], force=True)       # אתר מהרשימה הסופית שעוד לא התחילו לקרוא - מתחילים עכשיו
+    early = sum(1 for u in urls if pre.get(u) and pre[u]["ev"].is_set())
+    end = time.time() + PAGE_WAIT + 1                         # אותו זמן המתנה כמו קודם; אתרים שכבר נקראו מוכנים מיד
+    pages = []
+    for u in urls:
+        slot = pre.get(u)
+        if slot:
+            slot["ev"].wait(max(0, end - time.time()))
+            pages.append(slot["text"])
+        else:
+            pages.append(None)
     parts = []
     if hits:
         parts.append("תוצאות חיפוש:\n" + "\n".join("- %s: %s (%s)" % (h["title"], h["body"], _domain(h["href"])) for h in hits[:8]))
@@ -1963,8 +2013,8 @@ def gather_web(query, newsy=False):
     if extra:
         parts.append("ערכים מוויקיפדיה:\n" + extra)
     text = "\n\n".join(parts) or None
-    print("timing: web gather %.1fs - %d results, %d news, %d pages read" % (
-        time.time() - t0, len(hits), len(news), sum(1 for p in pages if p)))
+    print("timing: web gather %.1fs - %d results, %d news, %d pages read (%d were ready early)" % (
+        time.time() - t0, len(hits), len(news), sum(1 for p in pages if p), early if urls else 0))
     if text:
         SEARCH_CACHE[key] = (time.time(), text)
         if len(SEARCH_CACHE) > 300:
