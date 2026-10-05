@@ -137,7 +137,7 @@ tbody tr:hover{background:var(--s2)}
 .empty{text-align:center;color:var(--mu);padding:40px 12px}
 .num{font-variant-numeric:tabular-nums}
 
-.seg{display:inline-flex;background:var(--s2);border:1px solid var(--line);border-radius:10px;padding:3px}
+.seg{display:inline-flex;background:var(--s2);border:1px solid var(--line);border-radius:10px;padding:3px;flex-wrap:wrap}
 .seg button{background:none;border:0;padding:5px 12px;border-radius:7px;color:var(--mu);cursor:pointer;font-size:13px}
 .seg button.on{background:var(--or);color:#000;font-weight:600}
 
@@ -194,16 +194,20 @@ tbody tr:hover{background:var(--s2)}
 
 /* ---------- feed ---------- */
 .feed{display:flex;flex-direction:column;max-height:520px;overflow-y:auto}
-.fi{padding:12px 4px;border-bottom:1px solid var(--line);display:grid;grid-template-columns:auto 1fr;gap:4px 12px;cursor:pointer}
+.fi{padding:12px 4px;border-bottom:1px solid var(--line);display:grid;grid-template-columns:auto 1fr auto;gap:4px 12px;cursor:pointer}
 .fi:hover{background:var(--s2)}
 .fi:last-child{border:0}
 .fi .av{grid-row:span 3;width:34px;height:34px;border-radius:50%;background:var(--s3);display:grid;place-items:center;font-weight:700;color:var(--or2);font-size:14px}
 .fi .fh{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;font-size:13px}
 .fi .fh b{font-size:14px}
-.fi .fq{color:var(--tx)}
-.fi .fa{color:var(--mu);font-size:14px;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.fi .fq{color:var(--tx);grid-column:2}
+.fi .fa{color:var(--mu);font-size:14px;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;grid-column:2}
+.fi .fx{grid-row:1/span 3;grid-column:3;align-self:center;opacity:0;transition:opacity .15s}
+.fi:hover .fx,.fi .fx:focus-visible{opacity:1}
 .fi.new{animation:flash 2.4s ease}
 @keyframes flash{0%{background:var(--orD)}100%{background:transparent}}
+.xbtn{width:28px;height:28px;border-radius:50%;border:1px solid var(--line2);background:var(--s2);color:var(--mu);cursor:pointer;display:grid;place-items:center;padding:0}
+.xbtn:hover{color:var(--bad);border-color:#5a1d1d}
 
 /* ---------- charts ---------- */
 .vchart svg{width:100%;height:auto;display:block}
@@ -232,11 +236,15 @@ a.btn{text-decoration:none}
 .bb.u{align-self:flex-start;background:var(--orD);border:1px solid var(--orL);border-bottom-right-radius:4px}
 .bb.m{align-self:flex-end;background:var(--s3);border-bottom-left-radius:4px;color:#ddd}
 .bb.m.prob{box-shadow:inset 3px 0 0 var(--warn)}
+.bb.m.warned{box-shadow:inset 3px 0 0 var(--warn);background:#1c1806}
 .bb.m.flagged{box-shadow:inset 3px 0 0 var(--bad);background:#1e1010}
 .bb small{display:block;font-size:11px;color:var(--mu2);margin-top:3px}
-.bb .fl{position:absolute;top:-10px;left:-10px;width:26px;height:26px;border-radius:50%;border:1px solid var(--line2);background:var(--s2);color:var(--mu);cursor:pointer;display:grid;place-items:center;opacity:0;transition:opacity .15s;font-size:12px;padding:0}
-.bb.m:hover .fl,.bb.m.flagged .fl,.bb .fl:focus-visible{opacity:1}
-.bb.m.flagged .fl{color:var(--bad);border-color:#5a1d1d}
+.bb .acts{position:absolute;top:-12px;left:-8px;display:flex;gap:4px;opacity:0;transition:opacity .15s}
+.bb.m:hover .acts,.bb.m.flagged .acts,.bb .acts:focus-within{opacity:1}
+.bb .fl{width:26px;height:26px;border-radius:50%;border:1px solid var(--line2);background:var(--s2);color:var(--mu);cursor:pointer;display:grid;place-items:center;font-size:12px;padding:0}
+.bb .fl.del:hover{color:var(--bad);border-color:#5a1d1d}
+.bb.m.flagged .fl.flg{color:var(--bad);border-color:#5a1d1d}
+@media (hover:none){.bb .acts,.fi .fx{opacity:1}}
 .persona{align-self:center;font-size:12px;color:var(--or2);background:var(--s2);border:1px solid var(--line);padding:1px 12px;border-radius:99px;margin:6px 0}
 mark{background:var(--or);color:#000;border-radius:3px;padding:0 2px}
 .bb.target{outline:2px solid var(--or);outline-offset:3px}
@@ -267,7 +275,9 @@ mark{background:var(--or);color:#000;border-radius:3px;padding:0 2px}
 .cv-pane .pt{padding:12px 18px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px;flex-wrap:wrap}
 .cv-pane .pt .av{width:42px;height:42px;border-radius:50%;background:var(--orD);color:var(--or);display:grid;place-items:center;font-weight:700;border:1px solid var(--orL)}
 .cv-body{flex:1;overflow-y:auto;padding:22px 18px 18px;background:radial-gradient(circle at 20% 0%,#140a03,transparent 50%)}
-.daysep{align-self:center;font-size:12px;color:var(--mu);background:var(--s2);border:1px solid var(--line);border-radius:8px;padding:2px 12px;margin:14px 0 6px}
+.daysep{align-self:center;font-size:12px;color:var(--mu);background:var(--s2);border:1px solid var(--line);border-radius:8px;padding:2px 6px 2px 12px;margin:14px 0 6px;display:flex;align-items:center;gap:6px}
+.daysep button{background:none;border:0;color:var(--mu2);cursor:pointer;font-size:12px;padding:2px 6px;border-radius:6px;display:inline-flex;align-items:center;gap:4px}
+.daysep button:hover{color:var(--bad);background:#2a0c0c}
 .cv-empty{flex:1;display:grid;place-items:center;color:var(--mu);text-align:center;padding:30px}
 .back-m{display:none}
 
@@ -298,8 +308,9 @@ mark{background:var(--or);color:#000;border-radius:3px;padding:0 2px}
 .gauge .gl{font-size:12px;fill:var(--mu);font-family:var(--f)}
 .gauge dl{margin:0;display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:14px}
 .gauge dt{color:var(--mu)}.gauge dd{margin:0;font-variant-numeric:tabular-nums;font-weight:600}
-.facts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;margin-bottom:16px}
+.facts{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;margin-bottom:16px}
 .facts>div{background:var(--s1);padding:14px 18px}
+.facts>div.click{cursor:pointer}.facts>div.click:hover{background:var(--s2)}
 .facts b{display:block;font-size:24px;font-weight:700;font-variant-numeric:tabular-nums}
 .facts span{font-size:13px;color:var(--mu)}
 .wcloud{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:baseline;line-height:1.3}
@@ -403,6 +414,8 @@ mark{background:var(--or);color:#000;border-radius:3px;padding:0 2px}
 .dsec h4{margin:0 0 10px;font-size:14px;color:var(--mu);font-weight:500}
 .ustrip{display:grid;grid-template-columns:repeat(14,1fr);gap:3px;direction:ltr}
 .ustrip i{height:26px;border-radius:3px;background:var(--s3)}
+.warnbox{display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:#1c1806;border:1px solid #4a3c0c;border-radius:12px;padding:12px 14px}
+.warnbox b{color:var(--warn);font-size:22px;font-variant-numeric:tabular-nums}
 .modal{position:fixed;top:50%;left:50%;transform:translate(-50%,-46%) scale(.97);width:min(420px,92vw);background:var(--s2);border:1px solid var(--line2);border-radius:16px;padding:22px;z-index:70;opacity:0;pointer-events:none;transition:all .18s}
 .modal.on{opacity:1;pointer-events:auto;transform:translate(-50%,-50%)}
 .modal p{margin:0 0 20px;font-size:16px}
@@ -444,6 +457,7 @@ mark{background:var(--or);color:#000;border-radius:3px;padding:0 2px}
   .bb{max-width:92%}
   .dstats{grid-template-columns:repeat(2,1fr)}
   .savebar{bottom:84px}
+  .toast{bottom:84px;right:14px;left:14px;text-align:center}
   .cv{grid-template-columns:1fr;height:auto}
   .cv.sel .cv-list{display:none}.cv:not(.sel) .cv-pane{display:none}
   .cv-list,.cv-pane{height:calc(100vh - 230px)}
@@ -496,8 +510,8 @@ mark{background:var(--or);color:#000;border-radius:3px;padding:0 2px}
       <div class="sp"></div>
       <div class="conn" id="conn"><i></i><span>מתחבר…</span></div>
       <button class="hpill" id="hpill" onclick="go('system')" title="תוצאת בדיקת המערכת האחרונה"><i></i><span>לא נבדק</span></button>
-      <button class="iconbtn hide-m" onclick="openPal()" title="חיפוש מהיר"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg><span class="kbd">Ctrl K</span></button>
-      <button class="iconbtn" id="soundBtn" onclick="toggleSound()" title="צלצול והתראה כשנכנסת שיחה"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 22c1.1 0 2-.9 2-2h-4a2 2 0 002 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4a1.5 1.5 0 00-3 0v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/></svg></button>
+      <button class="iconbtn hide-m" onclick="openPal()" title="חיפוש מהיר"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.990 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg><span class="kbd">Ctrl K</span></button>
+      <button class="iconbtn" id="soundBtn" onclick="toggleSound()" title="צלצול והתראה כשנכנסת שיחה"><svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 22c1.1 0 2-.9 2-2h-4a2 2 0 002 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4a1.5 1.5 0 00-3 0v.68C7.630 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/></svg></button>
     </header>
 
     <div class="content">
@@ -550,6 +564,7 @@ mark{background:var(--or);color:#000;border-radius:3px;padding:0 2px}
           <b id="bulkN"></b>
           <button class="btn sm" onclick="noteModal([...selU])">השאר הודעה חד פעמית</button>
           <button class="btn ghost sm" onclick="bulkAct('unlimited')">החלף מצב הגבלה</button>
+          <button class="btn ghost sm" onclick="bulkWarnReset()">אפס אזהרות</button>
           <button class="btn danger sm" onclick="bulkAct('block')">החלף מצב חסימה</button>
           <span style="flex:1"></span>
           <button class="btn ghost sm" onclick="selU.clear();renderUsers()">בטל בחירה</button>
@@ -621,7 +636,7 @@ mark{background:var(--or);color:#000;border-radius:3px;padding:0 2px}
 
       <!-- ===== TEXTS ===== -->
       <section class="page" id="p-texts">
-        <p class="lead">כל משפט שהקו אומר. אפשר לשלב שדות שמתחלפים אוטומטית: שם המתקשר, שם העוזר ומספר ההקשה. מתחת לכל שדה מופיעה דוגמה איך זה יישמע.</p>
+        <p class="lead">כל משפט שהקו אומר. אפשר לשלב שדות שמתחלפים אוטומטית: שם המתקשר, שם העוזר, מספר ההקשה ומספר האזהרה. מתחת לכל שדה מופיעה דוגמה איך זה יישמע.</p>
         <div class="panel" id="textsList"></div>
       </section>
 
@@ -727,6 +742,7 @@ mark{background:var(--or);color:#000;border-radius:3px;padding:0 2px}
         </div>
         <div class="panel" style="border-color:#3a1515">
           <div class="ph"><h3 style="color:#ff8080">מחיקת נתונים</h3></div>
+          <p class="mu" style="margin-top:-6px;font-size:14px">למחיקת שיחה אחת או הודעה אחת: במסך השיחות או ביומן השיחות, לחץ על סמל הפח שליד השיחה או ההודעה.</p>
           <div class="row">
             <button class="btn danger" onclick="clearData('log')">מחק את כל תוכן השיחות</button>
             <button class="btn danger" onclick="clearData('calls')">מחק את יומן השיחות</button>
@@ -784,10 +800,11 @@ const IC={
  pad:'M12 19a2 2 0 100 4 2 2 0 000-4zM6 1a2 2 0 100 4 2 2 0 000-4zm0 6a2 2 0 100 4 2 2 0 000-4zm0 6a2 2 0 100 4 2 2 0 000-4zm12-8a2 2 0 100-4 2 2 0 000 4zm-6 8a2 2 0 100 4 2 2 0 000-4zm6 0a2 2 0 100 4 2 2 0 000-4zm0-6a2 2 0 100 4 2 2 0 000-4zm-6 0a2 2 0 100 4 2 2 0 000-4zm0-6a2 2 0 100 4 2 2 0 000-4z',
  texts:'M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 000-1.41l-2.34-2.34a1 1 0 00-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z',
  settings:'M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z',
- system:'M20.38 8.57l-1.23 1.85a8 8 0 01-.22 7.58H5.07A8 8 0 0115.58 6.85l1.85-1.23A10 10 0 003.35 19a2 2 0 001.72 1h13.85a2 2 0 001.74-1 10 10 0 00-.27-10.44zm-9.79 6.84a2 2 0 002.83 0l5.66-8.49-8.49 5.66a2 2 0 000 2.83z',
+ system:'M20.38 8.57l-1.23 1.85a8 8 0 01-.22 7.58H5.07A8 8 0 0115.58 6.85l1.85-1.23A10 10 0 003.35 19a2 2 0 001.72 1h13.850a2 2 0 001.74-1 10 10 0 00-.27-10.44zm-9.79 6.84a2 2 0 002.83 0l5.66-8.49-8.49 5.66a2 2 0 000 2.83z',
  grip:'M9 3a2 2 0 110 4 2 2 0 010-4zm6 0a2 2 0 110 4 2 2 0 010-4zM9 10a2 2 0 110 4 2 2 0 010-4zm6 0a2 2 0 110 4 2 2 0 010-4zm-6 7a2 2 0 110 4 2 2 0 010-4zm6 0a2 2 0 110 4 2 2 0 010-4z',
  chev:'M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6z',
- flag:'M14.4 6L14 4H5v17h2v-7h5.6l.4 2h7V6z'
+ flag:'M14.4 6L14 4H5v17h2v-7h5.6l.4 2h7V6z',
+ trash:'M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z'
 };
 IC.conv=IC.chat;
 const svg=(p,s=19)=>`<svg viewBox="0 0 24 24" width="${s}" height="${s}"><path fill="currentColor" d="${p}"/></svg>`;
@@ -796,14 +813,16 @@ const PAGES=[['dash','לוח בקרה'],['users','משתמשים'],['conv','שי
 const PID={pad:'assist'};
 const pageId=k=>PID[k]||k;
 
-const TXT_DEF={first_time:"שלום, זו הפעם הראשונה שלך בקו. אמור את שמך הפרטי, ובסיום הקש סולמית",ask_name_again:"אמור את שמך הפרטי, ובסיום הקש סולמית",name_saved:"נעים להכיר {name}, השם נשמר",menu_hello:"שלום {name}.",menu_item:"הקש {digit} ל{assistant}.",menu_end:"הקש 9 לסיום.",enter:"אתה עם {assistant}. דבר אחרי הצפצוף, ובסיום הקש סולמית",listening:"אני מקשיב",not_heard:"לא שמעתי אותך",wait:"רק רגע, עוד רגע, רק שניה, כבר עונה, עוד שניה, רגע אחד",too_long:"סליחה, זה לוקח יותר מדי זמן. אפשר לנסות שוב",limit:"הגעת למכסת ההודעות היומית שלך. אפשר לנסות שוב מחר",blocked:"המספר שלך אינו מורשה להשתמש בקו",voice_changed:"הקול הוחלף",goodbye:"להתראות {name}",error:"סליחה, יש בעיה זמנית. נסה שוב",not_understood:"לא הבנתי, אפשר לחזור על זה?",closed:"הקו סגור ב{holiday}, ויחזור לפעול בשעה {time}"};
+const TXT_DEF={first_time:"שלום, זו הפעם הראשונה שלך בקו. אמור את שמך הפרטי, ובסיום הקש סולמית",ask_name_again:"אמור את שמך הפרטי, ובסיום הקש סולמית",name_not_understood:"לא הצלחתי להבין את השם.",name_saved:"נעים להכיר {name}, השם נשמר",menu_hello:"שלום {name}.",menu_item:"הקש {digit} ל{assistant}.",menu_end:"הקש 9 לסיום.",enter:"אתה עם {assistant}. דבר אחרי הצפצוף, ובסיום הקש סולמית",listening:"אני מקשיב",not_heard:"לא שמעתי אותך",wait:"רק רגע, עוד רגע, רק שניה, כבר עונה, עוד שניה, רגע אחד",too_long:"סליחה, זה לוקח יותר מדי זמן. אפשר לנסות שוב",limit:"הגעת למכסת ההודעות היומית שלך. אפשר לנסות שוב מחר",blocked:"המספר שלך אינו מורשה להשתמש בקו",voice_changed:"הקול הוחלף",goodbye:"להתראות {name}",error:"סליחה, יש בעיה זמנית. נסה שוב",not_understood:"לא הבנתי, אפשר לחזור על זה?",closed:"הקו סגור ב{holiday}, ויחזור לפעול בשעה {time}",warning:"זוהי אזהרה {n} מתוך 3. הקו מיועד לשאלות מכובדות בלבד"};
 const TXT_GROUPS=[
- ['היכרות ורישום',{first_time:'מתקשר חדש: בקשת שם',ask_name_again:'בקשת שם בפעם נוספת',name_saved:'אחרי שהשם נשמר'}],
+ ['היכרות ורישום',{first_time:'מתקשר חדש: בקשת שם',ask_name_again:'בקשת שם בפעם נוספת',name_not_understood:'השם לא הובן',name_saved:'אחרי שהשם נשמר'}],
  ['תפריט',{menu_hello:'פתיחת התפריט',menu_item:'שורה לכל עוזר',menu_end:'סיום התפריט'}],
  ['בזמן שיחה',{enter:'כניסה לעוזר',listening:'מקשיב (כשאין תשובה להשמיע)',not_heard:'לא נקלטה הקלטה',wait:'הודעות המתנה (מתחלפות, מופרדות בפסיק)',not_understood:'לא הובן',voice_changed:'אחרי החלפת קול'}],
- ['חסימות ותקלות',{limit:'הגעה למכסה היומית',blocked:'מספר חסום',too_long:'התשובה מתעכבת',error:'תקלה זמנית',closed:'הקו סגור בשבת או בחג'}],
+ ['אזהרות, חסימות ותקלות',{warning:'אזהרה על שאלה לא צנועה ({n} = מספר האזהרה, עד 3)',limit:'הגעה למכסה היומית',blocked:'מספר חסום',too_long:'התשובה מתעכבת',error:'תקלה זמנית',closed:'הקו סגור בשבת או בחג'}],
  ['סיום',{goodbye:'פרידה'}]
 ];
+const PH_ALL=['name','assistant','digit','holiday','time','n'];
+const SAMPLE={name:'משה',assistant:'העוזר הכללי',digit:'1',holiday:'שבת',time:'19:12',n:'1'};
 
 /* ================= state ================= */
 let S=null,LIVE=null,ACT={},logAfter=0,seen=new Set(),page='dash';
@@ -818,9 +837,10 @@ async function api(p,body){
   const opt=body!==undefined?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),credentials:'same-origin'}:{credentials:'same-origin'};
   const r=await fetch(p,opt);
   if(r.status===403){showLogin();throw new Error('auth')}
+  if(r.status===404)throw new Error('old-server');
   return r.json();
 }
-function toast(m,bad){const t=$('#toast');t.textContent=m;t.className='toast on'+(bad?' bad':'');clearTimeout(t._t);t._t=setTimeout(()=>t.className='toast',2400)}
+function toast(m,bad){const t=$('#toast');t.textContent=m;t.className='toast on'+(bad?' bad':'');clearTimeout(t._t);t._t=setTimeout(()=>t.className='toast',2600)}
 function ask(msg,okText='אישור',danger=false){
   return new Promise(res=>{$('#modalMsg').textContent=msg;const ok=$('#modalOk');ok.textContent=okText;ok.className=danger?'btn danger':'btn';
     $('#modal').classList.add('on');$('#scrim').classList.add('on');
@@ -854,13 +874,15 @@ async function refresh(){
     loadEditors(false);renderAll()}catch(e){}
 }
 
+let polling=false;
 async function poll(){
+  if(!polling){polling=true;
   try{
     const from=Math.max(0,logAfter-15);
     const [l,g]=await Promise.all([api('/api/live'),api('/api/log?after='+from)]);
     LIVE=l;ACT=g.active||{};
     const fresh=[];
-    if(g.total<from){await refresh()}
+    if(g.total<logAfter){await refresh()}
     else for(const m of g.new||[]){const k=key(m);if(!seen.has(k)){seen.add(k);S.log.push(m);fresh.push(m)}}
     logAfter=g.total;
     const phones=new Set(l.active.map(a=>a.phone));
@@ -870,6 +892,7 @@ async function poll(){
     if(page==='conv'&&!fresh.length&&document.activeElement!==$('#cq'))renderConvLiveOnly();
     if(fresh.length){renderFeed(fresh);renderScope();if(page==='conv')renderConv();if(page==='insights')renderInsights();if(drawerPhone&&fresh.some(m=>m.phone===drawerPhone))renderDrawer();updateNavBadges()}
   }catch(e){}
+  polling=false}
   setTimeout(poll,3000);
 }
 function incoming(a){
@@ -1011,12 +1034,14 @@ function renderScope(){
 }
 
 function initial(n){return H((n||'?').trim().charAt(0)||'?')}
+function warnTag(l){return l&&l.warn?`<span class="tag gold" title="השאלה לא הייתה צנועה, הקו השמיע אזהרה">אזהרה ${H(l.warn)}</span>`:''}
 function renderFeed(fresh){
   const fk=new Set(fresh.map(key));
   const L=S.log.slice(-14).reverse();window._feed=L;
   $('#feed').innerHTML=L.length?L.map((l,i)=>`<div class="fi ${fk.has(key(l))?'new':''}" onclick="openMsg(window._feed[${i}])">
     <div class="av">${initial(l.name)}</div>
-    <div class="fh"><b>${H(l.name)}</b><span class="tag or">${H(l.persona)}</span><span class="mu2">${H((l.time||'').slice(11))}${(l.time||'').slice(0,10)!==today()?' '+H((l.time||'').slice(0,5)):''}</span>${probOf(l)?'<span class="tag gold">לבדיקה</span>':''}</div>
+    <div class="fh"><b>${H(l.name)}</b><span class="tag or">${H(l.persona)}</span><span class="mu2">${H((l.time||'').slice(11))}${(l.time||'').slice(0,10)!==today()?' '+H((l.time||'').slice(0,5)):''}</span>${warnTag(l)}${probOf(l)?'<span class="tag gold">לבדיקה</span>':''}</div>
+    <button class="xbtn fx" onclick="event.stopPropagation();delMsg(window._feed[${i}])" title="מחק את ההודעה הזו" aria-label="מחק הודעה">${svg(IC.trash,15)}</button>
     <div class="fq">${H(l.q)}</div><div class="fa">${H(l.a)}</div></div>`).join(''):'<div class="empty">עדיין לא היו הודעות. ברגע שמישהו ידבר עם הקו, זה יופיע כאן.</div>';
 }
 function openMsg(l){if(!l)return;closeAll();resetConv(true);convPhone=l.phone;convTarget=key(l);go('conv')}
@@ -1052,20 +1077,20 @@ function renderHeat(){
 }
 
 /* ================= users ================= */
-const UF=[['all','כולם'],['today','פעילים היום'],['note','עם הודעה'],['unlimited','בלי הגבלה'],['blocked','חסומים']];
+const UF=[['all','כולם'],['today','פעילים היום'],['note','עם הודעה'],['warned','עם אזהרות'],['unlimited','בלי הגבלה'],['blocked','חסומים']];
 function noteOf(u){const n=u.note;if(!n)return null;if(typeof n==='string')return{text:n,created:'',heard:''};return n.text?n:null}
 function renderUsers(){
   $('#uFilter').innerHTML=UF.map(([k,t])=>`<button class="${uFilter===k?'on':''}" onclick="uFilter='${k}';renderUsers()">${t}</button>`).join('');
   const q=($('#uq').value||'').trim(),lim=S.settings.daily_limit;
   for(const p of [...selU])if(!S.users.some(u=>u.phone===p))selU.delete(p);
   let L=S.users.filter(u=>(!q||String(u.name).includes(q)||u.phone.includes(q))&&(
-    uFilter==='all'||(uFilter==='today'&&u.today>0)||(uFilter==='note'&&noteOf(u))||(uFilter==='unlimited'&&u.unlimited)||(uFilter==='blocked'&&u.blocked)));
+    uFilter==='all'||(uFilter==='today'&&u.today>0)||(uFilter==='note'&&noteOf(u))||(uFilter==='warned'&&u.warnings>0)||(uFilter==='unlimited'&&u.unlimited)||(uFilter==='blocked'&&u.blocked)));
   const k=uSort.k,d=uSort.d;
   L.sort((a,b)=>{let x=a[k],y=b[k];if(k==='last'){x=parseT(x)||0;y=parseT(y)||0}if(typeof x==='string')return x.localeCompare(y,'he')*d;return((x||0)-(y||0))*d});
   window._uList=L;
   const allSel=L.length&&L.every(u=>selU.has(u.phone));
   const th=(k,t)=>`<th class="s ${uSort.k===k?'act':''}" onclick="sortU('${k}')">${t}${uSort.k===k?(uSort.d>0?' ▲':' ▼'):''}</th>`;
-  let h=`<thead><tr><th style="width:30px"><input type="checkbox" class="ck" ${allSel?'checked':''} onchange="selAll(this.checked)" aria-label="בחר הכל"></th>${th('name','שם')}<th>טלפון</th>${th('calls','שיחות')}${th('msgs','הודעות')}${th('today','היום')}${th('last','שיחה אחרונה')}<th>הודעה חד פעמית</th><th>מצב</th><th></th></tr></thead><tbody>`;
+  let h=`<thead><tr><th style="width:30px"><input type="checkbox" class="ck" ${allSel?'checked':''} onchange="selAll(this.checked)" aria-label="בחר הכל"></th>${th('name','שם')}<th>טלפון</th>${th('calls','שיחות')}${th('msgs','הודעות')}${th('today','היום')}${th('last','שיחה אחרונה')}<th>הודעה חד פעמית</th>${th('warnings','מצב')}<th></th></tr></thead><tbody>`;
   for(const u of L){
     const n=noteOf(u),live=LIVE&&LIVE.active.some(a=>a.phone===u.phone);
     const todayCell=u.unlimited||!lim?`<span class="num">${u.today}</span> <span class="mu2">∞</span>`:`<span class="num">${u.today}/${lim}</span><div class="ht" style="height:4px;background:var(--s3);border-radius:9px;margin-top:4px;width:70px"><i style="display:block;height:100%;border-radius:9px;background:${u.today>=lim?'var(--bad)':'var(--or)'};width:${Math.min(100,u.today/lim*100)}%"></i></div>`;
@@ -1076,7 +1101,7 @@ function renderUsers(){
       <td><b>${H(u.name)}</b>${live?' <span class="tag or">על הקו</span>':''}</td><td class="num" dir="ltr" style="text-align:right">${H(u.phone)}</td>
       <td class="num">${u.calls}</td><td class="num">${u.msgs}</td><td>${todayCell}</td><td class="mu">${H(u.last)||'—'}</td>
       <td>${noteCell}</td>
-      <td><div class="row" style="gap:4px">${u.owner?'<span class="tag gold">בעלים</span>':''}${u.blocked?'<span class="tag red">חסום</span>':''}${u.unlimited&&!u.owner?'<span class="tag green">בלי הגבלה</span>':''}</div></td>
+      <td><div class="row" style="gap:4px">${u.owner?'<span class="tag gold">בעלים</span>':''}${u.blocked?'<span class="tag red">חסום</span>':''}${u.unlimited&&!u.owner?'<span class="tag green">בלי הגבלה</span>':''}${u.warnings?`<span class="tag gold" title="מספר האזהרות על שאלות לא צנועות">${u.warnings} אזהרות</span>`:''}</div></td>
       <td><div class="row" style="gap:4px;flex-wrap:nowrap"><button class="btn ghost sm" onclick="event.stopPropagation();showConvOf('${H(u.phone)}')">שיחות</button><button class="btn ghost sm" onclick="event.stopPropagation();openUser('${H(u.phone)}')">פרטים</button></div></td></tr>`;
   }
   if(!L.length)h+=`<tr><td colspan="10" class="empty">${S.users.length?'אין משתמשים שמתאימים לחיפוש':'עדיין אין משתמשים רשומים'}</td></tr>`;
@@ -1093,9 +1118,15 @@ async function bulkAct(action){
   if(!await ask(txt,'המשך'))return;
   await runMany(P,p=>api('/api/user',{phone:p,action}));selU.clear();await refresh();toast('עודכן')
 }
+async function bulkWarnReset(){
+  const P=[...selU].filter(p=>{const u=S.users.find(x=>x.phone===p);return u&&u.warnings});
+  if(!P.length)return toast('לאף אחד מהנבחרים אין אזהרות');
+  if(!await ask(`לאפס את האזהרות של ${P.length} משתמשים? בפעם הבאה הם ישמעו שוב ״אזהרה 1״.`,'אפס'))return;
+  await runMany(P,p=>api('/api/user',{phone:p,action:'reset_warnings'}));selU.clear();await refresh();toast('האזהרות אופסו')
+}
 function exportUsers(){
-  const rows=[['שם','טלפון','שיחות','הודעות','היום','שיחה אחרונה','חסום','בלי הגבלה','הודעה ממתינה']];
-  for(const u of S.users){const n=noteOf(u);rows.push([u.name,u.phone,u.calls,u.msgs,u.today,u.last,u.blocked?'כן':'',u.unlimited?'כן':'',n&&!n.heard?n.text:''])}
+  const rows=[['שם','טלפון','שיחות','הודעות','היום','שיחה אחרונה','חסום','בלי הגבלה','אזהרות','הודעה ממתינה']];
+  for(const u of S.users){const n=noteOf(u);rows.push([u.name,u.phone,u.calls,u.msgs,u.today,u.last,u.blocked?'כן':'',u.unlimited?'כן':'',u.warnings||'',n&&!n.heard?n.text:''])}
   const csv='\ufeff'+rows.map(r=>r.map(x=>'"'+String(x??'').replace(/"/g,'""')+'"').join(',')).join('\n');
   const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));a.download='yemot-ai-users.csv';document.body.appendChild(a);a.click();a.remove();
 }
@@ -1141,11 +1172,11 @@ function openUser(phone){drawerPhone=phone;renderDrawer();$('#drawer').classList
 function closeAll(){$('#nmodal').classList.remove('on');$('#drawer').classList.remove('on');$('#scrim').classList.remove('on');$('#modal').classList.remove('on');$('#help').classList.remove('on');closePal();drawerPhone=null}
 function renderDrawer(){
   const ph=drawerPhone;if(!ph)return;
-  const u=S.users.find(x=>x.phone===ph)||{phone:ph,name:(LIVE.active.find(a=>a.phone===ph)||{}).name||'לא רשום',calls:0,msgs:0,today:0,last:'',blocked:false,unlimited:false,owner:false,note:null,voice:0,_new:true};
+  const u=S.users.find(x=>x.phone===ph)||{phone:ph,name:(LIVE.active.find(a=>a.phone===ph)||{}).name||'לא רשום',calls:0,msgs:0,today:0,last:'',blocked:false,unlimited:false,owner:false,note:null,voice:0,warnings:0,_new:true};
   const n=noteOf(u);const msgs=S.log.filter(l=>l.phone===ph);const recent=msgs.slice(-24);
   const live=LIVE.active.find(a=>a.phone===ph);
   let chat='',last='';
-  for(const m of recent){if(m.persona!==last){chat+=`<div class="persona">${H(m.persona)}</div>`;last=m.persona}chat+=`<div class="bb u">${H(m.q)}<small>${H(m.time)}</small></div><div class="bb m ${probOf(m)?'prob':''}">${H(m.a)}</div>`}
+  for(const m of recent){if(m.persona!==last){chat+=`<div class="persona">${H(m.persona)}</div>`;last=m.persona}chat+=`<div class="bb u">${H(m.q)}<small>${H(m.time)}</small></div><div class="bb m ${m.warn?'warned':probOf(m)?'prob':''}">${H(m.a)}${m.warn?`<small>${warnTag(m)}</small>`:''}</div>`}
   const voices=S.voices||[];
   const days=(S.charts.per_day||[]).map(p=>p[0]),per={};for(const m of msgs){const d=(m.time||'').slice(0,5);per[d]=(per[d]||0)+1}
   const dmx=Math.max(1,...days.map(d=>per[d]||0));
@@ -1156,6 +1187,7 @@ function renderDrawer(){
    <div class="dh"><div class="av">${initial(u.name)}</div><div style="flex:1;min-width:0"><h2>${H(u.name)}</h2><div class="row" style="gap:6px"><span class="mu num" dir="ltr">${H(ph)}</span>${u.owner?'<span class="tag gold">בעלים</span>':''}${u.blocked?'<span class="tag red">חסום</span>':''}${live?'<span class="tag or">על הקו עכשיו</span>':''}</div></div><button class="iconbtn" onclick="closeAll()" aria-label="סגור">✕</button></div>
    <div class="db">
     <div class="dstats"><div><b>${u.calls}</b><span>שיחות</span></div><div><b>${u.msgs}</b><span>הודעות</span></div><div><b>${u.today}</b><span>היום</span></div><div><b style="font-size:13px;line-height:2.3">${H((u.last||'—').slice(0,10))}</b><span>אחרונה</span></div></div>
+    ${u.warnings?`<div class="dsec"><div class="warnbox"><b>${u.warnings}</b><span style="flex:1">אזהרות על שאלות לא צנועות.${u.warnings>=3?' כל שאלה כזו מעכשיו תשמע ״אזהרה 3 מתוך 3״.':''}</span><button class="btn ghost sm" onclick="uAct('reset_warnings',{},'האזהרות אופסו')">אפס אזהרות</button><button class="btn ghost sm" onclick="showWarnsOf('${H(ph)}')">הצג</button></div></div>`:''}
     ${msgs.length?`<div class="dsec"><h4>פעילות ב-14 הימים האחרונים</h4>${strip}<p class="mu" style="font-size:13px;margin:8px 0 0">${fav?'מדבר בעיקר עם '+H(fav[0]):''}${pc?` · ${pc} תשובות בעייתיות`:''}</p></div>`:''}
     <div class="dsec"><h4>שם</h4><div class="row"><input type="text" id="dName" value="${H(u._new?'':u.name)}" style="flex:1"><button class="btn sm" onclick="dRename()">${u._new?'רשום':'שמור שם'}</button></div></div>
     ${u._new?'':`
@@ -1171,7 +1203,10 @@ function renderDrawer(){
     </div></div>`}
     <div class="dsec"><div class="row" style="justify-content:space-between;margin-bottom:10px"><h4 style="margin:0">שיחות אחרונות</h4>${msgs.length?`<button class="btn ghost sm" onclick="showConvOf('${H(ph)}')">כל ${msgs.length} ההודעות</button>`:''}</div>
       ${chat?`<div class="chat">${chat}</div>`:'<p class="mu">עדיין לא דיבר עם הקו</p>'}</div>
-    ${!u._new&&!u.owner?`<div class="dsec" style="border-top:1px solid var(--line);padding-top:16px"><button class="btn danger sm" onclick="dDelete()">מחק משתמש</button> <span class="mu" style="font-size:12px">בשיחה הבאה הוא יתבקש לומר את שמו מחדש</span></div>`:''}
+    <div class="dsec" style="border-top:1px solid var(--line);padding-top:16px;display:flex;flex-direction:column;gap:10px">
+      ${msgs.length||u.calls?`<div><button class="btn danger sm" onclick="delPhoneLog('${H(ph)}')">${svg(IC.trash,14)} מחק את כל השיחות שלו</button> <span class="mu" style="font-size:12px">המשתמש עצמו נשאר רשום</span></div>`:''}
+      ${!u._new&&!u.owner?`<div><button class="btn danger sm" onclick="dDelete()">מחק משתמש</button> <span class="mu" style="font-size:12px">בשיחה הבאה הוא יתבקש לומר את שמו מחדש</span></div>`:''}
+    </div>
    </div>`;
 }
 async function uAct(action,extra={},msg='נשמר'){await api('/api/user',{phone:drawerPhone,action,...extra});await refresh();renderDrawer();toast(msg)}
@@ -1179,13 +1214,37 @@ async function dRename(){const v=$('#dName').value.trim();if(!v)return toast('צ
 async function dNote(){await uAct('note',{note:$('#dNote').value.trim()},$('#dNote').value.trim()?'ההודעה תושמע בשיחה הבאה':'ההודעה נמחקה')}
 async function dDelete(){if(!await ask('למחוק את המשתמש? בשיחה הבאה הוא יירשם מחדש.','מחק',true))return;const p=drawerPhone;await api('/api/user',{phone:p,action:'delete'});closeAll();await refresh();toast('המשתמש נמחק')}
 function showConvOf(ph){closeAll();resetConv(true);convPhone=ph;go('conv')}
+function showWarnsOf(ph){const l=[...S.log].reverse().find(m=>m.phone===ph&&m.warn);if(l)openMsg(l);else showConvOf(ph)}
+
+/* ================= deletion ================= */
+function forgetLocal(L){for(const m of L){const k=key(m);delete flags[k];delete resolved[k]}store.set('yai_flags',flags);store.set('yai_resolved',resolved)}
+async function delReq(body,msg){
+  try{const d=await api('/api/delete',body);if(!d.ok){toast(d.error||'המחיקה נכשלה',true);return false}
+    await refresh();if(page==='insights')renderInsights();toast(msg);return true}
+  catch(e){if(e.message==='old-server')toast('השרת עוד לא מכיר מחיקה כזו. צריך להעלות ל-GitHub את app.py המעודכן.',true);else if(e.message!=='auth')toast('אין חיבור לשרת',true);return false}
+}
+async function delMsg(m){
+  if(typeof m==='number')m=(window._pane||[])[m];if(!m)return;
+  if(!await ask('למחוק את ההודעה הזו (השאלה והתשובה)? אי אפשר לשחזר.','מחק הודעה',true))return;
+  forgetLocal([m]);await delReq({msg:{time:m.time,phone:m.phone,q:m.q}},'ההודעה נמחקה');
+}
+async function delCall(id){
+  const L=S.log.filter(l=>l.call===id);
+  if(!await ask(`למחוק את השיחה הזו${L.length?` (${L.length} הודעות)`:''}? היא תימחק גם מהיומן ומלוח הבקרה. אי אפשר לשחזר.`,'מחק שיחה',true))return;
+  forgetLocal(L);if(convCall===id)convCall='';await delReq({call:id},'השיחה נמחקה');
+}
+async function delPhoneLog(ph){
+  const L=S.log.filter(l=>l.phone===ph),u=S.users.find(x=>x.phone===ph),nm=(u&&u.name)||ph;
+  if(!await ask(`למחוק את כל השיחות של ${nm}${L.length?` (${L.length} הודעות)`:''}? המשתמש עצמו נשאר רשום. אי אפשר לשחזר.`,'מחק הכל',true))return;
+  forgetLocal(L);if(convPhone===ph)convPhone='';await delReq({phone:ph},'כל השיחות שלו נמחקו');if(drawerPhone)renderDrawer();
+}
 
 /* ================= conversations (two-pane) ================= */
 function fillConvFilters(){
   const ca=$('#cAssist').value;
   const per=[...new Set(S.log.map(l=>l.persona).filter(Boolean))];
   $('#cAssist').innerHTML='<option value="">כל העוזרים</option>'+per.map(p=>`<option>${H(p)}</option>`).join('');
-  $('#cAssist').value=ca;
+  $('#cAssist').value=per.includes(ca)?ca:'';
 }
 function resetConv(silent){$('#cq').value='';$('#cAssist').value='';$('#cDate').value='';convCall='';if(!silent)renderConv()}
 function hl(text,q){const t=H(text);if(!q)return t;const re=new RegExp(H(q).replace(/[.*+?^${}()|[\]\\]/g,'\\$&'),'gi');return t.replace(re,m=>`<mark>${m}</mark>`)}
@@ -1205,6 +1264,7 @@ function renderConv(){
   const list=[...people.values()].sort((a,b)=>(parseT(b.msgs[b.msgs.length-1].time)||0)-(parseT(a.msgs[a.msgs.length-1].time)||0));
   const total=list.reduce((s,p)=>s+p.msgs.length,0);
   $('#convInfo').innerHTML=(convCall?'<span class="tag or">שיחה אחת</span> ':'')+`${list.length} מתקשרים, ${total} הודעות`;
+  if(convPhone&&!people.has(convPhone)&&!S.log.some(l=>l.phone===convPhone))convPhone='';
   if(!convPhone&&list.length&&window.innerWidth>820)convPhone=list[0].phone;
   const filtered=!!(($('#cq').value||'').trim()||$('#cAssist').value||$('#cDate').value);
   $('#cvItems').innerHTML=list.map(p=>{
@@ -1229,14 +1289,16 @@ function renderPane(p){
   const live=LIVE&&LIVE.active.find(a=>a.phone===p.phone);
   if(convTarget){const ti=p.msgs.findIndex(m=>key(m)===convTarget);if(ti>=0&&p.msgs.length-ti>convLimit)convLimit=p.msgs.length-ti+5}
   const body=$('#cvBody'),nearBottom=body&&body.dataset.ph===p.phone&&body.scrollHeight-body.scrollTop-body.clientHeight<80,oldTop=body&&body.dataset.ph===p.phone?body.scrollTop:null;
-  const M=p.msgs.slice(-convLimit);window._pane=M;let h='',lastCall=null,lastP='';
+  const M=p.msgs.slice(-convLimit);window._pane=M;window._paneCalls=[];let h='',lastCall=null,lastP='';
   if(p.msgs.length>convLimit)h+=`<button class="btn ghost sm loadmore" style="margin-bottom:10px" onclick="convLimit+=150;renderConv()">הצג הודעות קודמות (${p.msgs.length-convLimit})</button>`;
   M.forEach((m,i)=>{
     const ck=m.call||(m.time||'').slice(0,10);
-    if(ck!==lastCall){h+=`<div class="daysep">שיחה ב-${H(m.time)}</div>`;lastCall=ck;lastP=''}
+    if(ck!==lastCall){
+      let delB='';if(m.call){window._paneCalls.push(m.call);delB=`<button onclick="delCall(window._paneCalls[${window._paneCalls.length-1}])" title="מחק את כל השיחה הזו">${svg(IC.trash,13)} מחק שיחה</button>`}
+      h+=`<div class="daysep">שיחה ב-${H(m.time)}${delB}</div>`;lastCall=ck;lastP=''}
     if(m.persona!==lastP){h+=`<div class="persona">${H(m.persona)}</div>`;lastP=m.persona}
     const k=key(m),fl=!!flags[k],pr=probOf(m);
-    h+=`<div class="bb u" data-k="${H(k)}">${m.rec?playBtn(m.rec):''}${hl(m.q,q)}<small>${H((m.time||'').slice(11))}</small></div><div class="bb m ${fl?'flagged':pr&&!resolved[k]?'prob':''}" title="${pr&&!fl?H(pr):''}">${hl(m.a,q)}<button class="fl" onclick="toggleFlag(${i})" aria-label="${fl?'בטל סימון':'סמן לבדיקה'}" title="${fl?'בטל סימון':'סמן את התשובה לבדיקה'}">${svg(IC.flag,13)}</button></div>`;
+    h+=`<div class="bb u" data-k="${H(k)}">${m.rec?playBtn(m.rec):''}${hl(m.q,q)}<small>${H((m.time||'').slice(11))}</small></div><div class="bb m ${fl?'flagged':m.warn?'warned':pr&&!resolved[k]?'prob':''}" title="${pr&&!fl?H(pr):''}">${hl(m.a,q)}${m.warn?`<small>${warnTag(m)}</small>`:''}<span class="acts"><button class="fl del" onclick="delMsg(${i})" aria-label="מחק הודעה" title="מחק את ההודעה הזו">${svg(IC.trash,13)}</button><button class="fl flg" onclick="toggleFlag(${i})" aria-label="${fl?'בטל סימון':'סמן לבדיקה'}" title="${fl?'בטל סימון':'סמן את התשובה לבדיקה'}">${svg(IC.flag,13)}</button></span></div>`;
   });
   if(live&&live.state==='מחכה לתשובה'){const pd=Object.values(ACT).find(a=>a&&a.phone===p.phone)||{};
     if(pd.pending_q)h+=`<div class="bb u" style="opacity:.7">${H(pd.pending_q)}<small>עכשיו</small></div>`;
@@ -1244,11 +1306,12 @@ function renderPane(p){
   pane.innerHTML=`<div class="pt">
      <button class="iconbtn back-m" onclick="convPhone='';renderConv()" aria-label="חזרה לרשימה">→</button>
      <div class="av">${initial(nm)}</div>
-     <div style="flex:1;min-width:0"><b style="font-size:16px">${H(nm)}</b><div class="row" style="gap:6px"><span class="mu num" dir="ltr" style="font-size:13px">${H(p.phone)}</span>${live?'<span class="tag or">על הקו עכשיו</span>':''}${n&&!n.heard?'<span class="tag or">הודעה ממתינה</span>':''}</div></div>
+     <div style="flex:1;min-width:0"><b style="font-size:16px">${H(nm)}</b><div class="row" style="gap:6px"><span class="mu num" dir="ltr" style="font-size:13px">${H(p.phone)}</span>${live?'<span class="tag or">על הקו עכשיו</span>':''}${n&&!n.heard?'<span class="tag or">הודעה ממתינה</span>':''}${u&&u.warnings?`<span class="tag gold">${u.warnings} אזהרות</span>`:''}</div></div>
      <button class="btn sm" onclick="noteModal(['${H(p.phone)}'])">${n&&!n.heard?'ערוך הודעה':'השאר הודעה'}</button>
      <button class="btn ghost sm" onclick="copyConv('${H(p.phone)}')">העתק</button>
      <button class="btn ghost sm" onclick="openUser('${H(p.phone)}')">פרטים</button>
      ${convCall?`<button class="btn ghost sm" onclick="convCall='';renderConv()">הצג את כל השיחות שלו</button>`:''}
+     <button class="btn danger sm" onclick="delPhoneLog('${H(p.phone)}')" title="מחק את כל השיחות של המתקשר הזה">${svg(IC.trash,14)}</button>
    </div><div class="cv-body" id="cvBody" data-ph="${H(p.phone)}"><div class="chat">${h}</div></div>`;
   const nb=$('#cvBody');
   if(convTarget){const el=[...nb.querySelectorAll('.bb.u')].find(e=>e.dataset.k===convTarget);convTarget='';
@@ -1269,14 +1332,15 @@ async function copyConv(ph){
 /* ================= calls ================= */
 function renderCalls(){
   const q=($('#kq').value||'').trim(),dt=isoToIl($('#kDate').value);
-  const cnt={},pers={};for(const l of S.log){if(!l.call)continue;cnt[l.call]=(cnt[l.call]||0)+1;(pers[l.call]=pers[l.call]||new Set()).add(l.persona)}
+  const cnt={},pers={},warns={};for(const l of S.log){if(!l.call)continue;cnt[l.call]=(cnt[l.call]||0)+1;(pers[l.call]=pers[l.call]||new Set()).add(l.persona);if(l.warn)warns[l.call]=(warns[l.call]||0)+1}
   const L=(S.calls||[]).filter(c=>(!q||(c.name||'').includes(q)||(c.phone||'').includes(q))&&(!dt||(c.time||'').startsWith(dt)));
+  window._calls=L;
   $('#callsInfo').textContent=L.length+' שיחות'+((S.calls||[]).length>=300?' (300 האחרונות)':'');
   let h='<thead><tr><th>מתי</th><th>מי</th><th>טלפון</th><th>הודעות</th><th>עוזרים</th><th></th></tr></thead><tbody>';
-  for(const c of L){const n=cnt[c.call]||0,u=S.users.find(x=>x.phone===c.phone);
-    h+=`<tr><td class="num">${H(c.time)}</td><td><b style="cursor:pointer" onclick="openUser('${H(c.phone)}')">${H((u&&u.name)||c.name||'לא רשום')}</b></td><td class="num mu" dir="ltr" style="text-align:right">${H(c.phone)}</td><td class="num">${n||'<span class="mu2">0</span>'}</td>
+  L.forEach((c,i)=>{const n=cnt[c.call]||0,u=S.users.find(x=>x.phone===c.phone);
+    h+=`<tr><td class="num">${H(c.time)}</td><td><b style="cursor:pointer" onclick="openUser('${H(c.phone)}')">${H((u&&u.name)||c.name||'לא רשום')}</b></td><td class="num mu" dir="ltr" style="text-align:right">${H(c.phone)}</td><td class="num">${n||'<span class="mu2">0</span>'}${warns[c.call]?` <span class="tag gold">${warns[c.call]} אזהרות</span>`:''}</td>
     <td>${pers[c.call]?[...pers[c.call]].map(p=>`<span class="tag or">${H(p)}</span>`).join(' '):'<span class="mu2">רק תפריט</span>'}</td>
-    <td>${n?`<button class="btn ghost sm" onclick="openCall('${H(c.call)}')">הצג שיחה</button>`:''}</td></tr>`}
+    <td><div class="row" style="gap:4px;flex-wrap:nowrap;justify-content:flex-end">${n?`<button class="btn ghost sm" onclick="openCall(window._calls[${i}].call)">הצג שיחה</button>`:''}${c.call?`<button class="xbtn" onclick="delCall(window._calls[${i}].call)" title="מחק את השיחה" aria-label="מחק שיחה">${svg(IC.trash,15)}</button>`:''}</div></td></tr>`});
   if(!L.length)h+='<tr><td colspan="6" class="empty">אין שיחות להצגה</td></tr>';
   $('#callsT').innerHTML=h+'</tbody>';
 }
@@ -1325,7 +1389,7 @@ function renderAssist(){
         <button class="btn ghost sm" onclick="mvA(${i},-1)" ${i===0?'disabled':''}>הזז למעלה</button>
         <button class="btn ghost sm" onclick="mvA(${i},1)" ${i===A.length-1?'disabled':''}>הזז למטה</button>
         <button class="btn ghost sm" onclick="dupA(${i})">שכפל</button>
-        ${s.n?`<button class="btn ghost sm" onclick="$('#cAssist').value='';resetConv(true);fillConvFilters();$('#cAssist').value=A[${i}].name;convPhone='';go('conv')">השיחות שלו</button>`:''}
+        ${s.n?`<button class="btn ghost sm" onclick="showAssistConv(${i})">השיחות שלו</button>`:''}
         <span style="flex:1"></span>
         <button class="btn danger sm" onclick="delA(${i})">מחק עוזר</button>
       </div>
@@ -1334,6 +1398,7 @@ function renderAssist(){
   const on=A.filter(a=>a.on).length;
   if(on>8)$('#assistList').insertAdjacentHTML('afterbegin',`<div class="panel mb" style="border-color:#5a4a0a;color:var(--warn)">יש ${on} עוזרים פעילים, אבל בתפריט נכנסים רק 8. האחרונים לא יופיעו.</div>`);
 }
+function showAssistConv(i){resetConv(true);fillConvFilters();$('#cAssist').value=A[i].name;convPhone='';go('conv')}
 function refreshKeypadOnly(){
   const dm=digitMap(),byDigit={};A.forEach((a,i)=>{if(dm[i])byDigit[dm[i]]=a});
   document.querySelectorAll('#keypad .key.set').forEach(k=>{const a=byDigit[k.querySelector('b').textContent];if(a)k.querySelector('span').textContent=a.name});
@@ -1354,28 +1419,30 @@ async function saveAssist(){
 
 /* ================= texts ================= */
 function renderTexts(){
-  const sample={name:'משה',assistant:'העוזר הכללי',digit:'1',holiday:'שבת',time:'19:12'};
   let h='';
   for(const [g,items] of TXT_GROUPS){
     h+=`<h3 style="margin:${h?'26px':'0'} 0 4px;color:var(--or2);font-size:15px">${g}</h3>`;
     for(const k in items){
-      const v=TX[k]??'';const ph=['name','assistant','digit','holiday','time'].filter(x=>(TXT_DEF[k]||'').includes('{'+x+'}')||v.includes('{'+x+'}'));
+      if(TX[k]===undefined&&TXT_DEF[k]===undefined)continue;
+      const v=TX[k]??TXT_DEF[k]??'';const ph=PH_ALL.filter(x=>(TXT_DEF[k]||'').includes('{'+x+'}')||v.includes('{'+x+'}'));
       h+=`<div class="tx-item"><div class="tl"><span>${items[k]}</span><div class="row" style="gap:6px">
         ${ph.map(x=>`<div class="ph-chips"><button onclick="insPh('${k}','${x}')" title="הוסף">{${x}}</button></div>`).join('')}
         ${TXT_DEF[k]!==undefined&&v!==TXT_DEF[k]?`<button class="btn ghost sm" onclick="TX['${k}']=TXT_DEF['${k}'];setDirty('texts');renderTexts()">החזר לברירת מחדל</button>`:''}</div></div>
         <input type="text" id="tx_${k}" value="${H(v)}" oninput="TX['${k}']=this.value;setDirty('texts');pvTx('${k}')">
-        <div class="pv" id="pv_${k}">${pvHtml(k,sample)}</div></div>`;
+        <div class="pv" id="pv_${k}">${pvHtml(k)}</div></div>`;
     }
   }
   $('#textsList').innerHTML=h;
 }
-function pvHtml(k,s){s=s||{name:'משה',assistant:'העוזר הכללי',digit:'1',holiday:'שבת',time:'19:12'};const v=TX[k]||'';
+function pvHtml(k,s){s=s||SAMPLE;const v=TX[k]??TXT_DEF[k]??'';
   if(k==='wait')return 'יתחלפו: '+v.split(',').map(x=>x.trim()).filter(Boolean).map(x=>`<b>${H(x)}</b>`).join(' / ');
   if(!/\{/.test(v))return '';
   return 'יישמע כך: '+H(v).replace(/\{(\w+)\}/g,(m,x)=>s[x]?`<b>${H(s[x])}</b>`:m)}
 function pvTx(k){$('#pv_'+k).innerHTML=pvHtml(k);if(k.startsWith('menu'))renderAssist()}
 function insPh(k,x){const el=$('#tx_'+k);const p=el.selectionStart??el.value.length;el.value=el.value.slice(0,p)+'{'+x+'}'+el.value.slice(p);TX[k]=el.value;setDirty('texts');pvTx(k);el.focus()}
-async function saveTexts(){await api('/api/texts',TX);dirty.texts=false;await refresh();loadEditors(false);renderTexts();updateSavebar();toast('הנוסחים נשמרו')}
+async function saveTexts(){
+  for(const k in TX)if(!String(TX[k]||'').trim()&&TXT_DEF[k]!==undefined)TX[k]=TXT_DEF[k];
+  await api('/api/texts',TX);dirty.texts=false;await refresh();loadEditors(false);renderTexts();updateSavebar();toast('הנוסחים נשמרו')}
 
 /* ================= settings ================= */
 function renderSettings(){
@@ -1445,10 +1512,12 @@ function words(s){return (s||'').replace(/[^\u0590-\u05FFa-zA-Z0-9\s]/g,' ').spl
 function sim(a,b){const A=new Set(words(a)),B=new Set(words(b));if(!A.size||!B.size)return 0;let i=0;A.forEach(w=>{if(B.has(w))i++});return i/(A.size+B.size-i)}
 let _an=null;
 function analyze(){
-  if(_an&&_an.n===S.log.length&&_an.t===S.texts)return _an;
+  const lastK=S.log.length?key(S.log[S.log.length-1])+'|'+key(S.log[0]):'';
+  if(_an&&_an.n===S.log.length&&_an.lk===lastK&&_an.t===S.texts)return _an;
   const L=S.log,map=new Map(),probs=[];
   const errT=(S.texts&&S.texts.error)||'',nuT=(S.texts&&S.texts.not_understood)||'';
   L.forEach((l,i)=>{
+    if(l.warn)return;     // אזהרה היא תשובה מכוונת, לא תשובה בעייתית
     const a=l.a||'';let r='';
     if((errT&&a.includes(errT))||P_ERR.some(w=>a.includes(w)))r='תקלה או חיפוש שנכשל';
     else if((nuT&&a.includes(nuT))||P_NU.some(w=>a.includes(w)))r='הקו לא הבין';
@@ -1457,8 +1526,8 @@ function analyze(){
     if(r){map.set(key(l),r);probs.push({l,r})}
   });
   const tc=TOPICS.map(([t,kw])=>({t,n:0,w:{}}));let other=0;
-  for(const l of L){const q=' '+(l.q||'')+' ';let hit=false;TOPICS.forEach(([t,kw],i)=>{const m=kw.find(k=>q.includes(k));if(m){tc[i].n++;tc[i].w[m.trim()]=(tc[i].w[m.trim()]||0)+1;hit=true}});if(!hit)other++}
-  const wc={};for(const l of L)for(const w of words(l.q))if(!STOP.has(w)&&!/^\d+$/.test(w))wc[w]=(wc[w]||0)+1;
+  for(const l of L){if(l.warn)continue;const q=' '+(l.q||'')+' ';let hit=false;TOPICS.forEach(([t,kw],i)=>{const m=kw.find(k=>q.includes(k));if(m){tc[i].n++;tc[i].w[m.trim()]=(tc[i].w[m.trim()]||0)+1;hit=true}});if(!hit)other++}
+  const wc={};for(const l of L){if(l.warn)continue;for(const w of words(l.q))if(!STOP.has(w)&&!/^\d+$/.test(w))wc[w]=(wc[w]||0)+1}
   const topWords=Object.entries(wc).filter(x=>x[1]>1).sort((a,b)=>b[1]-a[1]).slice(0,42);
   const byCall={};for(const l of L)if(l.call)byCall[l.call]=(byCall[l.call]||0)+1;
   const callN=Object.keys(byCall).length,avgPer=callN?L.filter(l=>l.call).length/callN:0;
@@ -1467,7 +1536,8 @@ function analyze(){
   const hrs=Array(24).fill(0);for(const c of (S.calls||[])){const t=parseT(c.time);if(t)hrs[t.getHours()]++}
   const bh=hrs.indexOf(Math.max(...hrs));
   const ansW=L.length?L.reduce((s,l)=>s+words(l.a).length,0)/L.length:0;
-  _an={n:L.length,t:S.texts,map,probs,topics:tc.filter(x=>x.n).sort((a,b)=>b.n-a.n).concat(other?[{t:'אחר',n:other,w:{}}]:[]),topWords,avgPer,retPct:ph.length?ret/ph.length*100:0,busy:Math.max(...hrs)?bh:null,ansW};
+  const warnN=L.filter(l=>l.warn).length;
+  _an={n:L.length,lk:lastK,t:S.texts,map,probs,topics:tc.filter(x=>x.n).sort((a,b)=>b.n-a.n).concat(other?[{t:'אחר',n:other,w:{}}]:[]),topWords,avgPer,retPct:ph.length?ret/ph.length*100:0,busy:Math.max(...hrs)?bh:null,ansW,warnN};
   return _an;
 }
 function probOf(l){if(!S)return '';return analyze().map.get(key(l))||''}
@@ -1475,18 +1545,19 @@ function renderInsights(){
   const an=analyze(),L=S.log,tot=L.length;
   $('#insBase').textContent=tot?`מתוך ${tot} ההודעות האחרונות`:'';
   $('#insFacts').innerHTML=[
-    [an.avgPer?an.avgPer.toFixed(1):'—','הודעות בממוצע לשיחה'],
-    [Math.round(an.retPct)+'%','מהמתקשרים חזרו ביום אחר'],
-    [an.busy===null?'—':`${pad(an.busy)}:00`,'השעה העמוסה ביותר'],
-    [an.ansW?Math.round(an.ansW):'—','מילים בממוצע בתשובה']
-  ].map(([v,t])=>`<div><b>${v}</b><span>${t}</span></div>`).join('');
-  const bad=an.probs.length,good=tot?Math.round((tot-bad)/tot*100):0;
+    [an.avgPer?an.avgPer.toFixed(1):'—','הודעות בממוצע לשיחה',''],
+    [Math.round(an.retPct)+'%','מהמתקשרים חזרו ביום אחר',''],
+    [an.busy===null?'—':`${pad(an.busy)}:00`,'השעה העמוסה ביותר',''],
+    [an.ansW?Math.round(an.ansW):'—','מילים בממוצע בתשובה',''],
+    [an.warnN,'אזהרות על שאלות לא צנועות',an.warnN?"uFilter='warned';go('users');renderUsers()":'']
+  ].map(([v,t,c])=>`<div${c?` class="click" onclick="${c}" title="הצג את המשתמשים שקיבלו אזהרות"`:''}><b>${v}</b><span>${t}</span></div>`).join('');
+  const base=tot-an.warnN,bad=an.probs.length,good=base?Math.round((base-bad)/base*100):0;
   const R=58,C=2*Math.PI*R,col=good>=85?'#3bd584':good>=70?'#ffc53d':'#ff4d4d';
   const cnt={};an.probs.forEach(p=>cnt[p.r]=(cnt[p.r]||0)+1);
-  $('#insGauge').innerHTML=tot?`<svg viewBox="0 0 150 150" role="img" aria-label="${good}% תשובות תקינות"><circle cx="75" cy="75" r="${R}" fill="none" stroke="#1c1c1c" stroke-width="12"/><circle cx="75" cy="75" r="${R}" fill="none" stroke="${col}" stroke-width="12" stroke-linecap="round" stroke-dasharray="${C*good/100} ${C}" transform="rotate(-90 75 75)"/><text class="gv" x="75" y="80" text-anchor="middle">${good}%</text><text class="gl" x="75" y="100" text-anchor="middle">תשובות תקינות</text></svg>
-    <dl><dt>תשובות תקינות</dt><dd>${tot-bad}</dd>${Object.entries(cnt).map(([r,n])=>`<dt>${H(r)}</dt><dd>${n}</dd>`).join('')||'<dt>אין תשובות בעייתיות</dt><dd></dd>'}</dl>`:'<div class="empty">עדיין אין הודעות לניתוח</div>';
+  $('#insGauge').innerHTML=base?`<svg viewBox="0 0 150 150" role="img" aria-label="${good}% תשובות תקינות"><circle cx="75" cy="75" r="${R}" fill="none" stroke="#1c1c1c" stroke-width="12"/><circle cx="75" cy="75" r="${R}" fill="none" stroke="${col}" stroke-width="12" stroke-linecap="round" stroke-dasharray="${C*good/100} ${C}" transform="rotate(-90 75 75)"/><text class="gv" x="75" y="80" text-anchor="middle">${good}%</text><text class="gl" x="75" y="100" text-anchor="middle">תשובות תקינות</text></svg>
+    <dl><dt>תשובות תקינות</dt><dd>${base-bad}</dd>${Object.entries(cnt).map(([r,n])=>`<dt>${H(r)}</dt><dd>${n}</dd>`).join('')||'<dt>אין תשובות בעייתיות</dt><dd></dd>'}</dl>`:'<div class="empty">עדיין אין הודעות לניתוח</div>';
   const P=S.charts.per_day||[],perDay={},perBad={};
-  for(const l of L){const d=(l.time||'').slice(0,5);perDay[d]=(perDay[d]||0)+1}
+  for(const l of L){if(l.warn)continue;const d=(l.time||'').slice(0,5);perDay[d]=(perDay[d]||0)+1}
   for(const p of an.probs){const d=(p.l.time||'').slice(0,5);perBad[d]=(perBad[d]||0)+1}
   const W=700,Hh=170,bw=W/Math.max(1,P.length);let s=`<svg viewBox="0 0 ${W} ${Hh+26}" role="img" aria-label="תשובות בעייתיות לפי יום">`;
   [.25,.5,.75,1].forEach(f=>s+=`<line x1="0" x2="${W}" y1="${Hh-f*(Hh-24)}" y2="${Hh-f*(Hh-24)}" stroke="#1f1f1f"/>`);
@@ -1503,6 +1574,9 @@ function renderInsights(){
   const PL=an.probs.filter(p=>probMode==='all'||(probMode==='open')===!resolved[key(p.l)]).slice(-40).reverse();window._probs=PL;
   $('#insProbs').innerHTML=PL.length?PL.map((p,i)=>probRow(p.l,p.r,`<button class="btn ghost sm" onclick="openMsg(window._probs[${i}].l)">פתח</button><button class="btn ghost sm" onclick="resolveP(${i})">${resolved[key(p.l)]?'החזר לטיפול':'טופל'}</button>`)).join('')
     :`<div class="empty">${probMode==='open'?'אין תשובות שמחכות לבדיקה. הקו עונה טוב.':'אין כאן כלום'}</div>`;
+  const live=new Set(S.log.map(key));
+  for(const k in flags)if(!live.has(k)&&!(parseT(flags[k].time)<parseT((S.log[0]||{}).time)))delete flags[k];
+  store.set('yai_flags',flags);
   const FL=Object.entries(flags).sort((a,b)=>(parseT(b[1].time)||0)-(parseT(a[1].time)||0));window._flags=FL;
   $('#insFlags').innerHTML=FL.length?FL.map(([k,f],i)=>probRow(f,'סימנת לבדיקה',`<button class="btn ghost sm" onclick="openMsg(window._flags[${i}][1])">פתח</button><button class="btn ghost sm" onclick="unflag(${i})">הסר</button>`)).join('')
     :'<div class="empty">עוד לא סימנת תשובות. במסך השיחות, עמוד עם העכבר על תשובה ולחץ על הדגל.</div>';
@@ -1615,7 +1689,9 @@ async function testTts(voice,btn){
 async function sendMail(){$('#mailRes').textContent='שולח…';try{const d=await api('/api/sendmail',{});$('#mailRes').textContent=d.result}catch(e){$('#mailRes').textContent='נכשל'}}
 async function clearData(what){
   const msg=what==='log'?'למחוק את כל תוכן השיחות (מה שאמרו ומה שהבינה ענתה)? אי אפשר לשחזר.':'למחוק את יומן השיחות (מי התקשר ומתי)? אי אפשר לשחזר.';
-  if(!await ask(msg,'מחק לצמיתות',true))return;await api('/api/clear',{what});await refresh();toast('נמחק')
+  if(!await ask(msg,'מחק לצמיתות',true))return;await api('/api/clear',{what});
+  if(what==='log'){flags={};resolved={};store.set('yai_flags',flags);store.set('yai_resolved',resolved)}
+  await refresh();toast('נמחק')
 }
 
 /* ================= command palette ================= */
