@@ -5,6 +5,7 @@
 - רישום שם לפי מספר טלפון, 7 עוזרים, חיפוש באינטרנט, החלפת קול, אתר ניהול חי
 - חיפוש באינטרנט: חיפוש גוגל של Gemini + כמה מנועי חיפוש חינמיים במקביל + קריאת תוכן האתרים עצמם
 - תחבורה ציבורית: לוחות הזמנים הרשמיים של משרד התחבורה (דרך המאגר הפתוח של הסדנא לידע ציבורי), חינם
+- אזהרות: מי ששואל על נושאים לא צנועים שומע "זוהי אזהרה X מתוך 3" (בלי חסימה)
 """
 from flask import Flask, request, Response
 from yemot_flow.actions import build_id_list_message, build_read, build_go_to_folder, build_combined_action
@@ -165,7 +166,9 @@ TEXTS = {
     "not_understood": "לא הבנתי, אפשר לחזור על זה?",
     "name_not_understood": "לא הצלחתי להבין את השם.",
     "closed": "הקו סגור ב{holiday}, ויחזור לפעול בשעה {time}",
+    "warning": "זוהי אזהרה {n} מתוך 3. הקו מיועד לשאלות מכובדות בלבד",   # {n} = מספר האזהרה של המתקשר (עד 3)
 }
+WARN_MAX = 3      # המספר שמוקרא באזהרה לא עולה מעל זה. אין חסימה - רק אזהרה
 
 GENERAL_RULES = (
     " אתה מדבר בטלפון, לכן ענה קצר וברור: משפט עד שלושה משפטים, אלא אם ביקשו במפורש משהו ארוך (סיפור, שיר, הסבר מפורט)."
@@ -208,6 +211,7 @@ ASSISTANTS = [
 names = {}        # טלפון -> שם
 voices = {}       # טלפון -> מספר קול מועדף
 notes = {}        # טלפון -> הודעה אישית לשיחה הבאה
+warnings = {}     # טלפון -> כמה אזהרות קיבל על שאלות לא צנועות
 LOG = []          # מה נאמר
 CALLS = []        # שיחות
 calls = {}        # מצב של שיחות פעילות (לפי ApiCallId)
@@ -374,7 +378,7 @@ def _bg(fn, *a):
 
 def save_names():
     with _lock:
-        data = json.dumps({"names": names, "voices": voices, "notes": notes}, ensure_ascii=False)
+        data = json.dumps({"names": names, "voices": voices, "notes": notes, "warnings": warnings}, ensure_ascii=False)
     _bg(yemot_write_text, "ai_names.txt", data)
 
 
@@ -428,6 +432,7 @@ def load_all():
                 names.update(d["names"])
                 voices.update({k: int(v) for k, v in d.get("voices", {}).items()})
                 notes.update(d.get("notes", {}))
+                warnings.update({k: int(v) for k, v in (d.get("warnings") or {}).items()})
             else:
                 names.update(d)
     except Exception as e:
@@ -2149,7 +2154,7 @@ META_LABELS = ("תמלול", "פעולה", "חיפוש", "תשובה", "השאל
                "תוצאות החיפוש", "נתוני תחבורה", "תחזית מזג אוויר", "מילות חיפוש", "מקורות", "מקור",
                "transcript", "action", "search", "answer", "question", "query")
 _META_RE = re.compile(r"^(%s)\s*[:：]" % "|".join(re.escape(x) for x in META_LABELS), re.I)
-VALID_ACTIONS = ("none", "menu", "end", "voice")
+VALID_ACTIONS = ("none", "menu", "end", "voice", "warn")
 
 
 def parse_fields(raw):
@@ -2185,7 +2190,7 @@ def strip_meta(text):
 
 
 def ask_ai(assistant, history, file_name):
-    """מחזיר (תמלול, פעולה, תשובה). פעולה: none / menu / end / voice / switch:id"""
+    """מחזיר (תמלול, פעולה, תשובה). פעולה: none / menu / end / voice / warn / switch:id"""
     t0 = time.time()
     try:
         audio = yemot_download(file_name + ".wav")
@@ -2211,7 +2216,7 @@ def ask_ai(assistant, history, file_name):
         " אם בתמלול חסרות מילים חשובות או שהוא לא הגיוני, אל תענה על ניחוש - בקש בתשובה לחזור על השאלה."
         " ענה בדיוק בפורמט הבא, ארבע שורות:\n"
         "תמלול: <תמלול מדויק של ההקלטה>\n"
-        "פעולה: <אחת מהאפשרויות: none | menu | end | voice | switch:מזהה>\n"
+        "פעולה: <אחת מהאפשרויות: none | menu | end | voice | warn | switch:מזהה>\n"
         "חיפוש: <לא | כן: מילות חיפוש קצרות וברורות כמו שכותבים בגוגל | מזג אוויר: שם המקום באנגלית"
         " | תחבורה: מספר קו | עיר או תחנת מוצא | עיר יעד | מספר תחנה | זמנים: עיר בעברית | היום / מחר / תאריך>."
         " זמנים = כל שאלה על זמני היום: שקיעה, זריחה, נץ, סוף זמן קריאת שמע ותפילה, חצות, מנחה, פלג המנחה, צאת הכוכבים,"
@@ -2229,6 +2234,8 @@ def ask_ai(assistant, history, file_name):
         "תשובה: <התשובה שלך למשתמש. אם צריך חיפוש (כן / מזג אוויר / תחבורה / זמנים), כתוב כאן רק: מחפש>\n"
         "כללי הפעולה: menu אם ביקש לחזור לתפריט. end אם ביקש לסיים או להתנתק או אמר להתראות. "
         "voice אם ביקש להחליף קול. switch:מזהה אם ביקש לעבור לעוזר אחר מהרשימה: " + others + ". "
+        "warn אם המשתמש שאל, ביקש או אמר משהו לא צנוע או גס: תוכן מיני או אינטימי, פריצות, ניבול פה. "
+        "במקרה של warn אל תענה על התוכן עצמו, ובשורת החיפוש כתוב: לא. "
         "אחרת none. כשהפעולה אינה none, כתוב בתשובה משפט קצר מתאים (למשל: בטח, מעביר אותך)."
     )
     contents = list(history) + [{
@@ -2254,6 +2261,8 @@ def ask_ai(assistant, history, file_name):
     else:
         transcript, action, search_line = "", "none", ""
         answer = raw.strip()
+    if action == "warn":
+        return transcript, "warn", ""      # אזהרה: הנוסח נקבע לפי מספר האזהרות של המתקשר (ב-ai_worker)
     if transcript and action == "none" and "תחבור" not in search_line and any(w in transcript + " " for w in TRANSIT_WORDS):
         tp = parse_transit("", transcript)
         if tp["line"] or tp["stop"]:
@@ -2316,6 +2325,15 @@ def over_limit(phone):
 
 def is_blocked(phone):
     return phone in csv_list(SETTINGS.get("blocked_phones", "")) and phone not in OWNER_PHONES
+
+
+def add_warning(phone):
+    """סופר אזהרה למתקשר ומחזיר את המספר שיוקרא (1, 2, 3, ומשם תמיד 3). אין חסימה"""
+    with _lock:
+        warnings[phone] = warnings.get(phone, 0) + 1
+        n = min(warnings[phone], WARN_MAX)
+    save_names()
+    return n
 
 
 # ============================================================ בניית תגובות לימות
@@ -2399,6 +2417,12 @@ def goodbye(call_id, name, state=None):
 def ai_worker(pending, state, assistant, history, file_name, call_id, voice_idx):
     try:
         transcript, action, answer = ask_ai(assistant, history, file_name)
+        if action == "warn":
+            n = add_warning(state.get("phone", ""))
+            answer = clean_for_tts(T("warning", n=n))
+            pending["warn"] = n
+            action = "none"                 # השיחה ממשיכה כרגיל אחרי האזהרה
+            print("warning %d for %s" % (n, state.get("phone", "")))
         state["pending_q"], state["pending_a"] = transcript, answer   # מוצג באתר עוד לפני שהקול מוכן
         if keep_days() and transcript:
             pending["rec"] = file_name          # ההקלטה נשמרת כמה ימים - אפשר לשמוע אותה באתר
@@ -2582,9 +2606,12 @@ def yemot():
             state["history"].append({"role": "user", "parts": [{"text": transcript}]})
             state["history"].append({"role": "model", "parts": [{"text": answer}]})
             state["history"] = state["history"][-12:]
+            entry = {"time": now_str(), "phone": phone, "name": name, "call": call_id,
+                     "persona": assistant["name"], "q": transcript, "a": answer, "rec": pending.get("rec", "")}
+            if pending.get("warn"):
+                entry["warn"] = pending["warn"]
             with _lock:
-                LOG.append({"time": now_str(), "phone": phone, "name": name, "call": call_id,
-                            "persona": assistant["name"], "q": transcript, "a": answer, "rec": pending.get("rec", "")})
+                LOG.append(entry)
                 del LOG[:-LOG_MAX]
             save_log()
 
@@ -2756,7 +2783,7 @@ def api_state():
                       "today": sum(1 for l in log if l["phone"] == ph and l["time"].startswith(today_str())),
                       "blocked": ph in blocked, "unlimited": ph in unlimited or ph in OWNER_PHONES, "owner": ph in OWNER_PHONES,
                       "note": (notes.get(ph) if isinstance(notes.get(ph), dict) else ({"text": notes.get(ph), "created": "", "heard": ""} if notes.get(ph) else None)),
-                      "voice": voices.get(ph, 0),
+                      "voice": voices.get(ph, 0), "warnings": warnings.get(ph, 0),
                       "last": max([c["time"] for c in cl if c["phone"] == ph] or [""])})
     days = [(il_now() - datetime.timedelta(days=i)).strftime("%d/%m/%Y") for i in range(13, -1, -1)]
     per_day = [[d[:5], sum(1 for c in cl if c["time"].startswith(d))] for d in days]
@@ -2871,6 +2898,9 @@ def api_user():
         names.pop(phone, None)
         notes.pop(phone, None)
         voices.pop(phone, None)
+        warnings.pop(phone, None)
+    elif action == "reset_warnings":
+        warnings.pop(phone, None)
     elif action == "block":
         bl = csv_list(SETTINGS["blocked_phones"])
         if phone in bl:
