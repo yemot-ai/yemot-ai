@@ -281,6 +281,22 @@ mark{background:var(--or);color:#000;border-radius:3px;padding:0 2px}
 .cv-empty{flex:1;display:grid;place-items:center;color:var(--mu);text-align:center;padding:30px}
 .back-m{display:none}
 
+/* ---------- test chat ---------- */
+.tc{background:var(--s1);border:1px solid var(--line);border-radius:var(--r);display:flex;flex-direction:column;height:calc(100vh - 250px);min-height:480px;overflow:hidden}
+.tc-top{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 16px;border-bottom:1px solid var(--line)}
+.tc-top select{width:auto;max-width:260px}
+.tc-body{flex:1;overflow-y:auto;padding:22px 18px;display:flex;flex-direction:column;gap:6px;background:radial-gradient(circle at 20% 0%,#140a03,transparent 50%)}
+.tc-ex{display:flex;flex-wrap:wrap;gap:6px;padding:10px 16px 0}
+.tc-ex:empty{display:none}
+.tc-ex button{background:var(--s3);border:1px solid var(--line2);border-radius:99px;padding:4px 12px;font-size:13px;cursor:pointer;color:var(--mu)}
+.tc-ex button:hover{color:var(--or2);border-color:var(--or)}
+.tc-in{display:flex;gap:8px;align-items:flex-end;padding:12px 16px}
+.tc-in textarea{min-height:44px;max-height:140px;resize:none}
+.tc-in .btn,.tc-in .iconbtn{height:44px}
+.tc-meta{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:6px}
+.tc-meta .play{margin:0}
+.iconbtn.rec{color:#fff;background:var(--bad);border-color:var(--bad);animation:blink 1s infinite}
+
 /* ---------- bulk ---------- */
 .ck{appearance:none;-webkit-appearance:none;width:18px;height:18px;border:1.5px solid var(--line2);border-radius:5px;background:var(--bg);cursor:pointer;display:inline-grid;place-items:center;vertical-align:middle;margin:0}
 .ck:checked{background:var(--or);border-color:var(--or)}
@@ -461,6 +477,7 @@ mark{background:var(--or);color:#000;border-radius:3px;padding:0 2px}
   .cv{grid-template-columns:1fr;height:auto}
   .cv.sel .cv-list{display:none}.cv:not(.sel) .cv-pane{display:none}
   .cv-list,.cv-pane{height:calc(100vh - 230px)}
+  .tc{height:calc(100vh - 230px)}
   .back-m{display:inline-flex}
   .bulk{top:58px}
   .gauge{grid-template-columns:1fr;justify-items:center}
@@ -587,6 +604,27 @@ mark{background:var(--or);color:#000;border-radius:3px;padding:0 2px}
         <div class="cv" id="cv">
           <div class="cv-list"><div class="lh"><span id="convInfo"></span></div><div class="cv-items" id="cvItems"></div></div>
           <div class="cv-pane" id="cvPane"></div>
+        </div>
+      </section>
+
+      <!-- ===== TEST CHAT ===== -->
+      <section class="page" id="p-test">
+        <p class="lead">כאן שואלים את הקו בכתב, כאילו התקשרת. הוא עונה בדיוק כמו בטלפון: אותו עוזר, אותן הנחיות ואותו חיפוש. מה שנשאל כאן לא נשמר ביומן, לא נספר במכסה ולא מוסיף אזהרות.</p>
+        <div class="tc">
+          <div class="tc-top">
+            <select id="tcAssist" onchange="tcPickAssist()" aria-label="עוזר"></select>
+            <label class="switch"><input type="checkbox" id="tcSpeak" onchange="store.set('yai_tc_speak',this.checked)"><i></i><span>השמע תשובות בקול</span></label>
+            <select id="tcVoice" style="direction:ltr" aria-label="קול"></select>
+            <span style="flex:1"></span>
+            <button class="btn ghost sm" onclick="tcReset()">שיחה חדשה</button>
+          </div>
+          <div class="tc-body" id="tcBody"></div>
+          <div class="tc-ex" id="tcEx"></div>
+          <div class="tc-in">
+            <button class="iconbtn" id="tcMicBtn" onclick="tcMic()" title="לדבר במקום להקליד" aria-label="הקלטה" hidden><svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 14a3 3 0 003-3V5a3 3 0 00-6 0v6a3 3 0 003 3zm5.3-3a5.3 5.3 0 01-10.6 0H5a7 7 0 006 6.92V21h2v-3.08A7 7 0 0019 11h-1.7z"/></svg></button>
+            <textarea id="tcText" placeholder="מה היית שואל בטלפון? (Enter לשליחה)" onkeydown="tcKey(event)" oninput="this.style.height='auto';this.style.height=Math.min(140,this.scrollHeight)+'px'"></textarea>
+            <button class="btn" id="tcSend" onclick="tcSend()">שלח</button>
+          </div>
         </div>
       </section>
 
@@ -804,12 +842,13 @@ const IC={
  grip:'M9 3a2 2 0 110 4 2 2 0 010-4zm6 0a2 2 0 110 4 2 2 0 010-4zM9 10a2 2 0 110 4 2 2 0 010-4zm6 0a2 2 0 110 4 2 2 0 010-4zm-6 7a2 2 0 110 4 2 2 0 010-4zm6 0a2 2 0 110 4 2 2 0 010-4z',
  chev:'M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6z',
  flag:'M14.4 6L14 4H5v17h2v-7h5.6l.4 2h7V6z',
+ test:'M21 6h-2v9H6v2c0 .55.45 1 1 1h11l4 4V7c0-.55-.45-1-1-1zm-4 6V3c0-.55-.45-1-1-1H3c-.55 0-1 .45-1 1v14l4-4h10c.55 0 1-.45 1-1z',
  trash:'M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z'
 };
 IC.conv=IC.chat;
 const svg=(p,s=19)=>`<svg viewBox="0 0 24 24" width="${s}" height="${s}"><path fill="currentColor" d="${p}"/></svg>`;
 
-const PAGES=[['dash','לוח בקרה'],['users','משתמשים'],['conv','שיחות'],['insights','תובנות'],['calls','יומן שיחות'],['pad','עוזרים'],['texts','נוסחים'],['settings','הגדרות'],['system','מערכת ובדיקות']];
+const PAGES=[['dash','לוח בקרה'],['users','משתמשים'],['conv','שיחות'],['test','בדיקת שיחה'],['insights','תובנות'],['calls','יומן שיחות'],['pad','עוזרים'],['texts','נוסחים'],['settings','הגדרות'],['system','מערכת ובדיקות']];
 const PID={pad:'assist'};
 const pageId=k=>PID[k]||k;
 
@@ -919,7 +958,7 @@ function toggleSound(){
 
 /* ================= nav ================= */
 function buildNav(){
-  $('#nav').innerHTML=PAGES.map(([k,t],i)=>`<a data-p="${pageId(k)}" onclick="go('${pageId(k)}')">${svg(IC[k])}<span>${t}</span>${k==='dash'?'<span class="cnt" id="navLive" hidden></span>':''}${k==='insights'?'<span class="cnt warn" id="navProb" hidden></span>':''}<span class="hk">${i+1}</span></a>`).join('');
+  $('#nav').innerHTML=PAGES.map(([k,t],i)=>`<a data-p="${pageId(k)}" onclick="go('${pageId(k)}')">${svg(IC[k])}<span>${t}</span>${k==='dash'?'<span class="cnt" id="navLive" hidden></span>':''}${k==='insights'?'<span class="cnt warn" id="navProb" hidden></span>':''}${i<9?`<span class="hk">${i+1}</span>`:''}</a>`).join('');
   updateNavBadges();
 }
 function updateNavBadges(){
@@ -936,6 +975,7 @@ function go(p){
   history.replaceState(null,'','#'+p);
   if(p==='conv')renderConv();
   if(p==='insights')renderInsights();
+  if(p==='test'){tcDraw();setTimeout(()=>$('#tcText').focus(),50)}
   if(p==='dash'){scopeDrawn=false;renderScope()}
   updateSavebar();window.scrollTo(0,0);
 }
@@ -943,7 +983,7 @@ function go(p){
 /* ================= render all ================= */
 function renderAll(){
   renderLive();renderFeed([]);renderScope();renderCharts();renderUsers();fillConvFilters();renderConv();renderCalls();
-  renderAssist();renderTexts();renderSettings();renderSystem();updateNavBadges();
+  renderAssist();renderTexts();renderSettings();renderSystem();renderTestControls();updateNavBadges();
   if(page==='insights')renderInsights();
   if(drawerPhone&&!$('#drawer').contains(document.activeElement))renderDrawer();
 }
@@ -1002,7 +1042,7 @@ function renderLive(){
   $('#boardHint').textContent=act.length?act.length+' מחוברים כרגע':'הקו פנוי';
 }
 function fmtDur(ph){const s=callStart[ph]?Math.max(0,Math.floor((Date.now()-callStart[ph])/1000)):0;return `${Math.floor(s/60)}:${pad(s%60)}`}
-function tickDurations(){document.querySelectorAll('.jack .dur').forEach(e=>e.textContent=fmtDur(e.dataset.ph))}
+function tickDurations(){document.querySelectorAll('.jack .dur').forEach(e=>e.textContent=fmtDur(e.dataset.ph));const tt=$('#tcTimer');if(tt&&TC.busy)tt.textContent=Math.floor((Date.now()-TC.t0)/1000)+' שנ׳'}
 function toggleCompact(){compact=!compact;store.set('yai_compact',compact);renderLive()}
 
 /* ================= oscilloscope ================= */
@@ -1492,6 +1532,96 @@ async function discard(){if(!await ask('לבטל את כל השינויים של
   const k=page;dirty[k]=false;loadEditors(false);if(k==='assist')renderAssist();if(k==='texts'){renderTexts();renderAssist()}if(k==='settings')renderSettings();updateSavebar()}
 window.addEventListener('beforeunload',e=>{if(dirty.assist||dirty.texts||dirty.settings){e.preventDefault();e.returnValue=''}});
 
+/* ================= test chat ================= */
+const TC={msgs:[],hist:[],assist:'',warn:0,busy:false,t0:0};
+const TC_EX=['מה מזג האוויר מחר בבני ברק?','מתי השקיעה היום בירושלים?','מתי יוצא קו 402 מבני ברק לירושלים?','מה החדשות היום?','תספר לי בדיחה קצרה','תעביר אותי לעוזר התורני'];
+function tcAssistants(){let d=0;return (S.assistants||[]).filter(a=>a.on!==false&&d<8&&++d).map((a,i)=>({...a,digit:i+1}))}
+function renderTestControls(){
+  if(!S)return;const L=tcAssistants();
+  if(!TC.assist||!L.some(a=>a.id===TC.assist))TC.assist=L.length?L[0].id:'';
+  $('#tcAssist').innerHTML=L.map(a=>`<option value="${H(a.id)}">הקשה ${a.digit} · ${H(a.name)}</option>`).join('');
+  $('#tcAssist').value=TC.assist;
+  const tv=$('#tcVoice'),cur=tv.value;tv.innerHTML=(S.voices||[]).map(v=>`<option>${H(v)}</option>`).join('');if(cur&&(S.voices||[]).includes(cur))tv.value=cur;
+  $('#tcSpeak').checked=store.get('yai_tc_speak',false);
+  $('#tcMicBtn').hidden=!(window.SpeechRecognition||window.webkitSpeechRecognition);
+}
+function tcName(id){const a=(S.assistants||[]).find(x=>x.id===id);return a?a.name:''}
+function tcPickAssist(){
+  TC.assist=$('#tcAssist').value;TC.hist=[];
+  if(TC.msgs.length)TC.msgs.push({who:'sys',text:'עברת ל'+tcName(TC.assist)});
+  tcDraw();$('#tcText').focus();
+}
+function tcReset(){TC.msgs=[];TC.hist=[];TC.warn=0;if(tcAudio){tcAudio.pause();tcAudio=null}tcDraw();$('#tcText').focus()}
+function tcKey(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();tcSend()}}
+function tcExample(i){$('#tcText').value=TC_EX[i];tcSend()}
+function tcDraw(){
+  const b=$('#tcBody');if(!b)return;let h='';
+  if(!TC.msgs.length&&!TC.busy)h=`<div class="cv-empty"><div>${svg(IC.test,40)}<p>אתה עם ${H(tcName(TC.assist)||'העוזר')}.<br>כתוב שאלה כאילו התקשרת לקו, ותראה מה הוא עונה.</p></div></div>`;
+  const AN={menu:'בטלפון: חוזר לתפריט',end:'בטלפון: השיחה מסתיימת',voice:'בטלפון: הקול מתחלף'};
+  TC.msgs.forEach((m,i)=>{
+    if(m.who==='u'){h+=`<div class="bb u">${H(m.text)}</div>`;return}
+    if(m.who==='sys'){h+=`<div class="persona">${H(m.text)}</div>`;return}
+    const tags=[];
+    if(m.seconds!=null)tags.push(`<span class="tag" title="כמה זמן המתקשר היה מחכה לתשובה (בלי זמן הקראת התשובה)">${m.seconds} שניות</span>`);
+    if(m.search)tags.push(`<span class="tag or">${H(m.search)}</span>`);
+    if(m.warn)tags.push(`<span class="tag gold">אזהרה ${m.warn}</span>`);
+    if(AN[m.action])tags.push(`<span class="tag">${AN[m.action]}</span>`);
+    if(!m.err)tags.push(`<button class="play" onclick="tcSay(${i},this)" title="השמע בקול של הקו" aria-label="השמע">▶</button>`);
+    h+=`<div class="bb m ${m.err?'flagged':m.warn?'warned':''}">${H(m.text)}<div class="tc-meta">${tags.join('')}</div></div>`;
+  });
+  if(TC.busy)h+=`<div class="bb m"><span class="wave"><i></i><i></i><i></i><i></i></span> הקו חושב… <span class="mu2" id="tcTimer">0 שנ׳</span></div>`;
+  b.innerHTML=h;b.scrollTop=b.scrollHeight;
+  $('#tcSend').disabled=TC.busy;
+  $('#tcEx').innerHTML=TC.msgs.length?'':TC_EX.map((t,i)=>`<button onclick="tcExample(${i})">${H(t)}</button>`).join('');
+}
+async function tcSend(){
+  const el=$('#tcText'),t=el.value.trim();if(!t||TC.busy)return;
+  el.value='';el.style.height='';
+  TC.msgs.push({who:'u',text:t});TC.busy=true;TC.t0=Date.now();tcDraw();
+  try{
+    const d=await api('/api/test_chat',{text:t,assistant:TC.assist,history:TC.hist.slice(-6),warn_n:TC.warn+1});
+    if(!d.ok)TC.msgs.push({who:'m',text:'שגיאה: '+(d.error||'הקו לא ענה'),err:true});
+    else{
+      if(d.warn)TC.warn=Math.min(3,TC.warn+1);
+      TC.msgs.push({who:'m',text:d.answer,seconds:d.seconds,search:d.search,action:d.action,warn:d.warn});
+      TC.hist.push({q:t,a:d.answer});
+      if(d.switch_to){TC.assist=d.switch_to;$('#tcAssist').value=d.switch_to;TC.msgs.push({who:'sys',text:'עברת ל'+(d.switch_name||tcName(d.switch_to))})}
+      if($('#tcSpeak').checked)setTimeout(()=>{const bs=document.querySelectorAll('#tcBody .bb.m .play');tcSay(TC.msgs.map(m=>m.who).lastIndexOf('m'),bs[bs.length-1])},50);
+    }
+  }catch(e){
+    if(e.message!=='auth')TC.msgs.push({who:'m',err:true,text:e.message==='old-server'?'השרת עוד לא מכיר את צ׳אט הבדיקה. צריך להעלות ל-GitHub את app.py המעודכן.':'אין חיבור לשרת. אם השרת נרדם, נסה שוב בעוד דקה.'});
+  }
+  TC.busy=false;tcDraw();el.focus();
+}
+let tcAudio=null;
+async function tcSay(i,btn){
+  const m=TC.msgs[i];if(!m)return;
+  const playing=tcAudio&&!tcAudio.paused;if(tcAudio){tcAudio.pause();tcAudio=null}
+  document.querySelectorAll('#tcBody .play.on').forEach(x=>{x.classList.remove('on');x.textContent='▶'});
+  if(playing&&btn&&btn.dataset.on==='1'){btn.dataset.on='';return}
+  if(btn){btn.innerHTML='<span class="spin" style="width:12px;height:12px"></span>'}
+  try{
+    const r=await fetch('/api/say',{method:'POST',headers:{'Content-Type':'application/json'},credentials:'same-origin',body:JSON.stringify({text:m.text,voice:$('#tcVoice').value})});
+    if(r.status===404)throw new Error('old');if(!r.ok)throw new Error('bad');
+    const a=new Audio(URL.createObjectURL(await r.blob()));tcAudio=a;
+    const off=()=>{if(btn){btn.classList.remove('on');btn.textContent='▶';btn.dataset.on=''}};
+    a.onended=off;a.onpause=off;
+    await a.play();if(btn){btn.classList.add('on');btn.textContent='■';btn.dataset.on='1'}
+  }catch(e){if(btn)btn.textContent='▶';toast(e.message==='old'?'צריך להעלות ל-GitHub את app.py המעודכן':'ההשמעה לא הצליחה',true)}
+}
+let tcRec=null;
+function tcMic(){
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR)return;
+  const b=$('#tcMicBtn');
+  if(tcRec){tcRec.stop();return}
+  tcRec=new SR();tcRec.lang='he-IL';tcRec.interimResults=true;tcRec.maxAlternatives=1;
+  let final='';
+  tcRec.onresult=e=>{let txt='';for(const r of e.results){txt+=r[0].transcript}$('#tcText').value=txt;final=txt};
+  tcRec.onend=()=>{b.classList.remove('rec');tcRec=null;if(final.trim())tcSend()};
+  tcRec.onerror=e=>{if(e.error==='not-allowed')toast('הדפדפן לא מאשר גישה למיקרופון',true)};
+  b.classList.add('rec');tcRec.start();
+}
+
 /* ================= insights ================= */
 const P_ERR=['בעיה זמנית','לא הצלחתי','לא הצלחנו','תקלה','לוקח יותר מדי זמן'];
 const P_NU=['לא הבנתי','לא שמעתי','אפשר לחזור','תוכל לחזור','לחזור על השאלה','חזור על','לא ברור לי','לא שמעתי טוב'];
@@ -1722,7 +1852,7 @@ document.addEventListener('keydown',e=>{
   if(e.key==='Escape'){closeAll();return}
   if(typing()||overlayOpen()||e.ctrlKey||e.metaKey||e.altKey)return;
   if(/^[1-9]$/.test(e.key)){const p=PAGES[+e.key-1];if(p){e.preventDefault();go(pageId(p[0]))}}
-  else if(e.key==='/'){e.preventDefault();const f={users:'#uq',conv:'#cq',calls:'#kq'}[page];if(f)$(f).focus();else openPal()}
+  else if(e.key==='/'){e.preventDefault();const f={users:'#uq',conv:'#cq',calls:'#kq',test:'#tcText'}[page];if(f)$(f).focus();else openPal()}
   else if(e.key==='?'){e.preventDefault();openHelp()}
 });
 
