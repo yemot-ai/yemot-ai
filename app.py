@@ -2956,6 +2956,41 @@ def api_clear():
     return J({"ok": True})
 
 
+@app.route("/api/delete", methods=["POST"])
+def api_delete():
+    """מחיקה נקודתית מהיומן: הודעה אחת (msg), שיחה אחת (call), או כל השיחות של מתקשר (phone).
+    ההקלטות של מה שנמחק נמחקות גם מימות"""
+    g = api_guard()
+    if g:
+        return g
+    d = request.get_json(silent=True) or {}
+    msg = d.get("msg") if isinstance(d.get("msg"), dict) else None
+    call = str(d.get("call") or "").strip()
+    phone = str(d.get("phone") or "").strip()
+    if not (msg or call or phone):
+        return J({"ok": False, "error": "לא צוין מה למחוק"})
+    removed = []
+    with _lock:
+        if msg:
+            for i, l in enumerate(LOG):
+                if l.get("time") == msg.get("time") and l.get("phone") == msg.get("phone") and l.get("q") == msg.get("q"):
+                    removed.append(LOG.pop(i))
+                    break
+        elif call:
+            removed = [l for l in LOG if l.get("call") == call]
+            LOG[:] = [l for l in LOG if l.get("call") != call]
+            CALLS[:] = [c for c in CALLS if c.get("call") != call]
+        else:
+            removed = [l for l in LOG if l.get("phone") == phone]
+            LOG[:] = [l for l in LOG if l.get("phone") != phone]
+            CALLS[:] = [c for c in CALLS if c.get("phone") != phone]
+    for l in removed:
+        if l.get("rec"):
+            _bg(yemot_delete, l["rec"] + ".wav")
+    save_log()
+    return J({"ok": True, "removed": len(removed)})
+
+
 @app.route("/api/sendmail", methods=["POST"])
 def api_sendmail():
     g = api_guard()
