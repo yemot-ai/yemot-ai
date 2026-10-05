@@ -2239,31 +2239,24 @@ def strip_meta(text):
     return " ".join(keep).strip()
 
 
-def ask_ai(assistant, history, file_name):
-    """מחזיר (תמלול, פעולה, תשובה). פעולה: none / menu / end / voice / warn / switch:id"""
-    t0 = time.time()
-    try:
-        audio = yemot_download(file_name + ".wav")
-    except Exception as e:
-        print("download error:", e)
-        return "", "none", "סליחה, לא הצלחתי לשמוע את ההקלטה. נסה שוב."
-    print("timing: download %.1fs" % (time.time() - t0))
-    if keep_days() == 0:
-        _bg(yemot_delete, file_name + ".wav")      # אחרת ההקלטה נשמרת כמה ימים, כדי שאפשר יהיה לשמוע אותה באתר
-    if is_silent(audio):
-        print("recording is empty/silent - answering at once without AI")
-        return "", "none", T("not_heard")
-    t0 = time.time()
-    audio = clean_audio(audio)     # סינון רעשים והגברה - ה-AI שומע הרבה יותר טוב ומבין נכון את השאלה
-    print("timing: clean audio %.1fs" % (time.time() - t0))
-
-    others = "; ".join("%s = %s (מילים: %s)" % (a["id"], a["name"], a.get("keywords", "")) for _, a in active_assistants() if a["id"] != assistant["id"])
-    system = assistant["prompt"] + GENERAL_RULES + context_line(assistant) + (
+CHAT_INTRO_AUDIO = (
         " תקבל הקלטה של מה שהמשתמש אמר עכשיו. ההקלטה היא משיחת טלפון באיכות נמוכה, בעברית מדוברת,"
         " לפעמים עם רעשי רקע. הקשב בתשומת לב מלאה, והשתמש בהקשר של השיחה ובתחום של העוזר כדי להשלים מילים לא ברורות"
         " (שמות של זמרים, מלחינים, מקומות, מונחים). אם משהו באמת לא ברור, שאל בקצרה במקום לנחש."
         " סדר העבודה: קודם תמלל בדיוק מה נאמר, אחר כך בדוק מה בדיוק המשתמש שואל או מבקש, ורק אז ענה - על זה ולא על משהו אחר."
         " אם בתמלול חסרות מילים חשובות או שהוא לא הגיוני, אל תענה על ניחוש - בקש בתשובה לחזור על השאלה."
+)
+CHAT_INTRO_TEXT = (
+        " תקבל את מה שהמשתמש אמר עכשיו בכתב (זו בדיקה של מנהל הקו מתוך אתר הניהול)."
+        " התייחס לזה בדיוק כמו לשאלה שנשאלה בטלפון, ועבוד באותו סדר: קודם הבן מה בדיוק נשאל, ורק אז ענה - על זה ולא על משהו אחר."
+        " בשורת התמלול העתק את הטקסט בדיוק כפי שנכתב."
+)
+
+
+def chat_system(assistant, from_text=False):
+    """ההנחיות לבינה בשיחה - אותן הנחיות בדיוק לטלפון ולבדיקה מאתר הניהול. רק הפתיחה שונה (הקלטה / טקסט)"""
+    others = "; ".join("%s = %s (מילים: %s)" % (a["id"], a["name"], a.get("keywords", "")) for _, a in active_assistants() if a["id"] != assistant["id"])
+    return assistant["prompt"] + GENERAL_RULES + context_line(assistant) + (CHAT_INTRO_TEXT if from_text else CHAT_INTRO_AUDIO) + (
         " ענה בדיוק בפורמט הבא, ארבע שורות:\n"
         "תמלול: <תמלול מדויק של ההקלטה>\n"
         "פעולה: <אחת מהאפשרויות: none | menu | end | voice | warn | switch:מזהה>\n"
@@ -2288,15 +2281,10 @@ def ask_ai(assistant, history, file_name):
         "במקרה של warn אל תענה על התוכן עצמו, ובשורת החיפוש כתוב: לא. "
         "אחרת none. כשהפעולה אינה none, כתוב בתשובה משפט קצר מתאים (למשל: בטח, מעביר אותך)."
     )
-    contents = list(history) + [{
-        "role": "user",
-        "parts": [{"text": "ההקלטה של המשתמש:"}, types.Part.from_bytes(data=audio, mime_type="audio/wav")],
-    }]
-    t0 = time.time()
-    raw = gemini(system, contents, prefer_strong=True)
-    print("timing: gemini(audio) %.1fs" % (time.time() - t0))
-    if not raw:
-        return "", "none", T("error")
+
+
+def finish_answer(assistant, history, raw, info=None, known=""):
+    """מפרק את תשובת הבינה, מחפש אם צריך, ומחזיר (תמלול, פעולה, תשובה). משותף לטלפון ולבדיקה באתר"""
     f = parse_fields(raw)
     need_search = False
     query = ""
@@ -2311,6 +2299,8 @@ def ask_ai(assistant, history, file_name):
     else:
         transcript, action, search_line = "", "none", ""
         answer = raw.strip()
+    if known and not transcript:
+        transcript = known            # בבדיקה מהאתר השאלה ידועה מראש, גם אם הבינה לא החזירה שורת תמלול
     if action == "warn":
         return transcript, "warn", ""      # אזהרה: הנוסח נקבע לפי מספר האזהרות של המתקשר (ב-ai_worker)
     if transcript and action == "none" and "תחבור" not in search_line and any(w in transcript + " " for w in TRANSIT_WORDS):
@@ -2328,6 +2318,8 @@ def ask_ai(assistant, history, file_name):
         need_search = True        # הבינה ענתה "לא יודע" בלי לחפש - מחפשים באינטרנט (לפי השאלה עצמה) לפני שמוותרים
     if not need_search and transcript and action == "none" and answer.strip(" .") == "מחפש":
         need_search = True        # הבינה כתבה "מחפש" אבל שכחה את שורת החיפוש - מחפשים לפי השאלה עצמה
+    if info is not None:
+        info["search"] = search_kind(search_line) if (need_search and transcript and action == "none") else ""
     if need_search and transcript and action == "none":
         t0 = time.time()
         found = answer_with_search(assistant, history, transcript, search_line, query)
@@ -2357,6 +2349,57 @@ def ask_ai(assistant, history, file_name):
     if not answer:
         answer = T("not_understood")
     return transcript, action, clean_for_tts(answer)
+
+
+def search_kind(search_line):
+    """תיאור קצר של סוג החיפוש, לתצוגה באתר הניהול"""
+    if "תחבור" in search_line:
+        return "תחבורה ציבורית"
+    if "זמנים" in search_line:
+        return "זמני היום"
+    if "מזג" in search_line:
+        return "מזג אוויר"
+    return "חיפוש באינטרנט"
+
+
+def ask_ai_text(assistant, history, text, info=None):
+    """בדיקה מאתר הניהול: אותה בינה, אותן הנחיות ואותו חיפוש כמו בטלפון - רק שהשאלה מגיעה כטקסט ולא כהקלטה"""
+    contents = list(history) + [{"role": "user", "parts": [{"text": text}]}]
+    raw = gemini(chat_system(assistant, from_text=True), contents, prefer_strong=True)
+    if not raw:
+        return text, "none", T("error")
+    return finish_answer(assistant, history, raw, info, known=text)
+
+
+def ask_ai(assistant, history, file_name):
+    """מחזיר (תמלול, פעולה, תשובה). פעולה: none / menu / end / voice / warn / switch:id"""
+    t0 = time.time()
+    try:
+        audio = yemot_download(file_name + ".wav")
+    except Exception as e:
+        print("download error:", e)
+        return "", "none", "סליחה, לא הצלחתי לשמוע את ההקלטה. נסה שוב."
+    print("timing: download %.1fs" % (time.time() - t0))
+    if keep_days() == 0:
+        _bg(yemot_delete, file_name + ".wav")      # אחרת ההקלטה נשמרת כמה ימים, כדי שאפשר יהיה לשמוע אותה באתר
+    if is_silent(audio):
+        print("recording is empty/silent - answering at once without AI")
+        return "", "none", T("not_heard")
+    t0 = time.time()
+    audio = clean_audio(audio)     # סינון רעשים והגברה - ה-AI שומע הרבה יותר טוב ומבין נכון את השאלה
+    print("timing: clean audio %.1fs" % (time.time() - t0))
+
+    system = chat_system(assistant)
+    contents = list(history) + [{
+        "role": "user",
+        "parts": [{"text": "ההקלטה של המשתמש:"}, types.Part.from_bytes(data=audio, mime_type="audio/wav")],
+    }]
+    t0 = time.time()
+    raw = gemini(system, contents, prefer_strong=True)
+    print("timing: gemini(audio) %.1fs" % (time.time() - t0))
+    if not raw:
+        return "", "none", T("error")
+    return finish_answer(assistant, history, raw)
 
 
 # ============================================================ מכסה / חסימה
@@ -3177,6 +3220,70 @@ def api_diag():
             out["wait_music"]["error"] = "הקובץ %s.wav לא נמצא בשלוחה%s" % (name, ", מנגן טראנס במקומו" if got else "")
     out["model_status"] = {m: ("לא קיים" if MODEL_STATUS.get(m, {}).get("dead") else ("מכסה" if not model_ok(m) else "ok")) for m in MODELS}
     return J(out)
+
+
+@app.route("/api/test_chat", methods=["POST"])
+def api_test_chat():
+    """צ'אט בדיקה מאתר הניהול: עונה בדיוק כמו הקו בטלפון (אותו עוזר, אותן הנחיות, אותו חיפוש).
+    לא נרשם ביומן, לא נספר במכסה ולא מוסיף אזהרות"""
+    g = api_guard()
+    if g:
+        return g
+    d = request.get_json(silent=True) or {}
+    text = str(d.get("text") or "").strip()[:1000]
+    if not text:
+        return J({"ok": False, "error": "צריך לכתוב שאלה"})
+    assistant = assistant_by_id(str(d.get("assistant") or ""))
+    history = []
+    for h in (d.get("history") or [])[-6:]:
+        if isinstance(h, dict) and h.get("q") and h.get("a"):
+            history.append({"role": "user", "parts": [{"text": str(h["q"])[:1000]}]})
+            history.append({"role": "model", "parts": [{"text": str(h["a"])[:1500]}]})
+    info = {}
+    t0 = time.time()
+    try:
+        transcript, action, answer = ask_ai_text(assistant, history, text, info)
+    except Exception as e:
+        print("test chat error:", e)
+        return J({"ok": False, "error": str(e)[:200], "seconds": round(time.time() - t0, 1)})
+    out = {"ok": True, "answer": answer, "action": action, "search": info.get("search", ""),
+           "seconds": round(time.time() - t0, 1), "assistant": assistant["id"]}
+    if action == "warn":
+        try:
+            n = max(1, min(WARN_MAX, int(d.get("warn_n") or 1)))
+        except (ValueError, TypeError):
+            n = 1
+        out["answer"] = clean_for_tts(T("warning", n=n))
+        out["warn"] = n
+    elif action.startswith("switch:"):
+        nxt = assistant_by_id(action.split(":", 1)[1])
+        out["switch_to"] = nxt["id"]
+        out["switch_name"] = nxt["name"]
+    print("test chat: %.1fs, action=%s, search=%s" % (time.time() - t0, action, info.get("search", "")))
+    return J(out)
+
+
+@app.route("/api/say", methods=["POST"])
+def api_say():
+    """הקראת טקסט בקול של הקו, לשמיעה באתר הניהול (בלי להעלות לימות)"""
+    g = api_guard()
+    if g:
+        return g
+    d = request.get_json(silent=True) or {}
+    text = clean_for_tts(str(d.get("text") or ""))
+    if not text:
+        return J({"error": "אין טקסט"}, 400)
+    vl = voice_list()
+    voice = str(d.get("voice") or "")
+    if voice not in vl:
+        voice = vl[0]
+    try:
+        wav = call_with_deadline(lambda: make_tts(text, voice), 20)
+    except Exception as e:
+        return J({"error": str(e)[:200]}, 502)
+    if not wav:
+        return J({"error": "הקול הטבעי לא זמין בשרת"}, 502)
+    return Response(wav, mimetype="audio/wav", headers={"Cache-Control": "no-store"})
 
 
 @app.route("/api/test_transit")
