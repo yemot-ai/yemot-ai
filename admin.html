@@ -295,6 +295,8 @@ mark{background:var(--or);color:#000;border-radius:3px;padding:0 2px}
 .tc-in .btn,.tc-in .iconbtn{height:44px}
 .tc-meta{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:6px}
 .tc-meta .play{margin:0}
+.tc-body .bb.u .acts{left:auto;right:-8px}
+.tc-body .bb.u:hover .acts{opacity:1}
 .iconbtn.rec{color:#fff;background:var(--bad);border-color:var(--bad);animation:blink 1s infinite}
 
 /* ---------- bulk ---------- */
@@ -616,7 +618,8 @@ mark{background:var(--or);color:#000;border-radius:3px;padding:0 2px}
             <label class="switch"><input type="checkbox" id="tcSpeak" onchange="store.set('yai_tc_speak',this.checked)"><i></i><span>השמע תשובות בקול</span></label>
             <select id="tcVoice" style="direction:ltr" aria-label="קול"></select>
             <span style="flex:1"></span>
-            <button class="btn ghost sm" onclick="tcReset()">שיחה חדשה</button>
+            <button class="btn ghost sm" onclick="tcReset(true)" title="מתחיל שיחה חדשה. השיחה הנוכחית נמחקת">שיחה חדשה</button>
+            <button class="btn danger sm" id="tcDelAll" onclick="tcReset()" title="מחק את כל השיחה"><svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg> מחק הכל</button>
           </div>
           <div class="tc-body" id="tcBody"></div>
           <div class="tc-ex" id="tcEx"></div>
@@ -1533,7 +1536,18 @@ async function discard(){if(!await ask('לבטל את כל השינויים של
 window.addEventListener('beforeunload',e=>{if(dirty.assist||dirty.texts||dirty.settings){e.preventDefault();e.returnValue=''}});
 
 /* ================= test chat ================= */
-const TC={msgs:[],hist:[],assist:'',warn:0,busy:false,t0:0};
+const TC=Object.assign({msgs:[],assist:'',warn:0},store.get('yai_tc',{}),{busy:false,t0:0});
+function tcSave(){store.set('yai_tc',{msgs:TC.msgs.slice(-200),assist:TC.assist,warn:TC.warn})}
+function tcHist(){
+  // השיחה שהבינה זוכרת: זוגות שאלה-תשובה מאז הבחירה האחרונה של עוזר מהתפריט (כמו בטלפון)
+  const h=[];let q=null;
+  for(const m of TC.msgs){
+    if(m.who==='sys'&&m.reset){h.length=0;q=null}
+    else if(m.who==='u')q=m.text;
+    else if(m.who==='m'&&q!==null){if(!m.err)h.push({q,a:m.text});q=null}
+  }
+  return h;
+}
 const TC_EX=['מה מזג האוויר מחר בבני ברק?','מתי השקיעה היום בירושלים?','מתי יוצא קו 402 מבני ברק לירושלים?','מה החדשות היום?','תספר לי בדיחה קצרה','תעביר אותי לעוזר התורני'];
 function tcAssistants(){let d=0;return (S.assistants||[]).filter(a=>a.on!==false&&d<8&&++d).map((a,i)=>({...a,digit:i+1}))}
 function renderTestControls(){
@@ -1547,11 +1561,28 @@ function renderTestControls(){
 }
 function tcName(id){const a=(S.assistants||[]).find(x=>x.id===id);return a?a.name:''}
 function tcPickAssist(){
-  TC.assist=$('#tcAssist').value;TC.hist=[];
-  if(TC.msgs.length)TC.msgs.push({who:'sys',text:'עברת ל'+tcName(TC.assist)});
-  tcDraw();$('#tcText').focus();
+  TC.assist=$('#tcAssist').value;
+  if(TC.msgs.length)TC.msgs.push({who:'sys',reset:true,text:'עברת ל'+tcName(TC.assist)});
+  tcSave();tcDraw();$('#tcText').focus();
 }
-function tcReset(){TC.msgs=[];TC.hist=[];TC.warn=0;if(tcAudio){tcAudio.pause();tcAudio=null}tcDraw();$('#tcText').focus()}
+async function tcReset(fresh){
+  if(TC.busy)return toast('מחכה לתשובה. אפשר למחוק אחרי שהיא תגיע',true);
+  if(TC.msgs.length&&!await ask(fresh?'להתחיל שיחה חדשה? השיחה הנוכחית תימחק.':'למחוק את כל השיחה?',fresh?'שיחה חדשה':'מחק הכל',!fresh))return;
+  TC.msgs=[];TC.warn=0;if(tcAudio){tcAudio.pause();tcAudio=null}tcSave();tcDraw();$('#tcText').focus();
+  if(!fresh)toast('השיחה נמחקה');
+}
+function tcDel(i){
+  // מוחק את השאלה ואת התשובה שלה יחד. הבינה גם "שוכחת" אותן בהמשך השיחה
+  if(TC.busy)return toast('מחכה לתשובה. אפשר למחוק אחרי שהיא תגיע',true);
+  const m=TC.msgs[i];if(!m)return;
+  let a=i,b=i;
+  if(m.who==='m'&&i>0&&TC.msgs[i-1].who==='u')a=i-1;
+  if(m.who==='u'&&TC.msgs[i+1]&&TC.msgs[i+1].who==='m')b=i+1;
+  const removed=TC.msgs.splice(a,b-a+1);
+  if(removed.some(x=>x.warn))TC.warn=Math.max(0,TC.warn-1);
+  if(tcAudio){tcAudio.pause();tcAudio=null}
+  tcSave();tcDraw();toast('נמחק');
+}
 function tcKey(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();tcSend()}}
 function tcExample(i){$('#tcText').value=TC_EX[i];tcSend()}
 function tcDraw(){
@@ -1559,7 +1590,8 @@ function tcDraw(){
   if(!TC.msgs.length&&!TC.busy)h=`<div class="cv-empty"><div>${svg(IC.test,40)}<p>אתה עם ${H(tcName(TC.assist)||'העוזר')}.<br>כתוב שאלה כאילו התקשרת לקו, ותראה מה הוא עונה.</p></div></div>`;
   const AN={menu:'בטלפון: חוזר לתפריט',end:'בטלפון: השיחה מסתיימת',voice:'בטלפון: הקול מתחלף'};
   TC.msgs.forEach((m,i)=>{
-    if(m.who==='u'){h+=`<div class="bb u">${H(m.text)}</div>`;return}
+    const del=`<span class="acts"><button class="fl del" onclick="tcDel(${i})" aria-label="מחק" title="מחק את השאלה והתשובה">${svg(IC.trash,13)}</button></span>`;
+    if(m.who==='u'){h+=`<div class="bb u">${H(m.text)}${del}</div>`;return}
     if(m.who==='sys'){h+=`<div class="persona">${H(m.text)}</div>`;return}
     const tags=[];
     if(m.seconds!=null)tags.push(`<span class="tag" title="כמה זמן המתקשר היה מחכה לתשובה (בלי זמן הקראת התשובה)">${m.seconds} שניות</span>`);
@@ -1567,31 +1599,30 @@ function tcDraw(){
     if(m.warn)tags.push(`<span class="tag gold">אזהרה ${m.warn}</span>`);
     if(AN[m.action])tags.push(`<span class="tag">${AN[m.action]}</span>`);
     if(!m.err)tags.push(`<button class="play" onclick="tcSay(${i},this)" title="השמע בקול של הקו" aria-label="השמע">▶</button>`);
-    h+=`<div class="bb m ${m.err?'flagged':m.warn?'warned':''}">${H(m.text)}<div class="tc-meta">${tags.join('')}</div></div>`;
+    h+=`<div class="bb m ${m.err?'flagged':m.warn?'warned':''}">${H(m.text)}<div class="tc-meta">${tags.join('')}</div>${del}</div>`;
   });
   if(TC.busy)h+=`<div class="bb m"><span class="wave"><i></i><i></i><i></i><i></i></span> הקו חושב… <span class="mu2" id="tcTimer">0 שנ׳</span></div>`;
   b.innerHTML=h;b.scrollTop=b.scrollHeight;
-  $('#tcSend').disabled=TC.busy;
+  $('#tcSend').disabled=TC.busy;$('#tcDelAll').disabled=!TC.msgs.length;
   $('#tcEx').innerHTML=TC.msgs.length?'':TC_EX.map((t,i)=>`<button onclick="tcExample(${i})">${H(t)}</button>`).join('');
 }
 async function tcSend(){
   const el=$('#tcText'),t=el.value.trim();if(!t||TC.busy)return;
   el.value='';el.style.height='';
-  TC.msgs.push({who:'u',text:t});TC.busy=true;TC.t0=Date.now();tcDraw();
+  const hist=tcHist();TC.msgs.push({who:'u',text:t});TC.busy=true;TC.t0=Date.now();tcSave();tcDraw();
   try{
-    const d=await api('/api/test_chat',{text:t,assistant:TC.assist,history:TC.hist.slice(-6),warn_n:TC.warn+1});
+    const d=await api('/api/test_chat',{text:t,assistant:TC.assist,history:hist.slice(-6),warn_n:TC.warn+1});
     if(!d.ok)TC.msgs.push({who:'m',text:'שגיאה: '+(d.error||'הקו לא ענה'),err:true});
     else{
       if(d.warn)TC.warn=Math.min(3,TC.warn+1);
       TC.msgs.push({who:'m',text:d.answer,seconds:d.seconds,search:d.search,action:d.action,warn:d.warn});
-      TC.hist.push({q:t,a:d.answer});
       if(d.switch_to){TC.assist=d.switch_to;$('#tcAssist').value=d.switch_to;TC.msgs.push({who:'sys',text:'עברת ל'+(d.switch_name||tcName(d.switch_to))})}
       if($('#tcSpeak').checked)setTimeout(()=>{const bs=document.querySelectorAll('#tcBody .bb.m .play');tcSay(TC.msgs.map(m=>m.who).lastIndexOf('m'),bs[bs.length-1])},50);
     }
   }catch(e){
     if(e.message!=='auth')TC.msgs.push({who:'m',err:true,text:e.message==='old-server'?'השרת עוד לא מכיר את צ׳אט הבדיקה. צריך להעלות ל-GitHub את app.py המעודכן.':'אין חיבור לשרת. אם השרת נרדם, נסה שוב בעוד דקה.'});
   }
-  TC.busy=false;tcDraw();el.focus();
+  TC.busy=false;tcSave();tcDraw();el.focus();
 }
 let tcAudio=null;
 async function tcSay(i,btn){
