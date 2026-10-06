@@ -987,8 +987,8 @@ def speak_file(text, voice_idx, call_id):
 
 
 # ============================================================ Gemini
-def _one_call(model, system, contents, use_search, think):
-    kw = dict(system_instruction=system, max_output_tokens=600)
+def _one_call(model, system, contents, use_search, think, max_tokens=600):
+    kw = dict(system_instruction=system, max_output_tokens=max_tokens)
     if use_search:
         kw["tools"] = [types.Tool(google_search=types.GoogleSearch())]
     if think == "level":
@@ -999,6 +999,8 @@ def _one_call(model, system, contents, use_search, think):
     return r.text
 
 
+DEEP_HEDGE = 8.0       # בעבודה יצירתית: אחרי כמה שניות מצרפים מודל חזק נוסף במקביל
+DEEP_DEADLINE = 22     # בעבודה יצירתית: זמן מקסימלי. אם לא הספיק - נשארת התשובה הרגילה
 HEDGE_DELAY = 3.0      # כמה שניות המודל החזק עובד לבד, לפני שמצרפים אליו מודל גיבוי מהיר. חוסך מכסה בלי לפגוע במהירות
 MAX_TRIES = 4          # כמה מודלים לכל היותר מנסים לפנייה אחת
 
@@ -1029,7 +1031,7 @@ def _note_failure(model, use_search, msg):
             MODEL_STATUS[model] = {"until": time.time() + _quota_pause(msg)}
 
 
-def gemini(system, contents, search=False, prefer_strong=False):
+def gemini(system, contents, search=False, prefer_strong=False, deep=False):
     """שולח את הפנייה קודם למודל החזק ביותר שזמין. אם הוא לא ענה תוך כמה שניות - מצרפים במקביל מודל מהיר (גיבוי),
     ולוקחים את התשובה הראשונה. מודל שנכשל (מכסה, תקלה) - עוברים מיד לבא בתור.
     ככה המתקשר מקבל את התשובה המדויקת של המודל החזק, לא מחכה למודל תקוע, והמכסה החינמית לא נשרפת פי שלושה
@@ -1039,6 +1041,8 @@ def gemini(system, contents, search=False, prefer_strong=False):
     strong = [m for m in order if "lite" not in m]
     lite = [m for m in order if "lite" in m]
     queue = strong[:1] + lite[:1] + strong[1:] + lite[1:]
+    if deep and strong:
+        queue = strong + lite       # עבודה יצירתית: קודם רק המודלים החזקים, עם חשיבה מלאה
     pref = SETTINGS.get("model", "")
     if pref and model_ok(pref):
         queue = [pref] + [m for m in queue if m != pref]
@@ -1058,12 +1062,15 @@ def gemini(system, contents, search=False, prefer_strong=False):
         try:
             options = ("level", "budget", None)
             known = MODEL_THINK.get(model)
-            if known in options:
+            if deep:
+                options = (None,)       # חשיבה רגילה (לא מינימלית) - איטי יותר, אבל בדיחה/סיפור יוצאים טובים יותר
+            elif known in options:
                 options = (known,) + tuple(o for o in options if o != known)
             for think in options:
                 try:
-                    text = _one_call(model, system, contents, search, think)
-                    MODEL_THINK[model] = think
+                    text = _one_call(model, system, contents, search, think, 2500 if deep else 600)
+                    if not deep:
+                        MODEL_THINK[model] = think
                     if text:
                         with lock:
                             answers[model] = text
@@ -1103,8 +1110,8 @@ def gemini(system, contents, search=False, prefer_strong=False):
             return [m for m in launched if m not in finished]
 
     launch_next()
-    hedge_at = t0 + HEDGE_DELAY
-    deadline = t0 + GEMINI_DEADLINE
+    hedge_at = t0 + (DEEP_HEDGE if deep else HEDGE_DELAY)
+    deadline = t0 + (DEEP_DEADLINE if deep else GEMINI_DEADLINE)
     while time.time() < deadline:
         with lock:
             have = bool(answers)
@@ -1116,7 +1123,7 @@ def gemini(system, contents, search=False, prefer_strong=False):
                 break                       # כל המודלים בתור נכשלו
             continue
         if time.time() >= hedge_at and len(now_running) < 2:
-            launch_next(want_fast=True)     # החזק מתעכב - מצרפים גיבוי מהיר
+            launch_next(want_fast=not deep)  # החזק מתעכב - מצרפים גיבוי (בעבודה יצירתית: עוד מודל חזק, לא מהיר)
         wake.wait(0.15)
         wake.clear()
 
@@ -2217,6 +2224,29 @@ def weak(ans):
     return any(w in (ans or "") for w in DONT_KNOW_WORDS) or "אינו כולל פרטים" in (ans or "")
 
 
+CREATIVE_WORDS = ("בדיחה", "בדיחות", "חידה", "חידות", "תצחיק", "משהו מצחיק", "סיפור", "שיר על", "תכתוב שיר",
+                  "תחבר שיר", "חרוז", "פזמון", "ברכה ל", "תכתוב ברכה")
+CREATIVE_RULES = (
+    " המשתמש ביקש משהו יצירתי. כאן האיכות חשובה יותר מהמהירות, אז חשוב היטב לפני שאתה עונה."
+    " בדיחה: ספר בדיחה אמיתית שעובדת בעברית - עם היגיון ברור, ופאנץ' מפתיע שמבינים מיד למה הוא מצחיק."
+    " אל תתרגם בדיחות מאנגלית שמשחק המילים שלהן לא קיים בעברית, ואל תמציא בדיחה שאין בה היגיון."
+    " מתאימות במיוחד: בדיחות על חכמי חלם, על הרשל'ה מאוסטרופולי, משחקי מילים שעובדים בעברית, בדיחות מחיי הישיבה והחיידר."
+    " לפני שאתה עונה, בדוק בשקט: אם אדם מבוגר ישמע את הבדיחה בטלפון, האם יבין מיד מה מצחיק? אם לא - בחר בדיחה אחרת."
+    " בדיחה, חידה, סיפור, שיר וברכה - הכל נקי, מכובד ומתאים לבית חרדי."
+    " חידה: חידה עם פתרון הגיוני. תן את החידה ואמור שאפשר לבקש את הפתרון."
+    " סיפור: עם התחלה, אמצע וסוף ברורים. שיר וברכה: עם חרוזים אמיתיים ומשקל שזורם כשמקריאים אותו."
+)
+
+
+def creative_answer(assistant, history, transcript):
+    """בקשה יצירתית (בדיחה, חידה, סיפור, שיר): כותבים שוב עם המודל החזק וחשיבה מלאה. אם לא הספיק - None"""
+    t0 = time.time()
+    sys_c = assistant["prompt"] + GENERAL_RULES + context_line(assistant) + ONLY_ANSWER + CREATIVE_RULES
+    ans = gemini(sys_c, list(history) + [{"role": "user", "parts": [{"text": transcript}]}], deep=True)
+    print("timing: creative (deep) %.1fs - %s" % (time.time() - t0, "ok" if ans else "kept the quick answer"))
+    return strip_meta(ans) if ans else None
+
+
 ACTION_RE = re.compile(r"תמלול\s*:\s*(.*?)\s*\n\s*פעולה\s*:\s*(.*?)\s*\n\s*חיפוש\s*:\s*(.*?)\s*\n\s*תשובה\s*:\s*(.*)", re.S)
 
 # שדות הפורמט, גם כשהבינה מוסיפה כוכביות, מקפים או נקודתיים מסוג אחר
@@ -2352,6 +2382,12 @@ def finish_answer(assistant, history, raw, info=None, known=""):
             answer = strip_meta(found)
     if answer.strip() in ("מחפש", "מחפש.", "מחפש..."):
         answer = T("error")
+    if transcript and action == "none" and not need_search and any(w in transcript for w in CREATIVE_WORDS):
+        better = creative_answer(assistant, history, transcript)
+        if better:
+            answer = better
+        if info is not None:
+            info["search"] = "כתיבה יצירתית (מודל חזק)" if better else ""
     low = transcript.lower()
     if action == "none":
         if "החלף קול" in low or "תחליף קול" in low or "שנה קול" in low:
