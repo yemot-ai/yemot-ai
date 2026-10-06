@@ -1972,9 +1972,9 @@ def gather_web(query, newsy=False):
                     slot["ev"].set()
             threading.Thread(target=run, daemon=True).start()
 
-    tasks = [lambda: search_ddgs(query, on_hits=prefetch), lambda: search_bing(query, on_hits=prefetch)]
-    if newsy:
-        tasks.append(lambda: search_news(query))
+    # ויקיפדיה בעברית נבדקת תמיד במקביל (קודם רק כשלא נמצא שום דבר אחר) - היא המקור הכי אמין למוסדות, בתי כנסת, אנשים ומקומות
+    tasks = [lambda: search_ddgs(query, on_hits=prefetch), lambda: search_bing(query, on_hits=prefetch), lambda: wiki_search(query),
+             (lambda: search_news(query)) if newsy else (lambda: None)]
     res = run_parallel(tasks, ENGINES_WAIT)
     hits, seen = [], set()
     for h in (res[0] or []) + (res[1] or []):
@@ -1984,12 +1984,10 @@ def gather_web(query, newsy=False):
             continue
         seen.add(k)
         hits.append(h)
-    news = (res[2] if newsy else None) or []
-    if not hits and not news:
+    extra = res[2]
+    news = res[3] or []
+    if not hits and not news and not extra:
         news = search_news(query)
-    extra = None
-    if not hits and not news:
-        extra = wiki_search(query)
     urls = [h["href"] for h in hits if _page_ok(h["href"])][:4]
     prefetch([{"href": u} for u in urls], force=True)       # אתר מהרשימה הסופית שעוד לא התחילו לקרוא - מתחילים עכשיו
     early = sum(1 for u in urls if pre.get(u) and pre[u]["ev"].is_set())
@@ -2003,6 +2001,8 @@ def gather_web(query, newsy=False):
         else:
             pages.append(None)
     parts = []
+    if extra:
+        parts.append("ערכים מוויקיפדיה (מקור אמין):\n" + extra)
     if hits:
         parts.append("תוצאות חיפוש:\n" + "\n".join("- %s: %s (%s)" % (h["title"], h["body"], _domain(h["href"])) for h in hits[:8]))
     if news:
@@ -2010,11 +2010,9 @@ def gather_web(query, newsy=False):
     for u, txt in zip(urls, pages):
         if txt:
             parts.append("תוכן מתוך האתר %s:\n%s" % (_domain(u), txt[:2500]))
-    if extra:
-        parts.append("ערכים מוויקיפדיה:\n" + extra)
     text = "\n\n".join(parts) or None
-    print("timing: web gather %.1fs - %d results, %d news, %d pages read (%d were ready early)" % (
-        time.time() - t0, len(hits), len(news), sum(1 for p in pages if p), early if urls else 0))
+    print("timing: web gather %.1fs - %d results, %d news, %d pages read (%d were ready early), wikipedia: %s" % (
+        time.time() - t0, len(hits), len(news), sum(1 for p in pages if p), early if urls else 0, "yes" if extra else "no"))
     if text:
         SEARCH_CACHE[key] = (time.time(), text)
         if len(SEARCH_CACHE) > 300:
@@ -2155,44 +2153,68 @@ def answer_with_search(assistant, history, transcript, search_line="", query="")
             print("google search step error:", e)
             box["g"] = None
 
-    def run_free():
-        try:
-            data = gather_web(q, newsy)
-            if not data and transcript and transcript.strip() != q:
-                data = gather_web(transcript, newsy)      # לא נמצא כלום - מנסים שוב בניסוח של המתקשר עצמו
-            if not data:
-                box["f"] = None
-                return
-            sys2 = base + (" חיפשת באינטרנט וקיבלת את המידע שלמטה: תוצאות חיפוש ותוכן שנקרא מתוך האתרים עצמם."
+    def ask_with(data):
+        sys2 = base + (" חיפשת באינטרנט וקיבלת את המידע שלמטה: תוצאות חיפוש ותוכן שנקרא מתוך האתרים עצמם."
                            " ענה על השאלה לפי המידע הזה, עם המספרים, השעות והשמות שמופיעים בו, קצר ומתאים להקראה בטלפון."
                            " אל תקרא כתובות אינטרנט. אפשר לציין מאיזה אתר המידע."
                            " אל תענה רק 'לא מצאתי': אם המידע חלקי, תן את כל מה שכן נמצא ושעונה על השאלה,"
                            " והשלם מהידע שלך רק דברים שאתה בטוח בהם. אל תמציא מספרים, שעות או מחירים.")
-            box["f"] = gemini(sys2, list(history) + [{"role": "user", "parts": [{"text": "השאלה: %s\n\nמה שנמצא באינטרנט:\n%s" % (transcript, data[:12000])}]}])
+        return gemini(sys2, list(history) + [{"role": "user", "parts": [{"text": "השאלה: %s\n\nמה שנמצא באינטרנט:\n%s" % (transcript, data[:12000])}]}])
+
+    def run_free():
+        try:
+            link = re.search(r"https?://[^\s\"'<>]+", transcript or "")
+            page = fetch_page_text(link.group(0)) if link else None     # המתקשר/המנהל נתן קישור - קוראים אותו ישירות
+            data = gather_web(q, newsy) if q and not (link and q.strip() == transcript.strip()) else None
+            if not data and transcript and transcript.strip() != q and not link:
+                data = gather_web(transcript, newsy)      # לא נמצא כלום - מנסים שוב בניסוח של המתקשר עצמו
+            if page:
+                data = "תוכן מתוך הקישור שנשלח (%s):\n%s" % (_domain(link.group(0)), page) + ("\n\n" + data if data else "")
+            if not data:
+                box["f"] = None
+                return
+            ans = ask_with(data)
+            if (not ans or weak(ans)) and not link and transcript and transcript.strip() != q:
+                # התשובה עדיין "לא יודע" - ניסיון שני: חיפוש בניסוח של המתקשר עצמו, שלפעמים מוצא מקורות אחרים
+                more = gather_web(transcript, newsy)
+                if more and more != data:
+                    print("search: first answer was weak, trying the caller's own wording")
+                    ans2 = ask_with(more + "\n\n" + data)
+                    if ans2 and not weak(ans2):
+                        ans = ans2
+            box["f"] = ans
         except Exception as e:
             print("free search step error:", e)
             box["f"] = None
     threading.Thread(target=run_google, daemon=True).start()
     threading.Thread(target=run_free, daemon=True).start()
     end = t0 + SEARCH_BUDGET
+    # תשובה "לא יודע" ממקור אחד לא עוצרת את ההמתנה למקור השני - אולי הוא כן מצא
     while time.time() < end:
-        if box.get("g"):
+        g, f = box.get("g"), box.get("f")
+        if g and not weak(g):
             print("search: answered by google search in %.1fs" % (time.time() - t0))
-            return box["g"]
-        if box.get("f") and (time.time() - t0 > GROUND_GRACE or "g" in box):
+            return g
+        if f and not weak(f) and (time.time() - t0 > GROUND_GRACE or "g" in box):
             print("search: answered by web engines in %.1fs" % (time.time() - t0))
-            return box["f"]
+            return f
         if "g" in box and "f" in box:
             break
         time.sleep(0.3)
-    if box.get("g"):
-        return box["g"]
-    if box.get("f"):
-        return box["f"]
+    for k in ("g", "f"):
+        if box.get(k) and not weak(box[k]):
+            return box[k]
+    if box.get("g") or box.get("f"):
+        return box.get("g") or box.get("f")
     print("search: all sources failed after %.1fs" % (time.time() - t0))
     sys4 = base + (" החיפוש באינטרנט לא הצליח הפעם. ענה כמיטב ידיעתך. רק אם התשובה באמת תלויה במידע עדכני"
                    " (שעות, מחירים, חדשות, לוחות זמנים), אמור במשפט קצר שכרגע לא הצלחת לבדוק ושאפשר לנסות שוב בעוד רגע.")
     return gemini(sys4, contents)
+
+
+def weak(ans):
+    """תשובה שבעצם אומרת: לא יודע / לא מצאתי"""
+    return any(w in (ans or "") for w in DONT_KNOW_WORDS) or "אינו כולל פרטים" in (ans or "")
 
 
 ACTION_RE = re.compile(r"תמלול\s*:\s*(.*?)\s*\n\s*פעולה\s*:\s*(.*?)\s*\n\s*חיפוש\s*:\s*(.*?)\s*\n\s*תשובה\s*:\s*(.*)", re.S)
@@ -2312,6 +2334,8 @@ def finish_answer(assistant, history, raw, info=None, known=""):
             and any(w in transcript for w in ZMANIM_WORDS):
         need_search = True        # שאלה על זמני היום - עונים מחישוב מדויק, לא מהזיכרון של הבינה
         search_line = "זמנים: "
+    if not need_search and transcript and action == "none" and re.search(r"https?://", transcript):
+        need_search = True        # נשלח קישור - קוראים אותו
     if not need_search and transcript and action == "none" and any(w in transcript + " " for w in FORCE_SEARCH_WORDS):
         need_search = True        # המשתמש ביקש במפורש לחפש - מחפשים גם אם הבינה לא סימנה
     if not need_search and transcript and action == "none" and any(w in answer for w in DONT_KNOW_WORDS):
