@@ -371,6 +371,12 @@ mark{background:var(--or);color:#000;border-radius:3px;padding:0 2px}
 .acard.open .chev{transform:rotate(180deg)}
 
 /* ---------- save bar ---------- */
+/* ---------- hangup ---------- */
+.dur.long{color:var(--warn);font-weight:600}
+.dur.long::before{content:'⏱ '}
+.hang{background:#2a0c0c;color:#ff8080;border:1px solid #5a1d1d;border-radius:8px;padding:1px 9px;font-size:12px;cursor:pointer;white-space:nowrap}
+.hang:hover{background:var(--bad);color:#fff;border-color:var(--bad)}
+.hang[disabled]{opacity:.5;pointer-events:none}
 .savebar{position:fixed;bottom:22px;left:50%;transform:translate(-50%,220%);visibility:hidden;background:var(--s2);border:1px solid var(--or);border-radius:14px;padding:10px 12px 10px 18px;display:flex;align-items:center;gap:14px;box-shadow:0 20px 50px -10px #000;z-index:40;transition:transform .3s cubic-bezier(.2,.9,.3,1.2)}
 .savebar.on{transform:translate(-50%,0);visibility:visible}
 .savebar span{font-size:14px}
@@ -545,7 +551,7 @@ mark{background:var(--or);color:#000;border-radius:3px;padding:0 2px}
           <div id="scopeSvg"></div>
         </div>
         <div class="board-wrap">
-          <div class="ph"><h3>עכשיו על הקו</h3><div class="row"><span class="hint" id="boardHint"></span><button class="btn ghost sm" id="compactBtn" onclick="toggleCompact()">הסתר קווים פנויים</button></div></div>
+          <div class="ph"><h3>עכשיו על הקו</h3><div class="row"><span class="hint" id="boardHint"></span><button class="btn danger sm" id="hangAllBtn" onclick="hangupAll()">נתק את כולם</button><button class="btn ghost sm" id="compactBtn" onclick="toggleCompact()">הסתר קווים פנויים</button></div></div>
           <div class="jacks" id="board"></div>
         </div>
         <div class="grid g2 mb">
@@ -788,6 +794,9 @@ mark{background:var(--or);color:#000;border-radius:3px;padding:0 2px}
             <button class="btn danger" onclick="clearData('log')">מחק את כל תוכן השיחות</button>
             <button class="btn danger" onclick="clearData('calls')">מחק את יומן השיחות</button>
             <a class="btn ghost" href="/api/export.csv">גיבוי לאקסל לפני מחיקה</a>
+            <button class="btn ghost" onclick="exportCfg()">גיבוי הגדרות, עוזרים ונוסחים</button>
+            <button class="btn ghost" onclick="$('#cfgFile').click()">שחזור מקובץ גיבוי</button>
+            <input type="file" id="cfgFile" accept=".json,application/json" hidden onchange="importCfg(this)">
           </div>
         </div>
       </section>
@@ -1033,10 +1042,10 @@ function renderLive(){
     if(waiting&&p.pending_q)q='שואל: '+H(p.pending_q);
     else if(a.last_q)q=H(a.last_q);
     else q='<span class="mu2">'+H(a.state)+'</span>';
-    h+=`<div class="jack live ${waiting?'wait':''}" onclick="openUser('${H(a.phone)}')" title="${H(a.phone)}">
+    h+=`<div class="jack live ${waiting?'wait':''}" tabindex="0" role="button" onkeydown="if(event.target===this&&event.key==='Enter')openUser('${H(a.phone)}')" onclick="openUser('${H(a.phone)}')" title="${H(a.phone)}">
       <div class="jh"><span class="led"></span><b>${H(a.name)}</b><span class="n">קו ${i+1}</span></div>
       <div class="js">${H(a.assistant)}</div><div class="jq">${q}</div>
-      <div class="jf"><span>${waiting?'<span class="wave"><i></i><i></i><i></i><i></i></span> חושב…':H(a.state)}</span><span class="dur" data-ph="${H(a.phone)}">${fmtDur(a.phone)}</span></div></div>`;
+      <div class="jf"><span>${waiting?'<span class="wave"><i></i><i></i><i></i><i></i></span> חושב…':H(a.state)}</span><span class="dur" data-ph="${H(a.phone)}">${fmtDur(a.phone)}</span><button class="hang" onclick="event.stopPropagation();hangup('${H(a.phone)}')" title="נתק את השיחה הזו" aria-label="נתק שיחה">✕ נתק</button></div></div>`;
   }
   $('#board').innerHTML=h;
   $('#board').classList.toggle('compact',compact);
@@ -1045,7 +1054,7 @@ function renderLive(){
   $('#boardHint').textContent=act.length?act.length+' מחוברים כרגע':'הקו פנוי';
 }
 function fmtDur(ph){const s=callStart[ph]?Math.max(0,Math.floor((Date.now()-callStart[ph])/1000)):0;return `${Math.floor(s/60)}:${pad(s%60)}`}
-function tickDurations(){document.querySelectorAll('.jack .dur').forEach(e=>e.textContent=fmtDur(e.dataset.ph));const tt=$('#tcTimer');if(tt&&TC.busy)tt.textContent=Math.floor((Date.now()-TC.t0)/1000)+' שנ׳'}
+function tickDurations(){document.querySelectorAll('.jack .dur').forEach(e=>{e.textContent=fmtDur(e.dataset.ph);const t=callStart[e.dataset.ph];e.classList.toggle('long',!!t&&Date.now()-t>600000)});const tt=$('#tcTimer');if(tt&&TC.busy)tt.textContent=Math.floor((Date.now()-TC.t0)/1000)+' שנ׳'}
 function toggleCompact(){compact=!compact;store.set('yai_compact',compact);renderLive()}
 
 /* ================= oscilloscope ================= */
@@ -1139,7 +1148,7 @@ function renderUsers(){
     const todayCell=u.unlimited||!lim?`<span class="num">${u.today}</span> <span class="mu2">∞</span>`:`<span class="num">${u.today}/${lim}</span><div class="ht" style="height:4px;background:var(--s3);border-radius:9px;margin-top:4px;width:70px"><i style="display:block;height:100%;border-radius:9px;background:${u.today>=lim?'var(--bad)':'var(--or)'};width:${Math.min(100,u.today/lim*100)}%"></i></div>`;
     const noteCell=n?`<button class="notebtn ${n.heard?'heard':'has'}" onclick="event.stopPropagation();noteModal(['${H(u.phone)}'])" title="${H(n.text)}">${n.heard?'✓ נשמעה ב-'+H((n.heard||'').slice(0,5)):'⏳ ממתינה'}</button>`
       :`<button class="notebtn" onclick="event.stopPropagation();noteModal(['${H(u.phone)}'])">+ השאר הודעה</button>`;
-    h+=`<tr class="click" onclick="openUser('${H(u.phone)}')">
+    h+=`<tr class="click" tabindex="0" onkeydown="if(event.target===this&&event.key==='Enter')openUser('${H(u.phone)}')" onclick="openUser('${H(u.phone)}')">
       <td onclick="event.stopPropagation()"><input type="checkbox" class="ck" ${selU.has(u.phone)?'checked':''} onchange="selToggle('${H(u.phone)}',this.checked)" aria-label="בחר"></td>
       <td><b>${H(u.name)}</b>${live?' <span class="tag or">על הקו</span>':''}</td><td class="num" dir="ltr" style="text-align:right">${H(u.phone)}</td>
       <td class="num">${u.calls}</td><td class="num">${u.msgs}</td><td>${todayCell}</td><td class="mu">${H(u.last)||'—'}</td>
@@ -1227,7 +1236,7 @@ function renderDrawer(){
   const favP={};msgs.forEach(m=>favP[m.persona]=(favP[m.persona]||0)+1);const fav=Object.entries(favP).sort((a,b)=>b[1]-a[1])[0];
   const pc=msgs.filter(m=>probOf(m)).length;
   $('#drawerIn').innerHTML=`
-   <div class="dh"><div class="av">${initial(u.name)}</div><div style="flex:1;min-width:0"><h2>${H(u.name)}</h2><div class="row" style="gap:6px"><span class="mu num" dir="ltr">${H(ph)}</span>${u.owner?'<span class="tag gold">בעלים</span>':''}${u.blocked?'<span class="tag red">חסום</span>':''}${live?'<span class="tag or">על הקו עכשיו</span>':''}</div></div><button class="iconbtn" onclick="closeAll()" aria-label="סגור">✕</button></div>
+   <div class="dh"><div class="av">${initial(u.name)}</div><div style="flex:1;min-width:0"><h2>${H(u.name)}</h2><div class="row" style="gap:6px"><span class="mu num" dir="ltr">${H(ph)}</span>${u.owner?'<span class="tag gold">בעלים</span>':''}${u.blocked?'<span class="tag red">חסום</span>':''}${live?'<span class="tag or">על הקו עכשיו</span>':''}</div></div>${live?`<button class="btn danger sm" onclick="hangup('${H(ph)}')">נתק שיחה</button>`:''}${live&&!u.owner&&!u.blocked&&!u._new?`<button class="btn danger sm" onclick="hangupBlock('${H(ph)}')">נתק וחסום</button>`:''}<button class="iconbtn" onclick="closeAll()" aria-label="סגור">✕</button></div>
    <div class="db">
     <div class="dstats"><div><b>${u.calls}</b><span>שיחות</span></div><div><b>${u.msgs}</b><span>הודעות</span></div><div><b>${u.today}</b><span>היום</span></div><div><b style="font-size:13px;line-height:2.3">${H((u.last||'—').slice(0,10))}</b><span>אחרונה</span></div></div>
     ${u.warnings?`<div class="dsec"><div class="warnbox"><b>${u.warnings}</b><span style="flex:1">אזהרות על שאלות לא צנועות.${u.warnings>=3?' כל שאלה כזו מעכשיו תשמע ״אזהרה 3 מתוך 3״.':''}</span><button class="btn ghost sm" onclick="uAct('reset_warnings',{},'האזהרות אופסו')">אפס אזהרות</button><button class="btn ghost sm" onclick="showWarnsOf('${H(ph)}')">הצג</button></div></div>`:''}
@@ -1258,6 +1267,59 @@ async function dNote(){await uAct('note',{note:$('#dNote').value.trim()},$('#dNo
 async function dDelete(){if(!await ask('למחוק את המשתמש? בשיחה הבאה הוא יירשם מחדש.','מחק',true))return;const p=drawerPhone;await api('/api/user',{phone:p,action:'delete'});closeAll();await refresh();toast('המשתמש נמחק')}
 function showConvOf(ph){closeAll();resetConv(true);convPhone=ph;go('conv')}
 function showWarnsOf(ph){const l=[...S.log].reverse().find(m=>m.phone===ph&&m.warn);if(l)openMsg(l);else showConvOf(ph)}
+
+/* ================= config backup ================= */
+function exportCfg(){
+  const o={v:1,saved:new Date().toISOString(),assistants:A,texts:TX,settings:SE};
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(o,null,1)],{type:'application/json'}));
+  a.download='yemot-ai-config-'+new Date().toISOString().slice(0,10)+'.json';document.body.appendChild(a);a.click();a.remove();toast('הגיבוי הורד');
+}
+function importCfg(inp){
+  const f=inp.files[0];inp.value='';if(!f)return;
+  const r=new FileReader();
+  r.onload=async()=>{
+    let d;try{d=JSON.parse(r.result)}catch(e){return toast('הקובץ לא תקין',true)}
+    if(!d||d.v!==1||!Array.isArray(d.assistants)||!d.assistants.length||!d.texts||!d.settings)return toast('זה לא קובץ גיבוי של המערכת',true);
+    if(!await ask('לטעון את הגיבוי? ההגדרות, העוזרים והנוסחים בעורך יוחלפו, ותצטרך ללחוץ שמור בכל עמוד.','טען'))return;
+    A=d.assistants;TX=d.texts;SE=Object.assign(SE,d.settings);dirty={assist:true,texts:true,settings:true};
+    renderAssist();renderTexts();renderSettings();updateSavebar();toast('הגיבוי נטען. עבור לעוזרים, נוסחים והגדרות ולחץ שמור בכל אחד');
+  };
+  r.readAsText(f);
+}
+
+/* ================= hangup ================= */
+async function hangupBlock(phone){
+  const u=S.users.find(x=>x.phone===phone);if(!u)return toast('המשתמש לא רשום',true);
+  if(u.blocked||u.owner)return hangup(phone);
+  if(!await ask(`לנתק את ${u.name} ולחסום את המספר? הוא לא יוכל להתקשר עד שתבטל את החסימה.`,'נתק וחסום',true))return;
+  try{await api('/api/user',{phone,action:'block'})}catch(e){return toast('החסימה נכשלה',true)}
+  await hangupReq([phone],'המתקשר נותק והמספר נחסם');await refresh();
+}
+async function hangupReq(phones,okMsg){
+  try{
+    const d=await api('/api/hangup',{phones});
+    if(!d.ok){toast(d.error||'הניתוק נכשל',true);return false}
+    LIVE.active=LIVE.active.filter(x=>!phones.includes(x.phone));
+    renderLive();if(drawerPhone)renderDrawer();if(page==='conv')renderConv();
+    toast(okMsg);return true;
+  }catch(e){
+    if(e.message==='old-server')toast('השרת עוד לא מכיר ניתוק שיחות. צריך להוסיף /api/hangup ל-app.py ולהעלות ל-GitHub.',true);
+    else if(e.message!=='auth')toast('אין חיבור לשרת',true);
+    return false;
+  }
+}
+async function hangup(phone){
+  const a=LIVE&&LIVE.active.find(x=>x.phone===phone);
+  if(!a)return toast('המתקשר כבר לא על הקו');
+  if(!await ask(`לנתק את השיחה של ${a.name||phone}? הוא ינותק מהקו מיד.`,'נתק שיחה',true))return;
+  await hangupReq([phone],'המתקשר נותק');
+}
+async function hangupAll(){
+  const P=(LIVE?LIVE.active:[]).map(a=>a.phone);
+  if(!P.length)return toast('הקו פנוי, אין את מי לנתק');
+  if(!await ask(`לנתק את כל ${P.length} המחוברים כרגע?`,'נתק את כולם',true))return;
+  await hangupReq(P,'כולם נותקו');
+}
 
 /* ================= deletion ================= */
 function forgetLocal(L){for(const m of L){const k=key(m);delete flags[k];delete resolved[k]}store.set('yai_flags',flags);store.set('yai_resolved',resolved)}
@@ -1353,6 +1415,7 @@ function renderPane(p){
      <button class="btn sm" onclick="noteModal(['${H(p.phone)}'])">${n&&!n.heard?'ערוך הודעה':'השאר הודעה'}</button>
      <button class="btn ghost sm" onclick="copyConv('${H(p.phone)}')">העתק</button>
      <button class="btn ghost sm" onclick="openUser('${H(p.phone)}')">פרטים</button>
+     ${live?`<button class="btn danger sm" onclick="hangup('${H(p.phone)}')">נתק שיחה</button>`:''}
      ${convCall?`<button class="btn ghost sm" onclick="convCall='';renderConv()">הצג את כל השיחות שלו</button>`:''}
      <button class="btn danger sm" onclick="delPhoneLog('${H(p.phone)}')" title="מחק את כל השיחות של המתקשר הזה">${svg(IC.trash,14)}</button>
    </div><div class="cv-body" id="cvBody" data-ph="${H(p.phone)}"><div class="chat">${h}</div></div>`;
@@ -1818,6 +1881,7 @@ function renderHealth(){
   if(!c||!c.d){p.querySelector('span').textContent='לא נבדק';p.title='לחץ כדי להריץ בדיקת מערכת';return}
   const fails=CRIT.filter(k=>c.d[k]&&!c.d[k].ok);
   if(fails.length){p.classList.add('bad');p.querySelector('span').textContent='תקלה: '+fails.map(k=>DIAG[k]).join(', ')}
+  else if(Date.now()-c.at>6*3600000){p.querySelector('span').textContent='הבדיקה האחרונה ישנה, מומלץ להריץ שוב'}
   else{p.classList.add('ok');p.querySelector('span').textContent='הקו תקין'}
   p.title='בדיקה אחרונה: '+ago(c.at);
 }
