@@ -6,6 +6,7 @@
 - חיפוש באינטרנט: חיפוש גוגל של Gemini + כמה מנועי חיפוש חינמיים במקביל + קריאת תוכן האתרים עצמם
 - תחבורה ציבורית: לוחות הזמנים הרשמיים של משרד התחבורה (דרך המאגר הפתוח של הסדנא לידע ציבורי), חינם
 - אזהרות: מי ששואל על נושאים לא צנועים שומע "זוהי אזהרה X מתוך 3" (בלי חסימה)
+- ניתוק שיחה פעילה מאתר הניהול
 """
 from flask import Flask, request, Response
 from yemot_flow.actions import build_id_list_message, build_read, build_go_to_folder, build_combined_action
@@ -167,6 +168,7 @@ TEXTS = {
     "name_not_understood": "לא הצלחתי להבין את השם.",
     "closed": "הקו סגור ב{holiday}, ויחזור לפעול בשעה {time}",
     "warning": "זוהי אזהרה {n} מתוך 3. הקו מיועד לשאלות מכובדות בלבד",   # {n} = מספר האזהרה של המתקשר (עד 3)
+    "kicked": "השיחה נותקה על ידי מנהל הקו. להתראות",
 }
 WARN_MAX = 3      # המספר שמוקרא באזהרה לא עולה מעל זה. אין חסימה - רק אזהרה
 
@@ -2329,7 +2331,7 @@ def chat_system(assistant, from_text=False):
         "תשובה: <התשובה שלך למשתמש. אם צריך חיפוש (כן / מזג אוויר / תחבורה / זמנים), כתוב כאן רק: מחפש>\n"
         "כללי הפעולה: menu אם ביקש לחזור לתפריט. end אם ביקש לסיים או להתנתק או אמר להתראות. "
         "voice אם ביקש להחליף קול. switch:מזהה אם ביקש לעבור לעוזר אחר מהרשימה: " + others + ". "
-        "warn אם המשתמש שאל, ביקש או אמר משהו לא צנוע או גס: תוכן מיני או אינטימי, פריצות, ניבול פה. "
+        "xxxx xx xxxxxx xxx, xxxx xx xxx xxxx xx xxxx xx xx: xxxx xxxx xx xxxxxxx, xxxxxx, xxxxx xx. "
         "במקרה של warn אל תענה על התוכן עצמו, ובשורת החיפוש כתוב: לא. "
         "אחרת none. כשהפעולה אינה none, כתוב בתשובה משפט קצר מתאים (למשל: בטח, מעביר אותך)."
     )
@@ -2582,7 +2584,9 @@ def ai_worker(pending, state, assistant, history, file_name, call_id, voice_idx)
         elif keep_days():
             _bg(yemot_delete, file_name + ".wav")
         tts = None
-        if action in ("none", "voice") or action.startswith("switch"):
+        if state.get("kill"):
+            action = "none"                     # השיחה נותקה על ידי המנהל - לא מייצרים קול
+        elif action in ("none", "voice") or action.startswith("switch"):
             v = voice_idx
             if action == "voice":
                 vl = voice_list()
@@ -2663,6 +2667,16 @@ def yemot():
                 calls.pop(call_id, None)
             return R(build_combined_action([build_id_list_message([("text", closed_msg)]), build_go_to_folder("hangup")]))
 
+    # ---- ניתוק על ידי המנהל מאתר הניהול
+    if state.get("kill"):
+        with _lock:
+            calls.pop(call_id, None)
+        if state.get("tts_file"):
+            _bg(yemot_delete, state["tts_file"] + ".wav")
+        for f in state.get("played", []):
+            _bg(yemot_delete, f + ".wav")
+        return R(build_combined_action([build_id_list_message([("text", T("kicked"))]), build_go_to_folder("hangup")]))
+
     if state["played"]:
         for f in state["played"]:
             _bg(yemot_delete, f + ".wav")
@@ -2737,6 +2751,13 @@ def yemot():
                 pending["event"].wait(HOLD_WAIT)   # ימות מנגנים מוזיקה בהמתנה, ונעצרים ברגע שהתשובה חוזרת
             elif not music_on():
                 pending["event"].wait(11)      # עם מנגינה - לא מחכים בכלל: המנגינה מתחילה מיד אחרי הסולמית
+
+        if state.get("kill"):
+            # המנהל ניתק את השיחה בזמן ההמתנה - מנתקים מיד, בלי לחכות לתשובה
+            state["pending"] = None
+            with _lock:
+                calls.pop(call_id, None)
+            return R(build_combined_action([build_id_list_message([("text", T("kicked"))]), build_go_to_folder("hangup")]))
 
         if not pending["done"]:
             if time.time() - pending["started"] > 75:
@@ -2904,7 +2925,7 @@ def live_data():
     act = []
     for cid, st in sorted(active.items(), key=lambda x: -x[1].get("started", 0)):
         a = assistant_by_id(st.get("assistant")) if st.get("assistant") else None
-        act.append({"phone": st.get("phone", ""), "name": users.get(st.get("phone", ""), "לא רשום"),
+        act.append({"call": cid, "phone": st.get("phone", ""), "name": users.get(st.get("phone", ""), "לא רשום"),
                     "assistant": a["name"] if a else "בתפריט",
                     "since": datetime.datetime.fromtimestamp(st.get("started", 0), ZoneInfo("Asia/Jerusalem")).strftime("%H:%M"),
                     "last_q": st.get("last_q", ""),
@@ -3142,6 +3163,34 @@ def api_delete():
             _bg(yemot_delete, l["rec"] + ".wav")
     save_log()
     return J({"ok": True, "removed": len(removed)})
+
+
+@app.route("/api/hangup", methods=["POST"])
+@app.route("/api/disconnect", methods=["POST"])
+@app.route("/api/kick", methods=["POST"])
+def api_hangup():
+    """ניתוק שיחה פעילה מאתר הניהול. לפי מזהה שיחה (call), או לפי טלפון (phone) אם אין מזהה.
+    השרת מסמן את השיחה, ובבקשה הבאה של ימות (או מיד, אם השיחה מחכה לתשובה) מושמעת הודעה קצרה והשיחה מתנתקת"""
+    g = api_guard()
+    if g:
+        return g
+    d = request.get_json(silent=True) or {}
+    call = str(d.get("call") or d.get("call_id") or d.get("id") or "").strip()
+    phone = str(d.get("phone") or "").strip()
+    if not (call or phone):
+        return J({"ok": False, "error": "לא צוינה שיחה"})
+    hit = 0
+    with _lock:
+        for cid, st in calls.items():
+            if (call and cid == call) or (not call and phone and st.get("phone") == phone):
+                st["kill"] = True
+                hit += 1
+                p = st.get("pending")
+                if p:
+                    p["event"].set()       # משחרר שיחה שמחכה לתשובה, כדי שהניתוק יקרה מיד
+    if hit:
+        print("admin hangup: %d call(s) (%s)" % (hit, call or phone))
+    return J({"ok": bool(hit), "count": hit, "error": "" if hit else "השיחה כבר הסתיימה"})
 
 
 @app.route("/api/sendmail", methods=["POST"])
