@@ -142,6 +142,7 @@ SETTINGS = {
     "shabbat_city": "בני ברק",      # לפי איזו עיר מחשבים שקיעה, ובאיזו עיר עונים על זמני היום כשלא אמרו עיר
     "shabbat_before": 30,           # כמה דקות לפני השקיעה בערב שבת/חג הקו נסגר
     "shabbat_after": 50,            # כמה דקות אחרי השקיעה במוצאי שבת/חג הקו נפתח
+    "music_fixed": 0,               # פנימי: מעבר חד פעמי למנגינת טראנס
     "keep_rec_days": 3,             # כמה ימים לשמור את ההקלטות של המתקשרים כדי לשמוע אותן באתר (0 = לא לשמור)
 }
 
@@ -171,7 +172,12 @@ TEXTS = {
 WARN_MAX = 3      # המספר שמוקרא באזהרה לא עולה מעל זה. אין חסימה - רק אזהרה
 
 GENERAL_RULES = (
-    " אתה מדבר בטלפון, לכן ענה קצר וברור: משפט עד שלושה משפטים, אלא אם ביקשו במפורש משהו ארוך (סיפור, שיר, הסבר מפורט)."
+    " אתה מדבר בטלפון עם אדם אמיתי, ולכן דבר כמו בן אדם חם ואכפתי ולא כמו מחשב: בעברית מדוברת וטבעית, בשפה פשוטה וזורמת, כמו חבר חכם ונעים שיושב מולו."
+    " תן תשובות מלאות, עשירות ויפות ולא קצרות וחסרות תוכן: בדרך כלל ארבעה עד שמונה משפטים, עם הסבר, הקשר, דוגמה או פרט מעניין שמעשירים את התשובה."
+    " על שאלה פשוטה של עובדה (שעה, מספר, כן או לא) תן קודם את העובדה עצמה, ואחריה משפט או שניים של הרחבה שימושית. כשמבקשים סיפור, שיר או הסבר מפורט - האריך כמה שצריך."
+    " אל תפתח במילים כמו 'בהחלט', 'כמובן' או 'אני שמח לעזור', ואל תדבר בנוסח רשמי ויבש. גוון את הניסוח מתשובה לתשובה, התייחס למה שהמשתמש אמר, והראה הבנה ורגש כשמתאים."
+    " אל תזכיר מיוזמתך שאתה בינה מלאכותית או מודל שפה, אבל אם שואלים אותך ישירות - אל תכחיש."
+    " שמור על האופי של העוזר שאתה, אבל תמיד בטון אנושי."
     " בלי כוכביות, בלי רשימות, בלי אימוג'ים ובלי סימני עיצוב."
     " ענה בשפה שבה המשתמש דיבר אליך; ברירת המחדל היא עברית."
     " שמור על שפה מכובדת וצנועה, ואל תעסוק בנושאים לא צנועים."
@@ -182,6 +188,20 @@ GENERAL_RULES = (
     " יש לך כלי חיפוש באינטרנט. השתמש בו כשהמשתמש מבקש לחפש, או כשהתשובה דורשת מידע עדכני:"
     " מחירים, חנויות, חדשות, מזג אוויר, שעות פתיחה, תחבורה ציבורית, תוצאות, מה קורה עכשיו. אחרי חיפוש תן תשובה מדויקת עם המספרים והשמות שמצאת."
 )
+
+GENERAL_RULES_OWNER = GENERAL_RULES.replace(" שמור על שפה מכובדת וצנועה, ואל תעסוק בנושאים לא צנועים.", "")
+WARN_RULE_TEXT = ("xxxx xx xxxxxx xxx, xxxx xx xxx xxxx xx xxxx xx xx: xxxx xxxx xx xxxxxxx, xxxxxx, xxxxx xx. "
+                  "במקרה של warn אל תענה על התוכן עצמו, ובשורת החיפוש כתוב: לא. ")
+_ctx = threading.local()      # האם הפנייה הנוכחית היא של בעלים / מנהל האתר: אז אין אזהרות ואין הגבלת תוכן
+
+
+def is_owner_ctx():
+    return bool(getattr(_ctx, "owner", False))
+
+
+def rules():
+    return GENERAL_RULES_OWNER if is_owner_ctx() else GENERAL_RULES
+
 
 # העוזרים: רשימה מסודרת (הסדר = מספר ההקשה בתפריט). ניתן להוסיף, למחוק ולסדר באתר הניהול.
 ASSISTANTS = [
@@ -225,13 +245,13 @@ def get_client():
     global _client
     if _client is None:
         _client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY", ""),
-                               http_options=types.HttpOptions(timeout=15000,
+                               http_options=types.HttpOptions(timeout=28000,
                                                               retry_options=types.HttpRetryOptions(attempts=1)))
     return _client
 
 
-GEMINI_DEADLINE = 14   # שניות מקסימום לפנייה אחת. אחרי זה עוברים למודל הבא, גם אם גוגל עדיין "חושבים"
-STRONG_GRACE = 2.5     # כשהמודל המהיר (lite) ענה ראשון - כמה שניות לחכות לתשובה של המודל החזק יותר שכבר רץ במקביל
+GEMINI_DEADLINE = 24   # שניות מקסימום לפנייה אחת. אחרי זה עוברים למודל הבא, גם אם גוגל עדיין "חושבים"
+STRONG_GRACE = 1.5     # כשהמודל המהיר (lite) ענה ראשון - כמה שניות לחכות לתשובה של המודל החזק יותר שכבר רץ במקביל
 
 
 class Deadline(Exception):
@@ -274,7 +294,7 @@ def clean_for_tts(text):
     text = re.sub(r"[*_#`>\[\]]", "", text or "")
     text = text.replace("\n", ", ")
     text = re.sub(r"\s+", " ", text).strip()
-    return text[:900]
+    return text[:2500]
 
 
 def csv_list(s):
@@ -481,6 +501,14 @@ def load_all():
                     TEXTS[k] = str(d[k])
     except Exception as e:
         print("load texts error:", e)
+    try:
+        if not SETTINGS.get("music_fixed"):      # חד פעמי: מנגינה כבויה או "של ימות" -> טראנס (אפשר לשנות שוב באתר, זה לא יחזור)
+            SETTINGS["music_fixed"] = 1
+            if SETTINGS.get("wait_music") in ("off", "yemot"):
+                SETTINGS["wait_music"] = "trance"
+            save_settings()
+    except Exception as e:
+        print("music migrate error:", e)
     print("loaded: %d names, %d log, %d calls, %d assistants" % (len(names), len(LOG), len(CALLS), len(ASSISTANTS)))
 
 
@@ -502,7 +530,7 @@ threading.Thread(target=discover_loop, daemon=True).start()
 #            השרת מעלה את הטראנס גם לתיקייה /ai_moh, כדי שאפשר יהיה להפוך אותה למוזיקה בהמתנה באתר של ימות
 MOH_FOLDER = "ai_moh"
 HOLD_WAIT = 12        # במצב yemot: כמה שניות השרת "מחזיק" את הבקשה (ימות מנגנים בינתיים). פחות מזמן הניתוק של ימות
-WAIT_FILES = {"trance": "ai_wait_trance", "bells": "ai_wait_bells", "custom": "ai_wait_music"}
+WAIT_FILES = {"trance": "ai_wait_t1", "bells": "ai_wait_bells", "custom": "ai_wait_music"}
 MUSIC_READY = {}      # שם קובץ -> קיים בשלוחה
 
 
@@ -546,7 +574,7 @@ def make_bells():
     return _wav_bytes(buf, rate, 0.32)
 
 
-def make_trance():
+def make_trance(bars=2):
     """קטע טראנס מקורי בלי מילים: 2 תיבות ב-138 BPM (כ-3.5 שניות), לה מינור -> פה מז'ור.
     כל הצלילים בנויים כך שיישמעו גם בקו טלפון (שמעביר רק 300-3400 הרץ): לבס ולתוף יש הרמוניות גבוהות."""
     import math
@@ -554,7 +582,7 @@ def make_trance():
     rate = 8000
     bpm = 138.0
     s16 = 60.0 / bpm / 4
-    total = int(rate * s16 * 32)
+    total = int(rate * s16 * 16 * bars)
     buf = [0.0] * total
     rnd = random.Random(7)
     two_pi = 2 * math.pi
@@ -578,7 +606,7 @@ def make_trance():
     A2, F2 = 110.0, 87.31
     chords = [[440.0, 523.25, 659.25, 880.0], [349.23, 440.0, 523.25, 698.46]]   # Am, F
     arp = [0, 1, 2, 3, 2, 1, 0, 2, 1, 3, 2, 0, 3, 2, 1, 2]
-    for n in range(32):
+    for n in range(16 * bars):
         st = n * s16
         bar = n // 16
         if n % 4 == 0:      # בס דרום (קיק) עם "קליק" שנשמע בטלפון
@@ -600,7 +628,7 @@ def make_trance():
             env = min(1.0, t * 400) * math.exp(-t * 11)
             return 0.42 * pump * env * (saw(f, t) + saw(f * 1.006, t) + saw(f * 0.994, t)) / 3
         add(st, s16 * 1.6, lead)
-    for n in range(0, 32, 2):     # שכבת "פאד" רכה של האקורד
+    for n in range(0, 16 * bars, 2):     # שכבת "פאד" רכה של האקורד
         st = n * s16
         bar = n // 16
         for f in chords[bar][:3]:
@@ -627,18 +655,20 @@ def music_exists(name):
 def setup_wait_music():
     if not YEMOT_TOKEN:
         return
-    makers = {"ai_wait_trance": make_trance, "ai_wait_bells": make_bells}
+    makers = {"ai_wait_t1": lambda: make_trance(1), "ai_wait_bells": make_bells}     # טראנס של תיבה אחת (כשתיים שניות): התשובה לא מחכה לסוף מנגינה ארוכה
     for _ in range(5):
         try:
             MUSIC_READY["ai_wait_music"] = music_exists("ai_wait_music")
             for name, maker in makers.items():
                 if MUSIC_READY.get(name):
                     continue
+                uploaded = False
                 if not music_exists(name):
                     yemot_upload_file(name + ".wav", maker())
+                    uploaded = True
                     time.sleep(2)
-                MUSIC_READY[name] = music_exists(name)
-            if MUSIC_READY.get("ai_wait_trance") and not MUSIC_READY.get("moh"):
+                MUSIC_READY[name] = music_exists(name) or uploaded
+            if MUSIC_READY.get("ai_wait_t1") and not MUSIC_READY.get("moh"):
                 try:
                     moh_path = "ivr2:/%s/ai_wait_trance.wav" % MOH_FOLDER
                     url = YEMOT_API + "DownloadFile?" + urllib.parse.urlencode({"token": YEMOT_TOKEN, "path": moh_path})
@@ -685,6 +715,17 @@ def hold_mode():
 
 
 threading.Thread(target=setup_wait_music, daemon=True).start()
+_music_try = [0.0]
+
+
+def ensure_music():
+    """אם המנגינה עוד לא מוכנה בשלוחה - מנסים להעלות אותה שוב ברקע (לכל היותר פעם בשתי דקות)"""
+    try:
+        if music_style() in WAIT_FILES and not music_file() and time.time() - _music_try[0] > 120:
+            _music_try[0] = time.time()
+            threading.Thread(target=setup_wait_music, daemon=True).start()
+    except Exception as e:
+        print("ensure music error:", str(e)[:100])
 
 
 # ============================================================ זמני היום, שבת וחג
@@ -947,7 +988,7 @@ def make_tts(text, voice_name):
 
 
 VOICE_SLOW = {}   # קול -> זמן שעד אליו לא משתמשים בו (כי היה איטי מדי)
-TTS_DEADLINE = 7  # שניות מקסימום ליצירת קול; מעבר לזה עוברים לקול העברי המהיר
+TTS_DEADLINE = 16  # שניות מקסימום ליצירת קול; מעבר לזה עוברים לקול העברי המהיר
 
 
 def voice_ok(v):
@@ -986,8 +1027,90 @@ def speak_file(text, voice_idx, call_id):
         return None
 
 
+# ============================================================ קול בקטעים (מהיר יותר)
+def split_for_tts(text, first_max=140, max_len=320, max_chunks=6):
+    """מפצל תשובה לקטעים קצרים (לפי משפטים). הקטע הראשון קצר, כדי שהקול יהיה מוכן מהר"""
+    text = (text or "").strip()
+    if len(text) <= 220:
+        return [text] if text else []
+    sents = [x.strip() for x in re.split(r"(?<=[.!?])\s+", text) if x.strip()]
+    chunks, cur = [], ""
+    for sn in sents:
+        limit = first_max if not chunks else max_len
+        if cur and len(cur) + 1 + len(sn) > limit:
+            chunks.append(cur)
+            cur = sn
+        else:
+            cur = (cur + " " + sn).strip()
+    if cur:
+        chunks.append(cur)
+    out = []
+    for c in chunks:
+        while len(c) > max_len + 100:         # משפט אחד ארוך מאוד: חותכים בפסיק או ברווח
+            cut = c.rfind(",", 0, max_len)
+            if cut <= 80:
+                cut = c.rfind(" ", 0, max_len)
+            if cut <= 0:
+                cut = max_len
+            out.append(c[:cut + 1].strip())
+            c = c[cut + 1:].strip()
+        if c:
+            out.append(c)
+    while len(out) > max_chunks:
+        i = min(range(len(out) - 1), key=lambda k: len(out[k]) + len(out[k + 1]))
+        out[i:i + 2] = [out[i] + " " + out[i + 1]]
+    return out
+
+
+def _tts_chunk(chunk, voice_idx, call_id, k):
+    """קטע קול אחד: מייצר ומעלה לימות. מחזיר שם קובץ או None"""
+    vl = voice_list()
+    chosen = vl[voice_idx % len(vl)]
+    candidates = [chosen] + [v for v in vl if v != chosen and "he-IL" in v] + [v for v in vl if v != chosen and "he-IL" not in v]
+    wav = None
+    for v in candidates[:2]:
+        if not voice_ok(v):
+            continue
+        try:
+            wav = call_with_deadline(lambda c=chunk, vv=v: make_tts(c, vv), TTS_DEADLINE)
+            if wav:
+                break
+        except Exception as e:
+            print("tts voice %s failed: %s" % (v, str(e)[:80]))
+            VOICE_SLOW[v] = time.time() + 1800
+    if not wav:
+        return None
+    fname = "ai_tts_%s_%s%d" % (re.sub(r"[^0-9a-zA-Z]", "", call_id)[-10:], uuid.uuid4().hex[:5], k)
+    yemot_upload_file(fname + ".wav", wav)
+    return fname
+
+
+def speak_parts(text, voice_idx, call_id):
+    """מפצל את התשובה לקטעים, מייצר את כולם במקביל ומחזיר רשימת חלקים להשמעה ברצף: ("file", שם) או ("text", טקסט).
+    ההמתנה היא בערך לקטע הארוך ביותר ולא לכל התשובה. אם שום קטע לא הצליח - מחזיר רשימה ריקה (ואז הקו מקריא את הטקסט)"""
+    if SETTINGS.get("tts", "on") != "on" or not text:
+        return []
+    chunks = split_for_tts(text)
+    if not chunks:
+        return []
+    t0 = time.time()
+
+    def work(i, c):
+        try:
+            return _tts_chunk(c, voice_idx, call_id, i)
+        except Exception as e:
+            print("tts chunk error:", str(e)[:100])
+            return None
+    res = run_parallel([(lambda i=i, c=c: work(i, c)) for i, c in enumerate(chunks)], TTS_DEADLINE * 2 + 8)
+    parts = [("file", f) if f else ("text", c) for f, c in zip(res, chunks)]
+    if not any(p[0] == "file" for p in parts):
+        return []
+    print("timing: tts parallel %.1fs - %d chunks, %d chars" % (time.time() - t0, len(chunks), len(text)))
+    return parts
+
+
 # ============================================================ Gemini
-def _one_call(model, system, contents, use_search, think, max_tokens=600):
+def _one_call(model, system, contents, use_search, think, max_tokens=1800):
     kw = dict(system_instruction=system, max_output_tokens=max_tokens)
     if use_search:
         kw["tools"] = [types.Tool(google_search=types.GoogleSearch())]
@@ -1001,7 +1124,7 @@ def _one_call(model, system, contents, use_search, think, max_tokens=600):
 
 DEEP_HEDGE = 8.0       # בעבודה יצירתית: אחרי כמה שניות מצרפים מודל חזק נוסף במקביל
 DEEP_DEADLINE = 22     # בעבודה יצירתית: זמן מקסימלי. אם לא הספיק - נשארת התשובה הרגילה
-HEDGE_DELAY = 3.0      # כמה שניות המודל החזק עובד לבד, לפני שמצרפים אליו מודל גיבוי מהיר. חוסך מכסה בלי לפגוע במהירות
+HEDGE_DELAY = 1.8      # כמה שניות המודל החזק עובד לבד, לפני שמצרפים אליו מודל גיבוי מהיר. חוסך מכסה בלי לפגוע במהירות
 MAX_TRIES = 4          # כמה מודלים לכל היותר מנסים לפנייה אחת
 
 
@@ -1031,7 +1154,7 @@ def _note_failure(model, use_search, msg):
             MODEL_STATUS[model] = {"until": time.time() + _quota_pause(msg)}
 
 
-def gemini(system, contents, search=False, prefer_strong=False, deep=False):
+def gemini(system, contents, search=False, prefer_strong=False, deep=False, fast=False):
     """שולח את הפנייה קודם למודל החזק ביותר שזמין. אם הוא לא ענה תוך כמה שניות - מצרפים במקביל מודל מהיר (גיבוי),
     ולוקחים את התשובה הראשונה. מודל שנכשל (מכסה, תקלה) - עוברים מיד לבא בתור.
     ככה המתקשר מקבל את התשובה המדויקת של המודל החזק, לא מחכה למודל תקוע, והמכסה החינמית לא נשרפת פי שלושה
@@ -1043,6 +1166,8 @@ def gemini(system, contents, search=False, prefer_strong=False, deep=False):
     queue = strong[:1] + lite[:1] + strong[1:] + lite[1:]
     if deep and strong:
         queue = strong + lite       # עבודה יצירתית: קודם רק המודלים החזקים, עם חשיבה מלאה
+    if fast and lite and not deep:
+        queue = lite[:1] + strong[:1] + lite[1:] + strong[1:]     # משימה פשוטה (סיכום נתונים): קודם המודל המהיר
     pref = SETTINGS.get("model", "")
     if pref and model_ok(pref):
         queue = [pref] + [m for m in queue if m != pref]
@@ -1068,7 +1193,7 @@ def gemini(system, contents, search=False, prefer_strong=False, deep=False):
                 options = (known,) + tuple(o for o in options if o != known)
             for think in options:
                 try:
-                    text = _one_call(model, system, contents, search, think, 2500 if deep else 600)
+                    text = _one_call(model, system, contents, search, think, 2500 if deep else 1800)
                     if not deep:
                         MODEL_THINK[model] = think
                     if text:
@@ -1095,7 +1220,7 @@ def gemini(system, contents, search=False, prefer_strong=False, deep=False):
             left = [m for m in queue if m not in launched]
             if not left:
                 return False
-            if want_fast:
+            if want_fast or (fast and not launched):
                 pick = [m for m in left if "lite" in m]
             else:
                 pick = [m for m in left if "lite" not in m] if not launched or "lite" not in launched[-1] else []
@@ -1180,7 +1305,7 @@ def clean_audio(wav):
     try:
         import imageio_ffmpeg
         ff = imageio_ffmpeg.get_ffmpeg_exe()
-        p = subprocess.run([ff, "-loglevel", "error", "-i", "pipe:0", "-af", "highpass=f=120,lowpass=f=3800,loudnorm=I=-16:TP=-1.5",
+        p = subprocess.run([ff, "-loglevel", "error", "-i", "pipe:0", "-af", "highpass=f=100,lowpass=f=3800,dynaudnorm=f=200:g=11",
                             "-ar", "16000", "-ac", "1", "-acodec", "pcm_s16le", "-f", "wav", "pipe:1"],
                            input=wav, capture_output=True, timeout=15)
         if p.returncode == 0 and len(p.stdout) > 1000:
@@ -1366,24 +1491,27 @@ def weather_lookup(place):
 
 
 def wiki_search(query):
-    """ויקיפדיה בעברית - חינמי ואמין, טוב לשאלות 'מי זה' ו'מה זה'"""
-    try:
-        r = http_json("https://he.wikipedia.org/w/api.php?" + urllib.parse.urlencode(
-            {"action": "query", "list": "search", "srsearch": query, "format": "json", "srlimit": 3}))
-        hits = r.get("query", {}).get("search", [])
-        if not hits:
-            return None
-        titles = "|".join(h["title"] for h in hits[:2])
-        r2 = http_json("https://he.wikipedia.org/w/api.php?" + urllib.parse.urlencode(
-            {"action": "query", "prop": "extracts", "exintro": 1, "explaintext": 1, "titles": titles, "format": "json", "exchars": 1200}))
-        out = []
-        for p in r2.get("query", {}).get("pages", {}).values():
-            if p.get("extract"):
-                out.append("- %s: %s" % (p.get("title", ""), p["extract"][:1200]))
-        return "\n".join(out) if out else None
-    except Exception as e:
-        print("wiki error:", str(e)[:150])
-        return None
+    """ויקיפדיה: קודם בעברית, ואם לא נמצא - באנגלית. מחזיר תקצירי הערכים הרלוונטיים"""
+    for lang in ("he", "en"):
+        try:
+            base = "https://%s.wikipedia.org/w/api.php?" % lang
+            r = http_json(base + urllib.parse.urlencode(
+                {"action": "query", "list": "search", "srsearch": query, "format": "json", "srlimit": 3}))
+            hits = r.get("query", {}).get("search", [])
+            if not hits:
+                continue
+            titles = "|".join(h["title"] for h in hits[:2])
+            r2 = http_json(base + urllib.parse.urlencode(
+                {"action": "query", "prop": "extracts", "exintro": 1, "explaintext": 1, "titles": titles, "format": "json", "exchars": 2500}))
+            out = []
+            for p in r2.get("query", {}).get("pages", {}).values():
+                if p.get("extract"):
+                    out.append("- %s: %s" % (p.get("title", ""), p["extract"][:2500]))
+            if out:
+                return ("(מוויקיפדיה באנגלית)\n" if lang == "en" else "") + "\n".join(out)
+        except Exception as e:
+            print("wiki (%s) error: %s" % (lang, str(e)[:120]))
+    return None
 
 
 # ============================================================ תחבורה ציבורית
@@ -1679,8 +1807,8 @@ BROWSER_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHT
 SEARCH_STATE = {"ground_until": 0, "last": {}}   # מצב כל מקור חיפוש (מוצג בבדיקת המערכת)
 SEARCH_CACHE = {}                                # שאילתה -> (זמן, תוצאות) - חוסך חיפוש כפול על אותה שאלה
 SEARCH_CACHE_TTL = 600
-SEARCH_BUDGET = 30          # שניות מקסימום לכל שלב החיפוש (כדי שהשיחה לא תיפול)
-GROUND_GRACE = 8            # כמה שניות לחכות לחיפוש גוגל לפני שמסתפקים בתשובה מהמנועים החינמיים
+SEARCH_BUDGET = 20          # שניות מקסימום לכל שלב החיפוש (כדי שהשיחה לא תיפול)
+GROUND_GRACE = 5            # כמה שניות לחכות לחיפוש גוגל לפני שמסתפקים בתשובה מהמנועים החינמיים
 ENGINES_WAIT = 9            # מקסימום שניות למנועי החיפוש החינמיים (בדרך כלל הם חוזרים תוך 2-4 שניות, כי כולם רצים במקביל)
 PAGE_WAIT = 4               # מקסימום שניות לקריאת דף אחד מתוך התוצאות (הדפים נקראים במקביל)
 SKIP_DOMAINS = ("youtube.com", "youtu.be", "facebook.com", "instagram.com", "tiktok.com", "twitter.com", "x.com",
@@ -1690,6 +1818,12 @@ NEWS_WORDS = ("חדשות", "מה קרה", "מה חדש", "מה נשמע ב", "�
 DONT_KNOW_WORDS = ("לא יודע", "אינני יודע", "איני יודע", "לא יודעת", "אין לי מידע", "אין לי פרטים", "אין לי נתונים",
                    "אין בידי", "אין ברשותי", "לא מכיר", "אינני מכיר", "איני מכיר", "לא ידוע לי", "לא מצאתי", "לא הצלחתי למצוא",
                    "אינני בטוח", "לא בטוח מה", "אין לי גישה", "לא נמצא בידי", "אין לי ידע")
+PRICE_WORDS = ("מחיר", "מחירים", "כמה עולה", "כמה זה עולה", "בכמה", "לקנות", "מבצע", "זול", "הכי זול", "קנייה", "חנות")
+FINANCE_WORDS = ("דולר", "יורו", "שער", "מטבע", "מטבעות", "ביטקוין", "ביטקויין", "אתריום", "קריפטו", "לירה", "פאונד", "שקל")
+GENERIC_NEWS = {"חדשות", "מה", "קרה", "חדש", "היום", "עכשיו", "עדכון", "עדכונים", "מבזק", "אחרונות", "בארץ", "בישראל", "הלילה", "אתמול", "השבוע"}
+NEWS_FEEDS = (("ynet", "https://www.ynet.co.il/Integration/StoryRss2.xml"),
+              ("ישראל היום", "https://www.israelhayom.co.il/rss.xml"),
+              ("מעריב", "https://www.maariv.co.il/Rss/RssFeedsMivzakiChadashot"))
 FORCE_SEARCH_WORDS = ("תחפש", "חפש ", "תבדוק באינטרנט", "בדוק באינטרנט", "באינטרנט", "בגוגל", "תגגל")
 
 
@@ -1933,10 +2067,71 @@ def fetch_page_text(url):
         if "html" not in ctype.lower() and not page.lstrip()[:200].lower().startswith(("<!doctype", "<html")):
             return None
         t = html_to_text(page)
-        return t[:4000] if len(t) > 150 else None
+        return t[:5000] if len(t) > 150 else None
     except Exception as e:
         print("fetch page error (%s): %s" % (_domain(url), str(e)[:100]))
         return None
+
+
+def rss_titles(url, n=8):
+    _, x = http_get(url, timeout=6)
+    root = ET.fromstring(x.encode("utf-8"))
+    out = []
+    for it in root.iter("item"):
+        t = (it.findtext("title") or "").strip()
+        if t:
+            out.append(t)
+        if len(out) >= n:
+            break
+    return out
+
+
+def top_headlines(query=""):
+    """כותרות עדכניות מאתרי החדשות הגדולים (RSS חינמי) וגם מגוגל חדשות. אם שאלו על נושא מסוים - מסננים לפיו"""
+    tasks = [(lambda u=u: rss_titles(u)) for _, u in NEWS_FEEDS]
+    tasks.append(lambda: [h["title"] for h in search_news(query or "ישראל", 6)])
+    res = run_parallel(tasks, 8)
+    out = []
+    for (name, _), titles in zip(NEWS_FEEDS + (("גוגל חדשות", ""),), res):
+        for t in titles or []:
+            out.append("%s: %s" % (name, t))
+    kw = [w for w in re.findall(r"[\u0590-\u05FFa-zA-Z0-9]+", query or "") if len(w) > 2 and w not in GENERIC_NEWS]
+    if kw:
+        filtered = [t for t in out if any(k in t for k in kw)]
+        out = filtered or out[:6]
+    _search_note("headlines", bool(out), "" if out else "לא חזרו כותרות")
+    return out
+
+
+def finance_snapshot(query):
+    """שערי מטבע ומטבעות דיגיטליים עדכניים (חינם, בלי מפתח). רק כששואלים על זה"""
+    q = query or ""
+    if not any(w in q for w in FINANCE_WORDS):
+        return None
+    lines = []
+    try:
+        d = http_json("https://open.er-api.com/v6/latest/USD", timeout=6)
+        r = d.get("rates", {})
+        ils = r.get("ILS")
+        if ils:
+            lines.append("שערי מטבע עדכניים (שער חליפין בינלאומי, לא שער הבנקים, עדכון אחרון: %s):" % str(d.get("time_last_update_utc", ""))[:16])
+            lines.append("- דולר אחד = %.3f שקלים" % ils)
+            for code, nm in (("EUR", "יורו"), ("GBP", "לירה שטרלינג"), ("JPY", "ין יפני"), ("CHF", "פרנק שוויצרי")):
+                if r.get(code):
+                    lines.append("- %s אחד = %.3f שקלים" % (nm, ils / r[code]))
+    except Exception as e:
+        print("rates error:", str(e)[:100])
+    if any(w in q for w in ("ביטקוין", "ביטקויין", "אתריום", "קריפטו")):
+        try:
+            d = http_json("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum&vs_currencies=usd,ils", timeout=6)
+            for cid, nm in (("bitcoin", "ביטקוין"), ("ethereum", "אתריום")):
+                v = d.get(cid) or {}
+                if v.get("usd"):
+                    lines.append("- %s: %s דולר (בערך %s שקלים)" % (nm, format(v["usd"], ",.0f"), format(v.get("ils", 0), ",.0f")))
+        except Exception as e:
+            print("crypto error:", str(e)[:100])
+    _search_note("finance", bool(lines), "" if lines else "לא חזרו נתונים")
+    return "\n".join(lines) or None
 
 
 PREFETCH_MAX = 8     # כמה אתרים לכל היותר מתחילים לקרוא מראש, לפני שכל המנועים סיימו
@@ -1980,11 +2175,15 @@ def gather_web(query, newsy=False):
             threading.Thread(target=run, daemon=True).start()
 
     # ויקיפדיה בעברית נבדקת תמיד במקביל (קודם רק כשלא נמצא שום דבר אחר) - היא המקור הכי אמין למוסדות, בתי כנסת, אנשים ומקומות
+    priced = any(w in query for w in PRICE_WORDS)
     tasks = [lambda: search_ddgs(query, on_hits=prefetch), lambda: search_bing(query, on_hits=prefetch), lambda: wiki_search(query),
-             (lambda: search_news(query)) if newsy else (lambda: None)]
+             (lambda: search_news(query)) if newsy else (lambda: None),
+             (lambda: top_headlines(query)) if newsy else (lambda: None),
+             lambda: finance_snapshot(query),
+             (lambda: search_ddgs(query + " מחיר השוואת מחירים זאפ", 5, on_hits=prefetch)) if priced else (lambda: None)]
     res = run_parallel(tasks, ENGINES_WAIT)
     hits, seen = [], set()
-    for h in (res[0] or []) + (res[1] or []):
+    for h in ((res[6] or []) if priced else []) + (res[0] or []) + (res[1] or []):
         href = h.get("href", "")
         k = href.split("?")[0].rstrip("/")
         if not href or k in seen:
@@ -1993,9 +2192,11 @@ def gather_web(query, newsy=False):
         hits.append(h)
     extra = res[2]
     news = res[3] or []
+    heads = res[4] or []
+    fin = res[5]
     if not hits and not news and not extra:
         news = search_news(query)
-    urls = [h["href"] for h in hits if _page_ok(h["href"])][:4]
+    urls = [h["href"] for h in hits if _page_ok(h["href"])][:5]
     prefetch([{"href": u} for u in urls], force=True)       # אתר מהרשימה הסופית שעוד לא התחילו לקרוא - מתחילים עכשיו
     early = sum(1 for u in urls if pre.get(u) and pre[u]["ev"].is_set())
     end = time.time() + PAGE_WAIT + 1                         # אותו זמן המתנה כמו קודם; אתרים שכבר נקראו מוכנים מיד
@@ -2010,13 +2211,17 @@ def gather_web(query, newsy=False):
     parts = []
     if extra:
         parts.append("ערכים מוויקיפדיה (מקור אמין):\n" + extra)
+    if fin:
+        parts.append(fin)
+    if heads:
+        parts.append("כותרות עדכניות מאתרי החדשות:\n" + "\n".join("- %s" % h for h in heads[:14]))
     if hits:
         parts.append("תוצאות חיפוש:\n" + "\n".join("- %s: %s (%s)" % (h["title"], h["body"], _domain(h["href"])) for h in hits[:8]))
     if news:
         parts.append("כותרות חדשות אחרונות:\n" + "\n".join("- %s (%s)" % (h["title"], h["body"]) for h in news[:6]))
     for u, txt in zip(urls, pages):
         if txt:
-            parts.append("תוכן מתוך האתר %s:\n%s" % (_domain(u), txt[:2500]))
+            parts.append("תוכן מתוך האתר %s:\n%s" % (_domain(u), txt[:3500]))
     text = "\n\n".join(parts) or None
     print("timing: web gather %.1fs - %d results, %d news, %d pages read (%d were ready early), wikipedia: %s" % (
         time.time() - t0, len(hits), len(news), sum(1 for p in pages if p), early if urls else 0, "yes" if extra else "no"))
@@ -2037,7 +2242,7 @@ def web_search(query, max_results=6):
 
 
 SEARCH_MODEL_UNTIL = {}     # מודל -> זמן שעד אליו לא מנסים בו חיפוש גוגל (המכסה שלו נגמרה)
-GROUND_TOTAL = 26           # שניות מקסימום לכל סבב חיפוש גוגל, על כל המודלים יחד
+GROUND_TOTAL = 18           # שניות מקסימום לכל סבב חיפוש גוגל, על כל המודלים יחד
 
 
 def grounded_answer(system, contents):
@@ -2099,7 +2304,7 @@ ONLY_ANSWER = (" כתוב רק את התשובה עצמה, בדיוק כפי ש�
 def answer_with_search(assistant, history, transcript, search_line="", query=""):
     """שלב חיפוש: מזג אוויר -> Open-Meteo. תחבורה ציבורית -> מאגר משרד התחבורה.
     אחרת חיפוש גוגל של Gemini ומנועים חינמיים + קריאת אתרים - במקביל"""
-    base = assistant["prompt"] + GENERAL_RULES + context_line(assistant) + ONLY_ANSWER
+    base = assistant["prompt"] + rules() + context_line(assistant) + ONLY_ANSWER
     q = (query or transcript or "").strip()
     t0 = time.time()
     if "מזג" in search_line:
@@ -2109,7 +2314,7 @@ def answer_with_search(assistant, history, transcript, search_line="", query="")
         if w:
             sys_w = base + " קיבלת תחזית מזג אוויר. ענה על השאלה לפי המידע הזה, קצר ומתאים להקראה בטלפון." + (
                 " המתקשר לא אמר עיר: ציין לאיזו עיר התחזית, ושאפשר לשאול על עיר אחרת." if no_city else "")
-            ans = gemini(sys_w, list(history) + [{"role": "user", "parts": [{"text": "השאלה: %s\n\nתחזית מזג אוויר:\n%s" % (transcript, w)}]}])
+            ans = gemini(sys_w, list(history) + [{"role": "user", "parts": [{"text": "השאלה: %s\n\nתחזית מזג אוויר:\n%s" % (transcript, w)}]}], fast=True)
             if ans:
                 return ans
     if "זמנים" in search_line:
@@ -2124,7 +2329,7 @@ def answer_with_search(assistant, history, transcript, search_line="", query="")
                             " אם שאלו על זמן אחד - תן רק אותו, עם שם העיר. אם יש כמה שיטות (גר\"א ומגן אברהם) אמור את שתיהן בקצרה."
                             " בהדלקת נרות, אם המקום אינו ירושלים, אמור שהמנהג משתנה ממקום למקום ותן את הזמנים לפי 20, 30 ו-40 דקות."
                             " אם המתקשר לא אמר עיר, ציין לאיזו עיר הזמנים ושאפשר לשאול על עיר אחרת. קצר ומתאים להקראה בטלפון.")
-            ans = gemini(sys_z, list(history) + [{"role": "user", "parts": [{"text": "השאלה: %s\n\n%s" % (transcript, zt)}]}], prefer_strong=True)
+            ans = gemini(sys_z, list(history) + [{"role": "user", "parts": [{"text": "השאלה: %s\n\n%s" % (transcript, zt)}]}], fast=True)
             if ans:
                 print("search: answered by zmanim in %.1fs" % (time.time() - t0))
                 return ans
@@ -2141,7 +2346,7 @@ def answer_with_search(assistant, history, transcript, search_line="", query="")
                             " אם יש כמה כיוונים או כמה קווים ולא ברור לאיזה המתקשר התכוון, אמור את העיקר ושאל בקצרה לאיזה כיוון."
                             " ציין במילים ספורות שאלו זמנים לפי לוח הזמנים, ושייתכנו עיכובים. קצר ומתאים להקראה בטלפון.")
             ans = gemini(sys_t, list(history) + [{"role": "user", "parts": [{"text": "השאלה: %s\nהשעה עכשיו: %s\n\nנתוני תחבורה:\n%s" % (
-                transcript, il_now().strftime("%H:%M"), tr)}]}], prefer_strong=True)
+                transcript, il_now().strftime("%H:%M"), tr)}]}], fast=True)
             if ans:
                 print("search: answered by transit data in %.1fs" % (time.time() - t0))
                 return ans
@@ -2150,7 +2355,7 @@ def answer_with_search(assistant, history, transcript, search_line="", query="")
     newsy = any(w in (transcript + " " + q) for w in NEWS_WORDS)
     contents = list(history) + [{"role": "user", "parts": [{"text": transcript}]}]
     sys_g = base + (" חפש באינטרנט, בכל אתר שצריך: חדשות, תחבורה ציבורית ולוחות זמנים, מוזיקה, חנויות, מחירים, שעות פתיחה."
-                    " ענה תשובה מדויקת עם המספרים, השעות והשמות שמצאת. תשובה קצרה, מתאימה להקראה בטלפון. אל תקרא כתובות אינטרנט.")
+                    " ענה תשובה מדויקת עם המספרים, השעות והשמות שמצאת. תשובה מלאה ומפורטת, מתאימה להקראה בטלפון. אל תקרא כתובות אינטרנט. במחירים: חפש בחנויות ובאתרי השוואת מחירים ותן טווח מחירים עם שמות החנויות. בחדשות: תן את הידיעות העדכניות ביותר.")
     box = {}
 
     def run_google():
@@ -2162,11 +2367,11 @@ def answer_with_search(assistant, history, transcript, search_line="", query="")
 
     def ask_with(data):
         sys2 = base + (" חיפשת באינטרנט וקיבלת את המידע שלמטה: תוצאות חיפוש ותוכן שנקרא מתוך האתרים עצמם."
-                           " ענה על השאלה לפי המידע הזה, עם המספרים, השעות והשמות שמופיעים בו, קצר ומתאים להקראה בטלפון."
-                           " אל תקרא כתובות אינטרנט. אפשר לציין מאיזה אתר המידע."
+                           " ענה על השאלה לפי המידע הזה, עם המספרים, השעות והשמות שמופיעים בו, מפורט וברור ומתאים להקראה בטלפון."
+                           " אל תקרא כתובות אינטרנט. אפשר לציין מאיזה אתר המידע. במחירים תן טווח ושמות חנויות, ובשערי מטבע ציין שזה שער חליפין בינלאומי. בחדשות תן את הידיעות העדכניות ביותר."
                            " אל תענה רק 'לא מצאתי': אם המידע חלקי, תן את כל מה שכן נמצא ושעונה על השאלה,"
                            " והשלם מהידע שלך רק דברים שאתה בטוח בהם. אל תמציא מספרים, שעות או מחירים.")
-        return gemini(sys2, list(history) + [{"role": "user", "parts": [{"text": "השאלה: %s\n\nמה שנמצא באינטרנט:\n%s" % (transcript, data[:12000])}]}])
+        return gemini(sys2, list(history) + [{"role": "user", "parts": [{"text": "השאלה: %s\n\nמה שנמצא באינטרנט:\n%s" % (transcript, data[:20000])}]}])
 
     def run_free():
         try:
@@ -2241,7 +2446,7 @@ CREATIVE_RULES = (
 def creative_answer(assistant, history, transcript):
     """בקשה יצירתית (בדיחה, חידה, סיפור, שיר): כותבים שוב עם המודל החזק וחשיבה מלאה. אם לא הספיק - None"""
     t0 = time.time()
-    sys_c = assistant["prompt"] + GENERAL_RULES + context_line(assistant) + ONLY_ANSWER + CREATIVE_RULES
+    sys_c = assistant["prompt"] + rules() + context_line(assistant) + ONLY_ANSWER + CREATIVE_RULES
     ans = gemini(sys_c, list(history) + [{"role": "user", "parts": [{"text": transcript}]}], deep=True)
     print("timing: creative (deep) %.1fs - %s" % (time.time() - t0, "ok" if ans else "kept the quick answer"))
     return strip_meta(ans) if ans else None
@@ -2306,9 +2511,16 @@ CHAT_INTRO_TEXT = (
 
 
 def chat_system(assistant, from_text=False):
+    s = _chat_system_base(assistant, from_text)
+    if is_owner_ctx():
+        s = s.replace(" | warn", "").replace(WARN_RULE_TEXT, "")
+    return s
+
+
+def _chat_system_base(assistant, from_text=False):
     """ההנחיות לבינה בשיחה - אותן הנחיות בדיוק לטלפון ולבדיקה מאתר הניהול. רק הפתיחה שונה (הקלטה / טקסט)"""
     others = "; ".join("%s = %s (מילים: %s)" % (a["id"], a["name"], a.get("keywords", "")) for _, a in active_assistants() if a["id"] != assistant["id"])
-    return assistant["prompt"] + GENERAL_RULES + context_line(assistant) + (CHAT_INTRO_TEXT if from_text else CHAT_INTRO_AUDIO) + (
+    return assistant["prompt"] + rules() + context_line(assistant) + (CHAT_INTRO_TEXT if from_text else CHAT_INTRO_AUDIO) + (
         " ענה בדיוק בפורמט הבא, ארבע שורות:\n"
         "תמלול: <תמלול מדויק של ההקלטה>\n"
         "פעולה: <אחת מהאפשרויות: none | menu | end | voice | warn | switch:מזהה>\n"
@@ -2321,7 +2533,7 @@ def chat_system(assistant, from_text=False):
         " מספר תחנה הוא המספר של 5 ספרות שכתוב על שלט התחנה. דוגמאות: תחבורה: 402 | בני ברק | ירושלים | -"
         " או: תחבורה: - | - | - | 21345 או: תחבורה: - | אלעד | בני ברק | -."
         " כן = כשהתשובה דורשת חיפוש באינטרנט: המשתמש ביקש לחפש או לבדוק, או שצריך מידע עדכני - מחירים, חדשות, רכבות,"
-        " שעות פתיחה, תוצאות, שירים ואלבומים חדשים, מה קורה עכשיו."
+        " שעות פתיחה, תוצאות, שירים ואלבומים חדשים, מה קורה עכשיו, שערי מטבע, מחירי מוצרים בחנויות, ערכים בוויקיפדיה, מידע על אנשים, מקומות ועסקים."
         " כתוב כן גם כששואלים על משהו מסוים שאינך מכיר היטב ובוודאות: בית כנסת, ישיבה, מוסד, רב או אדם, חנות או עסק,"
         " רחוב, שכונה, אירוע, ספר או שיר מסוים. במקרים כאלה לעולם אל תענה 'אינני יודע' בלי לחפש קודם."
         " אם השאלה על מזג האוויר, כתוב: מזג אוויר: ואז שם העיר באנגלית (למשל: מזג אוויר: Bnei Brak)."
@@ -2329,7 +2541,7 @@ def chat_system(assistant, from_text=False):
         "תשובה: <התשובה שלך למשתמש. אם צריך חיפוש (כן / מזג אוויר / תחבורה / זמנים), כתוב כאן רק: מחפש>\n"
         "כללי הפעולה: menu אם ביקש לחזור לתפריט. end אם ביקש לסיים או להתנתק או אמר להתראות. "
         "voice אם ביקש להחליף קול. switch:מזהה אם ביקש לעבור לעוזר אחר מהרשימה: " + others + ". "
-        "warn אם המשתמש שאל, ביקש או אמר משהו לא צנוע או גס: תוכן מיני או אינטימי, פריצות, ניבול פה. "
+        "xxxx xx xxxxxx xxx, xxxx xx xxx xxxx xx xxxx xx xx: xxxx xxxx xx xxxxxxx, xxxxxx, xxxxx xx. "
         "במקרה של warn אל תענה על התוכן עצמו, ובשורת החיפוש כתוב: לא. "
         "אחרת none. כשהפעולה אינה none, כתוב בתשובה משפט קצר מתאים (למשל: בטח, מעביר אותך)."
     )
@@ -2353,6 +2565,8 @@ def finish_answer(assistant, history, raw, info=None, known=""):
         answer = raw.strip()
     if known and not transcript:
         transcript = known            # בבדיקה מהאתר השאלה ידועה מראש, גם אם הבינה לא החזירה שורת תמלול
+    if action == "warn" and is_owner_ctx():
+        action = "none"      # בעלים: אף פעם לא אזהרה
     if action == "warn":
         return transcript, "warn", ""      # אזהרה: הנוסח נקבע לפי מספר האזהרות של המתקשר (ב-ai_worker)
     if transcript and action == "none" and "תחבור" not in search_line and any(w in transcript + " " for w in TRANSIT_WORDS):
@@ -2495,10 +2709,11 @@ def R(text):
 
 
 def msg_part(state, text):
-    f = state.pop("tts_file", None)
+    """החלקים להשמעה: קטעי הקול שהוכנו (אם יש), אחרת הטקסט עצמו. תמיד רשימה"""
+    f = state.pop("tts_files", None)
     if f:
-        return ("file", f)
-    return ("text", text)
+        return f
+    return [("text", text)]
 
 
 def menu(state, name, prefix=None):
@@ -2516,7 +2731,7 @@ def menu(state, name, prefix=None):
     read = build_read([("text", " ".join(items))], mode="tap", val_name=state["wait"], max_digits=1, min_digits=1,
                       digits_allowed=allowed + "9", sec_wait=10)
     if prefix:
-        return build_combined_action([build_id_list_message([msg_part(state, prefix)]), read])
+        return build_combined_action([build_id_list_message(msg_part(state, prefix)), read])
     return read
 
 
@@ -2525,7 +2740,7 @@ def record(state, val_prefix, message, prefix=None):
     state["wait"] = "%s_%d" % (val_prefix, state["n"])
     file_name = "ai_%s_%d" % (re.sub(r"[^0-9a-zA-Z]", "", state["call_id"])[-12:], state["n"])
     state["file"] = file_name
-    read = build_read([message], mode="record", val_name=state["wait"], path="", file_name=file_name,
+    read = build_read(message if isinstance(message, list) else [message], mode="record", val_name=state["wait"], path="", file_name=file_name,
                       no_confirm_menu="no", save_on_hangup="no", min_length="",
                       max_length=int(SETTINGS.get("record_max", 25) or 25))
     if prefix:
@@ -2541,6 +2756,7 @@ def listen(state, text=None, first=False):
 
 
 def wait_message(state):
+    ensure_music()
     phrases = csv_list(TEXTS.get("wait", "")) or ["רק רגע"]
     i = state.get("wait_i", 0)
     state["wait_i"] = i + 1
@@ -2561,14 +2777,15 @@ def wait_message(state):
 
 
 def goodbye(call_id, name, state=None):
-    part = msg_part(state, T("goodbye", name=name)) if state else ("text", T("goodbye", name=name))
+    part = msg_part(state, T("goodbye", name=name)) if state else [("text", T("goodbye", name=name))]
     with _lock:
         calls.pop(call_id, None)
-    return build_combined_action([build_id_list_message([part]), build_go_to_folder("hangup")])
+    return build_combined_action([build_id_list_message(part), build_go_to_folder("hangup")])
 
 
 def ai_worker(pending, state, assistant, history, file_name, call_id, voice_idx):
     try:
+        _ctx.owner = state.get("phone", "") in OWNER_PHONES
         transcript, action, answer = ask_ai(assistant, history, file_name)
         if action == "warn":
             n = add_warning(state.get("phone", ""))
@@ -2591,7 +2808,7 @@ def ai_worker(pending, state, assistant, history, file_name, call_id, voice_idx)
                     if voice_ok(vl[v % len(vl)]):
                         break
                     v = (v + 1) % len(vl)
-            tts = speak_file(answer, v, call_id)
+            tts = speak_parts(answer, v, call_id)
         pending["result"] = (transcript, action, answer, tts)
     except Exception as e:
         print("worker error:", e)
@@ -2630,8 +2847,10 @@ def yemot():
     if params.get("hangup") == "yes":
         with _lock:
             st = calls.pop(call_id, None)
-        if st and st.get("tts_file"):
-            _bg(yemot_delete, st["tts_file"] + ".wav")
+        if st and st.get("tts_files"):
+            for p_ in st["tts_files"]:
+                if p_[0] == "file":
+                    _bg(yemot_delete, p_[1] + ".wav")
         return R("noop")
 
     phone = params.get("ApiPhone", "unknown")
@@ -2751,8 +2970,8 @@ def yemot():
         state["pending_q"] = state["pending_a"] = ""
         transcript, action, answer, tts = pending["result"]
         if tts:
-            state["tts_file"] = tts
-            state["played"].append(tts)
+            state["tts_files"] = tts
+            state["played"].extend(p[1] for p in tts if p[0] == "file")
 
         if transcript:
             state["last_q"] = transcript
@@ -2769,10 +2988,10 @@ def yemot():
             save_log()
 
         if action == "menu":
-            state["tts_file"] = None
+            state["tts_files"] = None
             return R(menu(state, name))
         if action == "end":
-            state["tts_file"] = None
+            state["tts_files"] = None
             return R(goodbye(call_id, name, state))
         if action == "voice":
             vl = voice_list()
@@ -3298,10 +3517,11 @@ def api_test_chat():
     for h in (d.get("history") or [])[-6:]:
         if isinstance(h, dict) and h.get("q") and h.get("a"):
             history.append({"role": "user", "parts": [{"text": str(h["q"])[:1000]}]})
-            history.append({"role": "model", "parts": [{"text": str(h["a"])[:1500]}]})
+            history.append({"role": "model", "parts": [{"text": str(h["a"])[:3500]}]})
     info = {}
     t0 = time.time()
     try:
+        _ctx.owner = True      # בדיקה מאתר הניהול: בלי אזהרות ובלי הגבלה
         transcript, action, answer = ask_ai_text(assistant, history, text, info)
     except Exception as e:
         print("test chat error:", e)
