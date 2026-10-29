@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="primary">#1E4E8C</color>
+    <color name="primary_dark">#133660</color>
+    <color name="accent">#E8A317</color>
+    <color name="ic_bg">#1E4E8C</color>
+    <color name="edit_stroke">#8899AA</color>
+</resources>

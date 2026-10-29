@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">סטודיו קריינות</string>
+    <string name="title">סטודיו קריינות</string>
+    <string name="hint_text">הקלד או הדבק כאן את הטקסט לקריינות…</string>
+    <string name="label_language">שפה</string>
+    <string name="label_voice">קול</string>
+    <string name="offline_only">הצג רק קולות מותקנים (עובד ללא אינטרנט)</string>
+    <string name="btn_play">נגן</string>
+    <string name="btn_stop">עצור</string>
+    <string name="btn_save">צור קובץ שמע</string>
+    <string name="label_format">פורמט קובץ</string>
+    <string name="fmt_mp3">MP3</string>
+    <string name="fmt_wav">WAV</string>
+    <string name="mp3_failed">המרה ל-MP3 נכשלה, הקובץ נשמר כ-WAV</string>
+    <string name="btn_share">שתף את הקובץ האחרון</string>
+    <string name="btn_voices">הורד / נהל קולות</string>
+    <string name="voice">קול</string>
+    <string name="online">דורש אינטרנט</string>
+    <string name="offline">מקומי</string>
+    <string name="high_quality">איכות גבוהה</string>
+    <string name="rate_label">מהירות: %1$s</string>
+    <string name="pitch_label">גובה צליל: %1$s</string>
+    <string name="status_loading">טוען מנוע קריינות…</string>
+    <string name="status_ready">מוכן</string>
+    <string name="status_no_engine">לא נמצא מנוע הקראה. התקן Speech Services by Google מחנות Play.</string>
+    <string name="status_no_voices">לא נמצאו קולות. לחץ על \"הורד / נהל קולות\" והתקן קול.</string>
+    <string name="status_speaking">מקריין…</string>
+    <string name="status_done">הסתיים</string>
+    <string name="status_synth">מכין קובץ, חלק %1$d מתוך %2$d…</string>
+    <string name="status_file_ready">הקובץ מוכן</string>
+    <string name="empty_text">אין טקסט לקריינות</string>
+    <string name="saved_ok">הקובץ נשמר</string>
+    <string name="error_generic">אירעה שגיאה</string>
+    <string name="error_synth">יצירת הקובץ נכשלה. נסה קול אחר.</string>
+    <string name="no_file">עדיין לא נוצר קובץ</string>
+    <string name="share_title">שיתוף קריינות</string>
+</resources>
