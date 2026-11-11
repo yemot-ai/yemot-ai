@@ -449,7 +449,14 @@ def load_all():
                     continue
                 try:
                     d = json.loads(line)
+                    if not isinstance(d, dict):
+                        bad += 1
+                        continue
                     kind = d.pop("t", "log")
+                    # רשומה בלי טלפון או בלי זמן היא פגומה - מדלגים עליה (מונע KeyError בהמשך)
+                    if not d.get("phone") or not d.get("time"):
+                        bad += 1
+                        continue
                     (CALLS if kind == "call" else LOG).append(d)
                 except Exception:
                     bad += 1
@@ -2468,7 +2475,7 @@ def ask_ai(assistant, history, file_name):
 def messages_today(phone):
     today = today_str()
     with _lock:
-        return sum(1 for l in LOG if l["phone"] == phone and l["time"].startswith(today))
+        return sum(1 for l in LOG if l.get("phone") == phone and (l.get("time") or "").startswith(today))
 
 
 def over_limit(phone):
@@ -2625,7 +2632,7 @@ threading.Thread(target=cleanup_loop, daemon=True).start()
 
 
 # ============================================================ הקו
-@app.route("/", methods=["GET", "POST"])
+@app.route("/", methods=["GET", "POST", "HEAD"])
 def yemot():
     params = request.values.to_dict()
     call_id = params.get("ApiCallId")
@@ -2822,25 +2829,31 @@ def snapshot():
         return dict(names), list(LOG), list(CALLS), {k: dict(v) for k, v in calls.items()}
 
 
+def _ts(x):
+    """שדה זמן בטוח (מחרוזת) מתוך רשומה"""
+    return (x.get("time") or "") if isinstance(x, dict) else ""
+
+
 def build_summary(day):
     h = html.escape
     users, log, cl, _ = snapshot()
-    log = [l for l in log if l["time"].startswith(day)]
-    cl = [c for c in cl if c["time"].startswith(day)]
-    phones = sorted(set(c["phone"] for c in cl) | set(l["phone"] for l in log))
+    log = [l for l in log if _ts(l).startswith(day)]
+    cl = [c for c in cl if _ts(c).startswith(day)]
+    phones = sorted(set(c.get("phone", "") for c in cl) | set(l.get("phone", "") for l in log))
+    phones = [p for p in phones if p]
     out = ["<div dir='rtl' style='font-family:Arial'><h2>סיכום הקו ליום %s</h2>" % h(day),
            "<p>שיחות: <b>%d</b> &nbsp; מתקשרים שונים: <b>%d</b> &nbsp; הודעות ל-AI: <b>%d</b></p>" % (len(cl), len(phones), len(log))]
     if phones:
         out.append("<h3>לפי מתקשר</h3><ul>")
         for ph in phones:
             out.append("<li>%s (%s): %d שיחות, %d הודעות</li>" % (h(users.get(ph, "לא רשום")), h(ph),
-                                                                 sum(1 for c in cl if c["phone"] == ph), sum(1 for l in log if l["phone"] == ph)))
+                                                                 sum(1 for c in cl if c.get("phone") == ph), sum(1 for l in log if l.get("phone") == ph)))
         out.append("</ul>")
     if log:
         out.append("<h3>מה שאלו</h3><table border='1' cellpadding='5' style='border-collapse:collapse'><tr><th>שעה</th><th>מי</th><th>עוזר</th><th>שאלה</th><th>תשובה</th></tr>")
         for l in log[:150]:
             out.append("<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>" % (
-                h(l["time"][11:]), h(l["name"]), h(l.get("persona", "")), h(l["q"]), h(l["a"][:200])))
+                h(_ts(l)[11:]), h(l.get("name", "")), h(l.get("persona", "")), h(l.get("q", "")), h((l.get("a") or "")[:200])))
         out.append("</table>")
     else:
         out.append("<p>לא היו הודעות היום.</p>")
@@ -2930,8 +2943,8 @@ def live_data():
                     "since": datetime.datetime.fromtimestamp(st.get("started", 0), ZoneInfo("Asia/Jerusalem")).strftime("%H:%M"),
                     "last_q": st.get("last_q", ""),
                     "state": "מחכה לתשובה" if st.get("pending") else ("מדבר" if st.get("stage") == "chat" else "בתפריט")})
-    return {"active": act, "calls_today": sum(1 for c in cl if c["time"].startswith(today)),
-            "msgs_today": sum(1 for l in log if l["time"].startswith(today)), "users": len(users),
+    return {"active": act, "calls_today": sum(1 for c in cl if _ts(c).startswith(today)),
+            "msgs_today": sum(1 for l in log if _ts(l).startswith(today)), "users": len(users),
             "calls_total": len(cl), "msgs_total": len(log), "time": now_str()}
 
 
@@ -2953,16 +2966,17 @@ def api_state():
         p = l.get("phone")
         if p:
             per_user[p] = per_user.get(p, 0) + 1
+    today = today_str()
     ulist = []
     for ph, nm in users.items():
-        ulist.append({"phone": ph, "name": nm, "calls": sum(1 for c in cl if c["phone"] == ph), "msgs": per_user.get(ph, 0),
-                      "today": sum(1 for l in log if l["phone"] == ph and l["time"].startswith(today_str())),
+        ulist.append({"phone": ph, "name": nm, "calls": sum(1 for c in cl if c.get("phone") == ph), "msgs": per_user.get(ph, 0),
+                      "today": sum(1 for l in log if l.get("phone") == ph and _ts(l).startswith(today)),
                       "blocked": ph in blocked, "unlimited": ph in unlimited or ph in OWNER_PHONES, "owner": ph in OWNER_PHONES,
                       "note": (notes.get(ph) if isinstance(notes.get(ph), dict) else ({"text": notes.get(ph), "created": "", "heard": ""} if notes.get(ph) else None)),
                       "voice": voices.get(ph, 0), "warnings": warnings.get(ph, 0),
-                      "last": max([c["time"] for c in cl if c["phone"] == ph] or [""])})
+                      "last": max([_ts(c) for c in cl if c.get("phone") == ph] or [""])})
     days = [(il_now() - datetime.timedelta(days=i)).strftime("%d/%m/%Y") for i in range(13, -1, -1)]
-    per_day = [[d[:5], sum(1 for c in cl if c["time"].startswith(d))] for d in days]
+    per_day = [[d[:5], sum(1 for c in cl if _ts(c).startswith(d))] for d in days]
     per_a = {}
     for l in log:
         per_a[l.get("persona", "")] = per_a.get(l.get("persona", ""), 0) + 1
@@ -3179,19 +3193,20 @@ def api_hangup():
     d = request.get_json(silent=True) or {}
     call = str(d.get("call") or d.get("call_id") or d.get("id") or "").strip()
     phone = str(d.get("phone") or "").strip()
-    if not (call or phone):
+    phones = [str(x).strip() for x in (d.get("phones") or []) if str(x).strip()]
+    if not (call or phone or phones):
         return J({"ok": False, "error": "לא צוינה שיחה"})
     hit = 0
     with _lock:
         for cid, st in calls.items():
-            if (call and cid == call) or (not call and phone and st.get("phone") == phone):
+            if (call and cid == call) or (not call and phone and st.get("phone") == phone) or (not call and st.get("phone") in phones):
                 st["kill"] = True
                 hit += 1
                 p = st.get("pending")
                 if p:
                     p["event"].set()       # משחרר שיחה שמחכה לתשובה, כדי שהניתוק יקרה מיד
     if hit:
-        print("admin hangup: %d call(s) (%s)" % (hit, call or phone))
+        print("admin hangup: %d call(s) (%s)" % (hit, call or phone or ",".join(phones)))
     return J({"ok": bool(hit), "count": hit, "error": "" if hit else "השיחה כבר הסתיימה"})
 
 
