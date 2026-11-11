@@ -2950,7 +2950,9 @@ def api_state():
     blocked, unlimited = csv_list(SETTINGS["blocked_phones"]), csv_list(SETTINGS["unlimited_phones"])
     per_user = {}
     for l in log:
-        per_user[l["phone"]] = per_user.get(l["phone"], 0) + 1
+        p = l.get("phone")
+        if p:
+            per_user[p] = per_user.get(p, 0) + 1
     ulist = []
     for ph, nm in users.items():
         ulist.append({"phone": ph, "name": nm, "calls": sum(1 for c in cl if c["phone"] == ph), "msgs": per_user.get(ph, 0),
