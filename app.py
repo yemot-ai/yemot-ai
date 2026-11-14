@@ -636,6 +636,7 @@ def music_exists(name):
 def setup_wait_music():
     if not YEMOT_TOKEN:
         return
+    time.sleep(25)      # נותנים לשרת לעלות ולענות לשיחות לפני העבודה הכבדה
     makers = {"ai_wait_trance": make_trance, "ai_wait_bells": make_bells}
     for _ in range(5):
         try:
@@ -2631,11 +2632,35 @@ def cleanup_loop():
 threading.Thread(target=cleanup_loop, daemon=True).start()
 
 
+def keepalive_loop():
+    url = os.environ.get("RENDER_EXTERNAL_URL", "https://yemot-ai-rey0.onrender.com").rstrip("/") + "/"
+    while True:
+        time.sleep(600)
+        try:
+            urllib.request.urlopen(url, timeout=20).read()
+        except Exception as e:
+            print("keepalive error:", str(e)[:80])
+
+
+threading.Thread(target=keepalive_loop, daemon=True).start()
+
+
 # ============================================================ הקו
 @app.route("/", methods=["GET", "POST", "HEAD"])
 def yemot():
+    try:
+        return yemot_inner()
+    except Exception:
+        import traceback
+        traceback.print_exc()
+        return R(build_combined_action([build_id_list_message([("text", T("error"))]),
+                                        build_go_to_folder("hangup")]))
+
+
+def yemot_inner():
     params = request.values.to_dict()
     call_id = params.get("ApiCallId")
+    print("YEMOT REQ:", call_id, params.get("ApiPhone"), list(params.keys()))
     if not call_id:
         return R("ok")
     if params.get("hangup") == "yes":
@@ -2757,7 +2782,7 @@ def yemot():
             if hold_mode():
                 pending["event"].wait(HOLD_WAIT)   # ימות מנגנים מוזיקה בהמתנה, ונעצרים ברגע שהתשובה חוזרת
             elif not music_on():
-                pending["event"].wait(11)      # עם מנגינה - לא מחכים בכלל: המנגינה מתחילה מיד אחרי הסולמית
+                pending["event"].wait(5)      # עם מנגינה - לא מחכים בכלל: המנגינה מתחילה מיד אחרי הסולמית
 
         if state.get("kill"):
             # המנהל ניתק את השיחה בזמן ההמתנה - מנתקים מיד, בלי לחכות לתשובה
@@ -2771,7 +2796,7 @@ def yemot():
                 state["pending"] = None
                 return R(listen(state, T("too_long")))
             if state["wait_i"] > 0:
-                pending["event"].wait(HOLD_WAIT if hold_mode() else (1.5 if music_on() else 6))   # עם מנגינה - המנגינה ממלאת את זמן ההמתנה
+                pending["event"].wait(HOLD_WAIT if hold_mode() else (1.5 if music_on() else 4))   # עם מנגינה - המנגינה ממלאת את זמן ההמתנה
             if not pending["done"]:
                 return R(wait_message(state))
 
