@@ -131,6 +131,7 @@ SETTINGS = {
     "daily_limit": int(os.environ.get("DAILY_LIMIT", "40")),
     "unlimited_phones": ",".join(OWNER_PHONES),
     "blocked_phones": "",
+    "nofilter_phones": "",          # מספרים שמוחרגים מסינון השפה: הקו מדבר איתם בחופשיות
     "announcement": "",             # הודעה שמושמעת בתחילת כל שיחה
     "mail_hour": 21,
     "tts": "on",                    # קול טבעי: on / off
@@ -172,18 +173,34 @@ TEXTS = {
 }
 WARN_MAX = 3      # המספר שמוקרא באזהרה לא עולה מעל זה. אין חסימה - רק אזהרה
 
-GENERAL_RULES = (
+_RULES_HEAD = (
     " אתה מדבר בטלפון, לכן ענה קצר וברור: משפט עד שלושה משפטים, אלא אם ביקשו במפורש משהו ארוך (סיפור, שיר, הסבר מפורט)."
+    " דבר בעברית טבעית ושוטפת, בחום ובנימוס, כמו אדם נעים ומועיל ולא כמו מכונה."
+    " המשפט הראשון בתשובה כבר עונה על השאלה עצמה: בלי הקדמות, בלי להחמיא לשאלה ובלי לחזור על מה שנשאל."
+    " אחרי התשובה אפשר להוסיף משפט קצר אחד של עזרה נוספת, רק אם הוא באמת מועיל."
     " בלי כוכביות, בלי רשימות, בלי אימוג'ים ובלי סימני עיצוב."
+    " כתוב מספרים, שעות ומחירים כמו שמקריאים אותם בקול (למשל: שמונה וחצי, עשרים ושניים שקלים), בלי קיצורים ובלי סמלים."
     " ענה בשפה שבה המשתמש דיבר אליך; ברירת המחדל היא עברית."
-    " שמור על שפה מכובדת וצנועה, ואל תעסוק בנושאים לא צנועים."
-    " ענה בדיוק על מה שנשאל, ולא על נושא קרוב או כללי. המשפט הראשון בתשובה צריך כבר לענות על השאלה עצמה, בלי הקדמות."
+)
+_RULES_FILTER = " שמור על שפה מכובדת וצנועה, ואל תעסוק בנושאים לא צנועים."
+_RULES_FREE = (" למתקשר הזה אין סינון שפה: אפשר לדבר איתו בחופשיות ובשפה ישירה, בלי הסתייגויות,"
+               " בלי הערות על הסגנון שלו ובלי להזהיר אותו.")
+_RULES_TAIL = (
+    " ענה בדיוק על מה שנשאל, ולא על נושא קרוב או כללי."
     " אם השאלה ממשיכה את השיחה (למשל: ומה עם מחר, וכמה זה עולה), הבן אותה לפי מה שנאמר קודם בשיחה."
-    " אל תמציא עובדות, מספרים, שעות או שמות. אם אינך יודע בוודאות, אמור זאת בקצרה."
+    " אל תמציא עובדות, מספרים, שעות או שמות. אם אינך יודע בוודאות, אמור זאת בקצרה והצע דרך למצוא את התשובה."
     " אם ההקלטה לא ברורה, חתוכה או שאפשר להבין אותה בכמה דרכים שונות, אל תנחש: בקש במשפט קצר לחזור על השאלה או שאל למה התכוון."
+    " אם ביקשו משהו שאינך יכול לעשות, אמור זאת בנעימות ותן חלופה קרובה שכן אפשר."
     " יש לך כלי חיפוש באינטרנט. השתמש בו כשהמשתמש מבקש לחפש, או כשהתשובה דורשת מידע עדכני:"
     " מחירים, חנויות, חדשות, מזג אוויר, שעות פתיחה, תחבורה ציבורית, תוצאות, מה קורה עכשיו. אחרי חיפוש תן תשובה מדויקת עם המספרים והשמות שמצאת."
 )
+GENERAL_RULES = _RULES_HEAD + _RULES_FILTER + _RULES_TAIL
+
+
+def rules_for(assistant):
+    """כללי השיחה לעוזר. מתקשר שמוחרג מסינון שפה מקבל גרסה חופשית"""
+    return _RULES_HEAD + (_RULES_FREE if assistant.get("free") else _RULES_FILTER) + _RULES_TAIL
+
 
 # העוזרים: רשימה מסודרת (הסדר = מספר ההקשה בתפריט). ניתן להוסיף, למחוק ולסדר באתר הניהול.
 ASSISTANTS = [
@@ -232,8 +249,8 @@ def get_client():
     return _client
 
 
-GEMINI_DEADLINE = 14   # שניות מקסימום לפנייה אחת. אחרי זה עוברים למודל הבא, גם אם גוגל עדיין "חושבים"
-STRONG_GRACE = 2.5     # כשהמודל המהיר (lite) ענה ראשון - כמה שניות לחכות לתשובה של המודל החזק יותר שכבר רץ במקביל
+GEMINI_DEADLINE = 12   # שניות מקסימום לפנייה אחת. אחרי זה עוברים למודל הבא, גם אם גוגל עדיין "חושבים"
+STRONG_GRACE = 1.5     # כשהמודל המהיר (lite) ענה ראשון - כמה שניות לחכות לתשובה של המודל החזק יותר שכבר רץ במקביל
 
 
 class Deadline(Exception):
@@ -306,6 +323,20 @@ def assistant_by_id(aid):
         if a["id"] == aid:
             return a
     return ASSISTANTS[0] if ASSISTANTS else {"id": "x", "name": "העוזר", "prompt": "אתה עוזר ידידותי.", "on": True, "keywords": ""}
+
+
+def is_free(phone):
+    """האם המספר מוחרג מסינון השפה"""
+    return phone in csv_list(SETTINGS.get("nofilter_phones", ""))
+
+
+def with_filter(assistant, phone):
+    """עותק של העוזר עם סימון free אם המתקשר מוחרג מסינון השפה"""
+    if is_free(phone):
+        a = dict(assistant)
+        a["free"] = True
+        return a
+    return assistant
 
 
 # ============================================================ ימות המשיח
@@ -957,7 +988,7 @@ def make_tts(text, voice_name):
 
 
 VOICE_SLOW = {}   # קול -> זמן שעד אליו לא משתמשים בו (כי היה איטי מדי)
-TTS_DEADLINE = 7  # שניות מקסימום ליצירת קול; מעבר לזה עוברים לקול העברי המהיר
+TTS_DEADLINE = 6  # שניות מקסימום ליצירת קול; מעבר לזה עוברים לקול העברי המהיר
 
 
 def voice_ok(v):
@@ -997,7 +1028,7 @@ def speak_file(text, voice_idx, call_id):
 
 
 # ============================================================ Gemini
-def _one_call(model, system, contents, use_search, think, max_tokens=600):
+def _one_call(model, system, contents, use_search, think, max_tokens=450):
     kw = dict(system_instruction=system, max_output_tokens=max_tokens)
     if use_search:
         kw["tools"] = [types.Tool(google_search=types.GoogleSearch())]
@@ -1011,7 +1042,7 @@ def _one_call(model, system, contents, use_search, think, max_tokens=600):
 
 DEEP_HEDGE = 8.0       # בעבודה יצירתית: אחרי כמה שניות מצרפים מודל חזק נוסף במקביל
 DEEP_DEADLINE = 22     # בעבודה יצירתית: זמן מקסימלי. אם לא הספיק - נשארת התשובה הרגילה
-HEDGE_DELAY = 3.0      # כמה שניות המודל החזק עובד לבד, לפני שמצרפים אליו מודל גיבוי מהיר. חוסך מכסה בלי לפגוע במהירות
+HEDGE_DELAY = 2.0      # כמה שניות המודל החזק עובד לבד, לפני שמצרפים אליו מודל גיבוי מהיר. חוסך מכסה בלי לפגוע במהירות
 MAX_TRIES = 4          # כמה מודלים לכל היותר מנסים לפנייה אחת
 
 
@@ -1078,7 +1109,7 @@ def gemini(system, contents, search=False, prefer_strong=False, deep=False):
                 options = (known,) + tuple(o for o in options if o != known)
             for think in options:
                 try:
-                    text = _one_call(model, system, contents, search, think, 2500 if deep else 600)
+                    text = _one_call(model, system, contents, search, think, 2500 if deep else 450)
                     if not deep:
                         MODEL_THINK[model] = think
                     if text:
@@ -1690,9 +1721,9 @@ SEARCH_STATE = {"ground_until": 0, "last": {}}   # מצב כל מקור חיפו
 SEARCH_CACHE = {}                                # שאילתה -> (זמן, תוצאות) - חוסך חיפוש כפול על אותה שאלה
 SEARCH_CACHE_TTL = 600
 SEARCH_BUDGET = 30          # שניות מקסימום לכל שלב החיפוש (כדי שהשיחה לא תיפול)
-GROUND_GRACE = 8            # כמה שניות לחכות לחיפוש גוגל לפני שמסתפקים בתשובה מהמנועים החינמיים
-ENGINES_WAIT = 9            # מקסימום שניות למנועי החיפוש החינמיים (בדרך כלל הם חוזרים תוך 2-4 שניות, כי כולם רצים במקביל)
-PAGE_WAIT = 4               # מקסימום שניות לקריאת דף אחד מתוך התוצאות (הדפים נקראים במקביל)
+GROUND_GRACE = 5            # כמה שניות לחכות לחיפוש גוגל לפני שמסתפקים בתשובה מהמנועים החינמיים
+ENGINES_WAIT = 7            # מקסימום שניות למנועי החיפוש החינמיים (בדרך כלל הם חוזרים תוך 2-4 שניות, כי כולם רצים במקביל)
+PAGE_WAIT = 3               # מקסימום שניות לקריאת דף אחד מתוך התוצאות (הדפים נקראים במקביל)
 SKIP_DOMAINS = ("youtube.com", "youtu.be", "facebook.com", "instagram.com", "tiktok.com", "twitter.com", "x.com",
                 "news.google.com", "linkedin.com", "pinterest.")
 NEWS_WORDS = ("חדשות", "מה קרה", "מה חדש", "מה נשמע ב", "עדכון", "עדכונים", "מבזק", "היום", "אתמול", "הלילה", "עכשיו",
@@ -2109,7 +2140,7 @@ ONLY_ANSWER = (" כתוב רק את התשובה עצמה, בדיוק כפי ש�
 def answer_with_search(assistant, history, transcript, search_line="", query=""):
     """שלב חיפוש: מזג אוויר -> Open-Meteo. תחבורה ציבורית -> מאגר משרד התחבורה.
     אחרת חיפוש גוגל של Gemini ומנועים חינמיים + קריאת אתרים - במקביל"""
-    base = assistant["prompt"] + GENERAL_RULES + context_line(assistant) + ONLY_ANSWER
+    base = assistant["prompt"] + rules_for(assistant) + context_line(assistant) + ONLY_ANSWER
     q = (query or transcript or "").strip()
     t0 = time.time()
     if "מזג" in search_line:
@@ -2251,7 +2282,7 @@ CREATIVE_RULES = (
 def creative_answer(assistant, history, transcript):
     """בקשה יצירתית (בדיחה, חידה, סיפור, שיר): כותבים שוב עם המודל החזק וחשיבה מלאה. אם לא הספיק - None"""
     t0 = time.time()
-    sys_c = assistant["prompt"] + GENERAL_RULES + context_line(assistant) + ONLY_ANSWER + CREATIVE_RULES
+    sys_c = assistant["prompt"] + rules_for(assistant) + context_line(assistant) + ONLY_ANSWER + (CREATIVE_RULES.replace(" בדיחה, חידה, סיפור, שיר וברכה - הכל נקי, מכובד ומתאים לבית חרדי.", "") if assistant.get("free") else CREATIVE_RULES)
     ans = gemini(sys_c, list(history) + [{"role": "user", "parts": [{"text": transcript}]}], deep=True)
     print("timing: creative (deep) %.1fs - %s" % (time.time() - t0, "ok" if ans else "kept the quick answer"))
     return strip_meta(ans) if ans else None
@@ -2315,10 +2346,10 @@ CHAT_INTRO_TEXT = (
 )
 
 
-def chat_system(assistant, from_text=False):
+def _chat_system_base(assistant, from_text=False):
     """ההנחיות לבינה בשיחה - אותן הנחיות בדיוק לטלפון ולבדיקה מאתר הניהול. רק הפתיחה שונה (הקלטה / טקסט)"""
     others = "; ".join("%s = %s (מילים: %s)" % (a["id"], a["name"], a.get("keywords", "")) for _, a in active_assistants() if a["id"] != assistant["id"])
-    return assistant["prompt"] + GENERAL_RULES + context_line(assistant) + (CHAT_INTRO_TEXT if from_text else CHAT_INTRO_AUDIO) + (
+    return assistant["prompt"] + rules_for(assistant) + context_line(assistant) + (CHAT_INTRO_TEXT if from_text else CHAT_INTRO_AUDIO) + (
         " ענה בדיוק בפורמט הבא, ארבע שורות:\n"
         "תמלול: <תמלול מדויק של ההקלטה>\n"
         "פעולה: <אחת מהאפשרויות: none | menu | end | voice | warn | switch:מזהה>\n"
@@ -2345,6 +2376,13 @@ def chat_system(assistant, from_text=False):
     )
 
 
+def chat_system(assistant, from_text=False):
+    s = _chat_system_base(assistant, from_text)
+    if assistant.get("free"):
+        s += " הפעולה warn אסורה עבור המתקשר הזה: לעולם אל תבחר בה ואל תזהיר אותו, וענה על מה שנשאל כרגיל, בחופשיות."
+    return s
+
+
 def finish_answer(assistant, history, raw, info=None, known=""):
     """מפרק את תשובת הבינה, מחפש אם צריך, ומחזיר (תמלול, פעולה, תשובה). משותף לטלפון ולבדיקה באתר"""
     f = parse_fields(raw)
@@ -2363,6 +2401,14 @@ def finish_answer(assistant, history, raw, info=None, known=""):
         answer = raw.strip()
     if known and not transcript:
         transcript = known            # בבדיקה מהאתר השאלה ידועה מראש, גם אם הבינה לא החזירה שורת תמלול
+    if action == "warn" and assistant.get("free"):
+        q_ = transcript or known
+        alt = None
+        if q_:
+            sys_f = assistant["prompt"] + rules_for(assistant) + context_line(assistant) + ONLY_ANSWER
+            alt = gemini(sys_f, list(history) + [{"role": "user", "parts": [{"text": q_}]}], prefer_strong=True)
+        action, need_search, search_line = "none", False, ""
+        answer = strip_meta(alt or "") or T("not_understood")
     if action == "warn":
         return transcript, "warn", ""      # אזהרה: הנוסח נקבע לפי מספר האזהרות של המתקשר (ב-ai_worker)
     if transcript and action == "none" and "תחבור" not in search_line and any(w in transcript + " " for w in TRANSIT_WORDS):
@@ -2767,7 +2813,7 @@ def yemot_inner():
 
     # ---- שיחה
     if state["stage"] == "chat":
-        assistant = assistant_by_id(state["assistant"])
+        assistant = with_filter(assistant_by_id(state["assistant"]), phone)
         pending = state.get("pending")
         if pending is None:
             if not has_value:
@@ -2986,6 +3032,7 @@ def api_state():
         return g
     users, log, cl, _ = snapshot()
     blocked, unlimited = csv_list(SETTINGS["blocked_phones"]), csv_list(SETTINGS["unlimited_phones"])
+    nofilter = csv_list(SETTINGS.get("nofilter_phones", ""))
     per_user = {}
     for l in log:
         p = l.get("phone")
@@ -2997,6 +3044,7 @@ def api_state():
         ulist.append({"phone": ph, "name": nm, "calls": sum(1 for c in cl if c.get("phone") == ph), "msgs": per_user.get(ph, 0),
                       "today": sum(1 for l in log if l.get("phone") == ph and _ts(l).startswith(today)),
                       "blocked": ph in blocked, "unlimited": ph in unlimited or ph in OWNER_PHONES, "owner": ph in OWNER_PHONES,
+                      "nofilter": ph in nofilter,
                       "note": (notes.get(ph) if isinstance(notes.get(ph), dict) else ({"text": notes.get(ph), "created": "", "heard": ""} if notes.get(ph) else None)),
                       "voice": voices.get(ph, 0), "warnings": warnings.get(ph, 0),
                       "last": max([_ts(c) for c in cl if c.get("phone") == ph] or [""])})
@@ -3076,6 +3124,8 @@ def api_settings():
     SETTINGS["record_max"] = num("record_max", 5, 120, 25)
     SETTINGS["unlimited_phones"] = re.sub(r"[^0-9,]", "", str(d.get("unlimited_phones", "")))
     SETTINGS["blocked_phones"] = re.sub(r"[^0-9,]", "", str(d.get("blocked_phones", "")))
+    if "nofilter_phones" in d:
+        SETTINGS["nofilter_phones"] = re.sub(r"[^0-9,]", "", str(d.get("nofilter_phones", "")))
     SETTINGS["announcement"] = clean_for_tts(str(d.get("announcement", "")))[:300]
     SETTINGS["tts"] = "on" if d.get("tts") == "on" else "off"
     SETTINGS["voices"] = ",".join(csv_list(str(d.get("voices", "")))) or DEFAULT_VOICES
@@ -3123,6 +3173,14 @@ def api_user():
         elif phone not in OWNER_PHONES:
             bl.append(phone)
         SETTINGS["blocked_phones"] = ",".join(bl)
+        save_settings()
+    elif action == "nofilter":
+        nl = csv_list(SETTINGS.get("nofilter_phones", ""))
+        if phone in nl:
+            nl.remove(phone)
+        else:
+            nl.append(phone)
+        SETTINGS["nofilter_phones"] = ",".join(nl)
         save_settings()
     elif action == "unlimited":
         ul = csv_list(SETTINGS["unlimited_phones"])
@@ -3385,6 +3443,8 @@ def api_test_chat():
     if not text:
         return J({"ok": False, "error": "צריך לכתוב שאלה"})
     assistant = assistant_by_id(str(d.get("assistant") or ""))
+    if d.get("free"):
+        assistant = dict(assistant, free=True)
     history = []
     for h in (d.get("history") or [])[-6:]:
         if isinstance(h, dict) and h.get("q") and h.get("a"):
