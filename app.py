@@ -7,6 +7,7 @@
 - תחבורה ציבורית: לוחות הזמנים הרשמיים של משרד התחבורה (דרך המאגר הפתוח של הסדנא לידע ציבורי), חינם
 - אזהרות: מי ששואל על נושאים לא צנועים שומע "זוהי אזהרה X מתוך 3" (בלי חסימה)
 - ניתוק שיחה פעילה מאתר הניהול
+- שלוחה 8 בתפריט: העוזר לתחבורה ציבורית (בעוד כמה דקות מגיע האוטובוס, כמו באפליקציית תחבורה)
 """
 from flask import Flask, request, Response
 from yemot_flow.actions import build_id_list_message, build_read, build_go_to_folder, build_combined_action
@@ -15,6 +16,8 @@ from google.genai import types
 import os
 import re
 import sys
+import array
+import struct
 import functools
 print = functools.partial(print, flush=True)
 import io
@@ -60,7 +63,10 @@ app = Flask(__name__)
 # ============================================================ הגדרות
 YEMOT_TOKEN = os.environ.get("YEMOT_TOKEN", "")            # מספר המערכת:סיסמה
 YEMOT_API = "https://www.call2all.co.il/ym/api/"
-EXT = (os.environ.get("VOICE_EXTS", "1").split(",")[0]).strip().strip("/") or "1"   # השלוחה של הקו
+EXTS = [e.strip().strip("/") for e in os.environ.get("VOICE_EXTS", "1").split(",") if e.strip().strip("/")] or ["1"]
+EXT = EXTS[0]                                                  # השלוחה הראשית של הקו (שם נשמרים גם קבצי הנתונים)
+TRANSIT_EXT = os.environ.get("TRANSIT_EXT", "").strip().strip("/")   # שלוחה ייעודית שנכנסת ישר לעוזר התחבורה (לא חובה)
+KNOWN_EXTS = list(EXTS)                                        # כל השלוחות שהשרת ראה בפועל (מתעדכן בכל שיחה)
 ADMIN_KEY = os.environ.get("ADMIN_KEY", "")
 MAIL_USER = os.environ.get("MAIL_USER", "")
 MAIL_PASS = os.environ.get("MAIL_PASS", "")
@@ -145,6 +151,7 @@ SETTINGS = {
     "shabbat_before": 30,           # כמה דקות לפני השקיעה בערב שבת/חג הקו נסגר
     "shabbat_after": 50,            # כמה דקות אחרי השקיעה במוצאי שבת/חג הקו נפתח
     "keep_rec_days": 3,             # כמה ימים לשמור את ההקלטות של המתקשרים כדי לשמוע אותן באתר (0 = לא לשמור)
+    "transit_added": 0,             # סימון פנימי: עוזר התחבורה כבר נוסף לרשימה (כדי שלא יחזור אם תמחקו אותו)
 }
 
 # כל הנוסחים שהקו אומר - ניתנים לעריכה באתר הניהול. {name} = שם המתקשר, {assistant} = שם העוזר
@@ -227,6 +234,16 @@ ASSISTANTS = [
                "אל תצטט מילים של שירים - אפשר לתאר על מה השיר ומי כתב והלחין."},
 ]
 
+TRANSIT_ASSISTANT = {
+    "id": "transit", "name": "העוזר לתחבורה ציבורית", "on": True, "keywords": "תחבורה, אוטובוס, אוטובוסים, קווים",
+    "vocab": "בני ברק, ירושלים, תל אביב, אלעד, בית שמש, מודיעין עילית, ביתר עילית, פתח תקווה, רמת גן, אשדוד, חיפה, צפת, טבריה, "
+             "תחנה מרכזית, קו, תחנה, אגד, דן, אקסטרה, אלקטרה אפיקים, מטרופולין, קווים",
+    "prompt": "אתה עוזר לתחבורה ציבורית בישראל, כמו אפליקציית תחבורה: מתי האוטובוס הבא, אילו קווים נוסעים ממקום למקום, מה מגיע לתחנה. "
+              "כל שאלה כאן היא על תחבורה ציבורית, גם אם לא נאמרה המילה אוטובוס. "
+              "אם חסר פרט שבלעדיו אי אפשר לענות (מספר קו, מאיפה, לאן או מספר תחנה), שאל עליו במשפט קצר אחד. "
+              "בתשובה: קודם בעוד כמה דקות מגיע או יוצא האוטובוס הקרוב, ואחר כך הבאים אחריו.",
+}
+
 names = {}        # טלפון -> שם
 voices = {}       # טלפון -> מספר קול מועדף
 notes = {}        # טלפון -> הודעה אישית לשיחה הבאה
@@ -250,7 +267,7 @@ def get_client():
 
 
 GEMINI_DEADLINE = 12   # שניות מקסימום לפנייה אחת. אחרי זה עוברים למודל הבא, גם אם גוגל עדיין "חושבים"
-STRONG_GRACE = 1.5     # כשהמודל המהיר (lite) ענה ראשון - כמה שניות לחכות לתשובה של המודל החזק יותר שכבר רץ במקביל
+STRONG_GRACE = 0.8     # כשהמודל המהיר (lite) ענה ראשון - כמה שניות לחכות לתשובה של המודל החזק יותר שכבר רץ במקביל
 
 
 class Deadline(Exception):
@@ -293,7 +310,7 @@ def clean_for_tts(text):
     text = re.sub(r"[*_#`>\[\]]", "", text or "")
     text = text.replace("\n", ", ")
     text = re.sub(r"\s+", " ", text).strip()
-    return text[:900]
+    return text[:700]
 
 
 def csv_list(s):
@@ -340,23 +357,80 @@ def with_filter(assistant, phone):
 
 
 # ============================================================ ימות המשיח
-def yemot_path(file_name):
-    return "ivr2:/%s/%s" % (EXT, file_name)
+def clean_ext(ext):
+    e = (str(ext) if ext is not None else "").strip().strip("/")
+    return e or EXT
 
 
-def yemot_download(file_name):
-    url = YEMOT_API + "DownloadFile?" + urllib.parse.urlencode({"token": YEMOT_TOKEN, "path": yemot_path(file_name)})
-    with urllib.request.urlopen(url, timeout=20) as r:
+def yemot_path(file_name, ext=None):
+    return "ivr2:/%s/%s" % (clean_ext(ext), file_name)
+
+
+def _download_path(path, timeout=20):
+    url = YEMOT_API + "DownloadFile?" + urllib.parse.urlencode({"token": YEMOT_TOKEN, "path": path})
+    with urllib.request.urlopen(url, timeout=timeout) as r:
         return r.read()
 
 
-def yemot_delete(file_name):
-    try:
-        url = YEMOT_API + "FileAction?" + urllib.parse.urlencode(
-            {"token": YEMOT_TOKEN, "action": "delete", "what": yemot_path(file_name)})
-        urllib.request.urlopen(url, timeout=10).read()
-    except Exception as e:
-        print("delete error:", e)
+def rec_hint(value):
+    """ימות מחזירים אחרי הקלטה את הנתיב של הקובץ. הופך אותו לנתיב שאפשר להוריד ממנו"""
+    v = (value or "").strip()
+    if not v or v == "None" or len(v) < 3:
+        return None
+    if v.startswith("ivr2:"):
+        return v
+    if not v.startswith("/"):
+        v = "/" + v
+    if not re.search(r"\.(wav|mp3|ogg|gsm)$", v, re.I):
+        v += ".wav"
+    return "ivr2:" + v
+
+
+def yemot_download(file_name, ext=None, full_path=None):
+    """מוריד קובץ מימות. מנסה קודם את הנתיב המדויק שימות החזירו, אחר כך את השלוחה של השיחה ואת כל שלוחה מוכרת.
+    ימות מחזירים שגיאה כטקסט JSON (בלי סטטוס שגיאה), ולכן בודקים שחזר קובץ אמיתי. אם לא - זורק שגיאה"""
+    paths = []
+    if full_path:
+        paths.append(full_path)
+    for e in [ext] + KNOWN_EXTS:
+        p = yemot_path(file_name, e)
+        if p not in paths:
+            paths.append(p)
+    last = None
+    for p in paths:
+        try:
+            data = _download_path(p)
+        except Exception as e:
+            last = e
+            continue
+        if data and len(data) > 44 and not data[:40].lstrip().startswith(b"{"):
+            return data
+        last = RuntimeError("file not found at " + p)
+    raise last or RuntimeError("download failed")
+
+
+def fetch_recording(file_name, ext=None, hint=None, tries=4):
+    """הורדת הקלטה עם כמה ניסיונות: לפעמים הקובץ עוד לא סיים להישמר בימות ברגע שהבקשה מגיעה אלינו"""
+    last = None
+    for i in range(tries):
+        try:
+            return yemot_download(file_name + ".wav", ext, hint)
+        except Exception as e:
+            last = e
+            if i < tries - 1:
+                time.sleep(0.35 * (i + 1))
+    raise last or RuntimeError("recording not found")
+
+
+def yemot_delete(file_name, ext=None):
+    exts = [ext] if ext else list(KNOWN_EXTS)
+    for e in exts:
+        try:
+            url = YEMOT_API + "FileAction?" + urllib.parse.urlencode(
+                {"token": YEMOT_TOKEN, "action": "delete", "what": yemot_path(file_name, e)})
+            urllib.request.urlopen(url, timeout=10).read()
+        except Exception as ex:
+            print("delete error:", ex)
 
 
 def yemot_read_text(file_name):
@@ -385,10 +459,10 @@ def yemot_write_text(file_name, text):
         print("write text error:", e)
 
 
-def yemot_upload_file(file_name, data, mime="audio/wav", full_path=None):
+def yemot_upload_file(file_name, data, mime="audio/wav", full_path=None, ext=None):
     """העלאת קובץ קול לשלוחה (multipart). full_path - נתיב מלא אחר (למשל תיקיית מוזיקה בהמתנה)"""
     boundary = "----yemot" + uuid.uuid4().hex
-    fields = {"token": YEMOT_TOKEN, "path": full_path or yemot_path(file_name), "convertAudio": "1"}
+    fields = {"token": YEMOT_TOKEN, "path": full_path or yemot_path(file_name, ext), "convertAudio": "1"}
     body = io.BytesIO()
     for k, v in fields.items():
         body.write(("--%s\r\nContent-Disposition: form-data; name=\"%s\"\r\n\r\n%s\r\n" % (boundary, k, v)).encode())
@@ -525,6 +599,24 @@ def load_all():
 
 
 load_all()
+
+
+def ensure_transit_assistant():
+    """מוסיף את עוזר התחבורה (שלוחה 8 בתפריט) לרשימה, פעם אחת. אם מחקתם אותו באתר הניהול - הוא לא יחזור"""
+    try:
+        if SETTINGS.get("transit_added") or any(a.get("id") == "transit" for a in ASSISTANTS):
+            return
+        ASSISTANTS.append(dict(TRANSIT_ASSISTANT))
+        SETTINGS["transit_added"] = 1
+        if YEMOT_TOKEN:
+            save_assistants()
+            save_settings()
+        print("assistants: added the public transit assistant (menu key %d)" % len(active_assistants()))
+    except Exception as e:
+        print("transit assistant setup error:", e)
+
+
+ensure_transit_assistant()
 try:
     get_client()  # יצירת הלקוח בתהליך הראשי, לפני שה-threads מתחילים
 except Exception as _e:
@@ -542,8 +634,10 @@ threading.Thread(target=discover_loop, daemon=True).start()
 #            השרת מעלה את הטראנס גם לתיקייה /ai_moh, כדי שאפשר יהיה להפוך אותה למוזיקה בהמתנה באתר של ימות
 MOH_FOLDER = "ai_moh"
 HOLD_WAIT = 12        # במצב yemot: כמה שניות השרת "מחזיק" את הבקשה (ימות מנגנים בינתיים). פחות מזמן הניתוק של ימות
-WAIT_FILES = {"trance": "ai_wait_trance", "bells": "ai_wait_bells", "custom": "ai_wait_music"}
-MUSIC_READY = {}      # שם קובץ -> קיים בשלוחה
+# שמות הקבצים עם "2": גרסה קצרה חדשה (כ-2 שניות במקום 4), כדי שהתשובה לא תחכה שהמנגינה הקודמת תסתיים. כך גם קובץ ישן או פגום לא יפריע
+WAIT_FILES = {"trance": "ai_wait_trance2", "bells": "ai_wait_bells2", "custom": "ai_wait_music"}
+WAIT_STEPS = 16       # אורך הטראנס להמתנה: תיבה אחת (כ-1.7 שניות). ל"מוזיקה בהמתנה" של ימות נשאר הקטע המלא
+MUSIC_READY = {}      # "שלוחה/קובץ" -> קיים בשלוחה
 
 
 def _wav_bytes(buf, rate, level=0.45):
@@ -567,12 +661,11 @@ def _wav_bytes(buf, rate, level=0.45):
 
 
 def make_bells():
-    """מנגינת פעמונים רכה ומקורית, כ-4 שניות"""
+    """מנגינת פעמונים רכה ומקורית, כ-2.7 שניות"""
     import math
     rate = 8000
-    notes = [(440.0, 0.0), (523.25, 0.3), (659.25, 0.6), (880.0, 0.9), (783.99, 1.35), (659.25, 1.65),
-             (587.33, 1.95), (659.25, 2.4), (523.25, 2.7), (440.0, 3.0)]
-    total = int(rate * 4.2)
+    notes = [(440.0, 0.0), (523.25, 0.3), (659.25, 0.6), (880.0, 0.9), (783.99, 1.35), (659.25, 1.65)]
+    total = int(rate * 2.7)
     buf = [0.0] * total
     for freq, start in notes:
         s0 = int(start * rate)
@@ -586,7 +679,7 @@ def make_bells():
     return _wav_bytes(buf, rate, 0.32)
 
 
-def make_trance():
+def make_trance(steps=32):
     """קטע טראנס מקורי בלי מילים: 2 תיבות ב-138 BPM (כ-3.5 שניות), לה מינור -> פה מז'ור.
     כל הצלילים בנויים כך שיישמעו גם בקו טלפון (שמעביר רק 300-3400 הרץ): לבס ולתוף יש הרמוניות גבוהות."""
     import math
@@ -594,7 +687,7 @@ def make_trance():
     rate = 8000
     bpm = 138.0
     s16 = 60.0 / bpm / 4
-    total = int(rate * s16 * 32)
+    total = int(rate * s16 * steps)
     buf = [0.0] * total
     rnd = random.Random(7)
     two_pi = 2 * math.pi
@@ -618,7 +711,7 @@ def make_trance():
     A2, F2 = 110.0, 87.31
     chords = [[440.0, 523.25, 659.25, 880.0], [349.23, 440.0, 523.25, 698.46]]   # Am, F
     arp = [0, 1, 2, 3, 2, 1, 0, 2, 1, 3, 2, 0, 3, 2, 1, 2]
-    for n in range(32):
+    for n in range(steps):
         st = n * s16
         bar = n // 16
         if n % 4 == 0:      # בס דרום (קיק) עם "קליק" שנשמע בטלפון
@@ -640,7 +733,7 @@ def make_trance():
             env = min(1.0, t * 400) * math.exp(-t * 11)
             return 0.42 * pump * env * (saw(f, t) + saw(f * 1.006, t) + saw(f * 0.994, t)) / 3
         add(st, s16 * 1.6, lead)
-    for n in range(0, 32, 2):     # שכבת "פאד" רכה של האקורד
+    for n in range(0, steps, 2):     # שכבת "פאד" רכה של האקורד
         st = n * s16
         bar = n // 16
         for f in chords[bar][:3]:
@@ -656,46 +749,78 @@ def make_trance():
     return _wav_bytes(buf, rate, 0.5)
 
 
-def music_exists(name):
+_MUSIC_BYTES = {}
+_ext_lock = threading.Lock()
+_MUSIC_STARTED = set()
+
+
+def music_bytes(name):
+    """הקובץ נוצר פעם אחת ונשמר בזיכרון (היצירה בפייתון לוקחת כמה שניות)"""
+    b = _MUSIC_BYTES.get(name)
+    if b is None:
+        b = make_trance(WAIT_STEPS) if "trance" in name else make_bells()
+        _MUSIC_BYTES[name] = b
+    return b
+
+
+def music_exists(name, ext=None):
     try:
-        data = yemot_download(name + ".wav")
+        data = _download_path(yemot_path(name + ".wav", ext))
         return len(data) > 1000 and not data[:40].lstrip().startswith(b"{")
     except Exception:
         return False
 
 
-def setup_wait_music():
+def setup_wait_music(ext, first_delay=3):
+    """מעלה את מנגינות ההמתנה לשלוחה. רץ ברקע, בנפרד לכל שלוחה שהשרת רואה (השיחה עצמה לא מחכה לזה)"""
     if not YEMOT_TOKEN:
         return
-    time.sleep(25)      # נותנים לשרת לעלות ולענות לשיחות לפני העבודה הכבדה
-    makers = {"ai_wait_trance": make_trance, "ai_wait_bells": make_bells}
-    for _ in range(5):
+    ext = clean_ext(ext)
+    time.sleep(first_delay)
+    wanted = (WAIT_FILES["trance"], WAIT_FILES["bells"])
+    for _ in range(6):
         try:
-            MUSIC_READY["ai_wait_music"] = music_exists("ai_wait_music")
-            for name, maker in makers.items():
-                if MUSIC_READY.get(name):
+            MUSIC_READY[ext + "/" + WAIT_FILES["custom"]] = music_exists(WAIT_FILES["custom"], ext)
+            for name in wanted:
+                key = ext + "/" + name
+                if MUSIC_READY.get(key):
                     continue
-                if not music_exists(name):
-                    yemot_upload_file(name + ".wav", maker())
-                    time.sleep(2)
-                MUSIC_READY[name] = music_exists(name)
-            if MUSIC_READY.get("ai_wait_trance") and not MUSIC_READY.get("moh"):
+                if not music_exists(name, ext):
+                    yemot_upload_file(name + ".wav", music_bytes(name), ext=ext)
+                    time.sleep(1.5)
+                MUSIC_READY[key] = music_exists(name, ext)
+            if ext == EXT and not MUSIC_READY.get("moh"):
                 try:
                     moh_path = "ivr2:/%s/ai_wait_trance.wav" % MOH_FOLDER
-                    url = YEMOT_API + "DownloadFile?" + urllib.parse.urlencode({"token": YEMOT_TOKEN, "path": moh_path})
-                    with urllib.request.urlopen(url, timeout=20) as r:
-                        have = r.read(2000)
+                    have = b""
+                    try:
+                        have = _download_path(moh_path)
+                    except Exception:
+                        pass
                     if len(have) < 1000 or have[:40].lstrip().startswith(b"{"):
-                        yemot_upload_file("ai_wait_trance.wav", make_trance(), full_path=moh_path)
+                        yemot_upload_file("ai_wait_trance.wav", make_trance(32), full_path=moh_path)
                     MUSIC_READY["moh"] = True
                 except Exception as e:
                     print("moh folder upload error:", str(e)[:120])
-            print("wait music:", MUSIC_READY)
-            if all(MUSIC_READY.get(n) for n in makers):
+            print("wait music [%s]:" % ext, {k: v for k, v in MUSIC_READY.items() if k.startswith(ext + "/") or k == "moh"})
+            if all(MUSIC_READY.get(ext + "/" + n) for n in wanted):
                 return
         except Exception as e:
             print("wait music error:", str(e)[:150])
-        time.sleep(30)
+        time.sleep(15)
+
+
+def note_ext(ext, delay=0):
+    """רושם שלוחה שהשרת ראה, ובפעם הראשונה מעלה אליה את המנגינות. מחזיר את שם השלוחה"""
+    e = clean_ext(ext)
+    with _ext_lock:
+        if e not in KNOWN_EXTS:
+            KNOWN_EXTS.append(e)
+        if e in _MUSIC_STARTED:
+            return e
+        _MUSIC_STARTED.add(e)
+    threading.Thread(target=setup_wait_music, args=(e, delay), daemon=True).start()
+    return e
 
 
 def music_style():
@@ -703,21 +828,22 @@ def music_style():
     return "trance" if st == "on" else st
 
 
-def music_file():
+def music_file(ext=None):
     """הקובץ שינוגן בהמתנה, או None. מנגינה משלכם שעוד לא הועלתה -> מנגנים טראנס במקומה"""
     st = music_style()
     if st not in WAIT_FILES:
         return None
+    e = clean_ext(ext)
     name = WAIT_FILES[st]
-    if MUSIC_READY.get(name):
+    if MUSIC_READY.get(e + "/" + name):
         return name
-    if st == "custom" and MUSIC_READY.get(WAIT_FILES["trance"]):
+    if st == "custom" and MUSIC_READY.get(e + "/" + WAIT_FILES["trance"]):
         return WAIT_FILES["trance"]
     return None
 
 
-def music_on():
-    return music_file() is not None
+def music_on(ext=None):
+    return music_file(ext) is not None
 
 
 def hold_mode():
@@ -725,7 +851,8 @@ def hold_mode():
     return music_style() == "yemot"
 
 
-threading.Thread(target=setup_wait_music, daemon=True).start()
+for _e in EXTS:
+    note_ext(_e, 3)
 
 
 # ============================================================ זמני היום, שבת וחג
@@ -965,7 +1092,7 @@ def make_tts(text, voice_name):
         return None
 
     async def gen():
-        com = edge_tts.Communicate(text, voice_name, rate="+5%")
+        com = edge_tts.Communicate(text, voice_name, rate="+8%")
         buf = io.BytesIO()
         async for chunk in com.stream():
             if chunk["type"] == "audio":
@@ -988,14 +1115,14 @@ def make_tts(text, voice_name):
 
 
 VOICE_SLOW = {}   # קול -> זמן שעד אליו לא משתמשים בו (כי היה איטי מדי)
-TTS_DEADLINE = 6  # שניות מקסימום ליצירת קול; מעבר לזה עוברים לקול העברי המהיר
+TTS_DEADLINE = 5  # שניות מקסימום ליצירת קול; מעבר לזה עוברים לקול העברי המהיר
 
 
 def voice_ok(v):
     return time.time() > VOICE_SLOW.get(v, 0)
 
 
-def speak_file(text, voice_idx, call_id):
+def speak_file(text, voice_idx, call_id, ext=None):
     """מייצר קול טבעי ומעלה לימות. מחזיר שם קובץ (בלי סיומת) או None אם לא הצליח"""
     if SETTINGS.get("tts", "on") != "on" or not text:
         return None
@@ -1019,7 +1146,7 @@ def speak_file(text, voice_idx, call_id):
             return None
         t1 = time.time()
         fname = "ai_tts_%s_%s" % (re.sub(r"[^0-9a-zA-Z]", "", call_id)[-10:], uuid.uuid4().hex[:6])
-        yemot_upload_file(fname + ".wav", wav)
+        yemot_upload_file(fname + ".wav", wav, ext=ext)
         print("timing: tts %.1fs, upload %.1fs" % (t1 - t0, time.time() - t1))
         return fname
     except Exception as e:
@@ -1042,7 +1169,7 @@ def _one_call(model, system, contents, use_search, think, max_tokens=450):
 
 DEEP_HEDGE = 8.0       # בעבודה יצירתית: אחרי כמה שניות מצרפים מודל חזק נוסף במקביל
 DEEP_DEADLINE = 22     # בעבודה יצירתית: זמן מקסימלי. אם לא הספיק - נשארת התשובה הרגילה
-HEDGE_DELAY = 2.0      # כמה שניות המודל החזק עובד לבד, לפני שמצרפים אליו מודל גיבוי מהיר. חוסך מכסה בלי לפגוע במהירות
+HEDGE_DELAY = 1.3      # כמה שניות המודל החזק עובד לבד, לפני שמצרפים אליו מודל גיבוי מהיר. חוסך מכסה בלי לפגוע במהירות
 MAX_TRIES = 4          # כמה מודלים לכל היותר מנסים לפנייה אחת
 
 
@@ -1187,47 +1314,114 @@ def gemini(system, contents, search=False, prefer_strong=False, deep=False):
     return None
 
 
-def is_silent(wav):
-    """האם ההקלטה ריקה: קצרה מאוד או שקטה לגמרי (המתקשר הקיש סולמית בלי לדבר).
-    בודק לפני סינון הרעשים. בכל ספק מחזיר False - וההקלטה נשלחת לבינה כרגיל"""
+def parse_wav(data):
+    """קורא קובץ WAV בלי לסמוך על האורך שרשום בכותרת (ימות לפעמים משאירים בכותרת אורך 0 או שגוי, וקריאה רגילה
+    הייתה רואה \"הקלטה ריקה\" גם כשהמתקשר דיבר). מחזיר מילון או None"""
     try:
-        import wave
-        import array
-        w = wave.open(io.BytesIO(wav))
-        if w.getsampwidth() != 2 or w.getframerate() <= 0:
+        if len(data) < 44 or data[:4] != b"RIFF":
+            return None
+        pos, fmt = 12, None
+        while pos + 8 <= len(data):
+            cid = data[pos:pos + 4]
+            size = struct.unpack("<I", data[pos + 4:pos + 8])[0]
+            body = pos + 8
+            if cid == b"fmt " and size >= 16:
+                tag, ch, rate, _, _, bits = struct.unpack("<HHIIHH", data[body:body + 16])
+                fmt = (tag, ch, rate, bits)
+            elif cid == b"data":
+                end = body + size
+                if size == 0 or size == 0xFFFFFFFF or end > len(data):
+                    end = len(data)
+                if not fmt:
+                    return None
+                return {"tag": fmt[0], "ch": max(1, fmt[1]), "rate": fmt[2], "bits": fmt[3], "pcm": data[body:end]}
+            pos = body + size + (size & 1)
+    except Exception:
+        return None
+    return None
+
+
+def audio_stats(w):
+    """אורך, עוצמת שיא ועוצמה ממוצעת של הקלטת PCM רגילה (16 ביט). אחרת None"""
+    if not w or w["tag"] != 1 or w["bits"] != 16 or w["rate"] <= 0:
+        return None
+    pcm = w["pcm"]
+    a = array.array("h")
+    a.frombytes(pcm[:len(pcm) // 2 * 2])
+    if sys.byteorder == "big":
+        a.byteswap()
+    dur = len(a) / float(w["rate"] * w["ch"])
+    if not a:
+        return {"dur": 0.0, "peak": 0, "rms": 0.0, "samples": a}
+    peak = max(max(a), -min(a))
+    sample = a[::4] or a
+    rms = (sum(x * x for x in sample) / len(sample)) ** 0.5
+    return {"dur": dur, "peak": peak, "rms": rms, "samples": a}
+
+
+def audio_info(wav):
+    """שורת לוג על ההקלטה שהורדנו - כדי לראות בלוגים של Render מה באמת הגיע מימות"""
+    w = parse_wav(wav)
+    if not w:
+        return "%d bytes, not a WAV (starts with %r)" % (len(wav), wav[:12])
+    st = audio_stats(w)
+    if not st:
+        return "%d bytes, format tag %s, %d bits, %d Hz" % (len(wav), w["tag"], w["bits"], w["rate"])
+    return "%d bytes, %.1fs, %d Hz, peak %d, rms %.0f" % (len(wav), st["dur"], w["rate"], st["peak"], st["rms"])
+
+
+def is_silent(wav):
+    """האם ההקלטה ריקה באמת: קצרה מאוד או שקטה לגמרי (המתקשר הקיש סולמית בלי לדבר).
+    האורך והעוצמה נמדדים מהנתונים עצמם. בכל ספק מחזיר False - וההקלטה נשלחת לבינה כרגיל"""
+    try:
+        st = audio_stats(parse_wav(wav))
+        if not st:
             return False
-        dur = w.getnframes() / float(w.getframerate())
-        frames = w.readframes(w.getnframes())
-        if dur < 0.3:
+        if st["dur"] < 0.25:
             return True
-        a = array.array("h")
-        a.frombytes(frames[:len(frames) // 2 * 2])
-        if sys.byteorder == "big":
-            a.byteswap()
-        if not a:
-            return True
-        peak = max(abs(x) for x in a)
-        sample = a[::4] or a
-        rms = (sum(x * x for x in sample) / len(sample)) ** 0.5
-        return peak < 400 and rms < 40
+        return st["peak"] < 120 and st["rms"] < 15
     except Exception:
         return False
 
 
+def _pcm_wav(pcm, rate, ch=1):
+    import wave
+    out = io.BytesIO()
+    w = wave.open(out, "wb")
+    w.setnchannels(ch)
+    w.setsampwidth(2)
+    w.setframerate(rate)
+    w.writeframes(pcm)
+    w.close()
+    return out.getvalue()
+
+
 def clean_audio(wav):
-    """שיפור הקלטת טלפון לפני שליחה ל-AI: סינון רעש, הגברה אחידה, דגימה ל-16 קילוהרץ. אם נכשל - מחזיר את המקור"""
-    if not HAVE_TTS:
-        return wav
+    """הכנת ההקלטה ל-AI: כותרת WAV תקינה והגברה אחידה - הכל בפייתון, מיידי (ffmpeg לקח שנייה-שתיים בכל תשובה).
+    רק פורמט שאינו PCM רגיל עובר המרה ב-ffmpeg. אם משהו נכשל - מחזיר את המקור"""
     try:
-        import imageio_ffmpeg
-        ff = imageio_ffmpeg.get_ffmpeg_exe()
-        p = subprocess.run([ff, "-loglevel", "error", "-i", "pipe:0", "-af", "highpass=f=120,lowpass=f=3800,loudnorm=I=-16:TP=-1.5",
-                            "-ar", "16000", "-ac", "1", "-acodec", "pcm_s16le", "-f", "wav", "pipe:1"],
-                           input=wav, capture_output=True, timeout=15)
-        if p.returncode == 0 and len(p.stdout) > 1000:
-            return p.stdout
+        w = parse_wav(wav)
+        st = audio_stats(w)
+        if st:
+            a = st["samples"]
+            if st["peak"] > 0:
+                gain = min(8.0, 22000.0 / st["peak"])
+                if gain > 1.15:
+                    a = array.array("h", (max(-32768, min(32767, int(x * gain))) for x in a))
+            if sys.byteorder == "big":
+                a.byteswap()
+            return _pcm_wav(a.tobytes(), w["rate"], w["ch"])
     except Exception as e:
         print("clean audio error:", str(e)[:100])
+    if HAVE_TTS:
+        try:
+            ff = imageio_ffmpeg.get_ffmpeg_exe()
+            p = subprocess.run([ff, "-loglevel", "error", "-i", "pipe:0", "-ar", "16000", "-ac", "1",
+                                "-acodec", "pcm_s16le", "-f", "wav", "pipe:1"], input=wav, capture_output=True, timeout=15)
+            if p.returncode == 0 and len(p.stdout) > 1000:
+                return p.stdout
+        except Exception as e:
+            print("ffmpeg convert error:", str(e)[:100])
     return wav
 
 
@@ -1266,13 +1460,14 @@ def context_line(assistant):
     return line
 
 
-def transcribe_name(file_name):
+def transcribe_name(file_name, ext=None, hint=None):
     try:
-        audio = yemot_download(file_name + ".wav")
+        audio = fetch_recording(file_name, ext, hint)
     except Exception as e:
-        print("download error:", e)
+        print("name: recording %s was not found in yemot (ext=%s, hint=%s): %s" % (file_name, ext, hint, str(e)[:100]))
         return ""
-    _bg(yemot_delete, file_name + ".wav")
+    print("name recording: " + audio_info(audio))
+    _bg(yemot_delete, file_name + ".wav", ext)
     if is_silent(audio):
         print("name recording is empty/silent")
         return ""
@@ -1438,7 +1633,7 @@ def wiki_search(query):
 STRIDE_API = "https://open-bus-stride-api.hasadna.org.il"
 TRANSIT_WORDS = ("אוטובוס", "תחנה", "רכבת", "לוח זמנים", "לוחות זמנים", "מתי יוצא", "מתי מגיע", "מתי עובר", "קו ")
 TRANSIT_CACHE = {}
-TRANSIT_CACHE_TTL = 120
+TRANSIT_CACHE_TTL = 30        # שניות. קצר, כדי שה"בעוד כמה דקות" תמיד יהיה מדויק לרגע השאלה
 TRANSIT_SHIFTS = (0, 7, 14)     # כמה ימים אחורה לחפש לוח, אם הלוח של היום עוד לא נטען (תמיד אותו יום בשבוע)
 
 
@@ -1450,7 +1645,7 @@ def _shift_note(days):
             " (בדרך כלל הוא זהה)." % days)
 
 
-def stride_get(path, params, timeout=9):
+def stride_get(path, params, timeout=8):
     url = STRIDE_API + path + "?" + urllib.parse.urlencode(params)
     req = urllib.request.Request(url, headers={"User-Agent": "yemot-ai-line/1.0", "Accept": "application/json"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
@@ -1471,6 +1666,38 @@ def _hhmm(value):
         return d.astimezone(ZoneInfo("Asia/Jerusalem")).strftime("%H:%M")
     except Exception:
         return ""
+
+
+def _eta(value, base):
+    """"בעוד X דקות" - כמו באפליקציית תחבורה: כמה זמן נשאר עד היציאה/ההגעה, ביחס ל"עכשיו" של הלוח שנמצא"""
+    try:
+        d = datetime.datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        if d.tzinfo is None:
+            d = d.replace(tzinfo=datetime.timezone.utc)
+        mins = int(round((d - base).total_seconds() / 60.0))
+    except Exception:
+        return ""
+    if mins < 0:
+        return ""
+    if mins == 0:
+        return "עכשיו"
+    if mins == 1:
+        return "בעוד דקה"
+    if mins <= 90:
+        return "בעוד %d דקות" % mins
+    return ""
+
+
+def _fmt_times(values, base, n_eta=3):
+    """['14:35 (בעוד 7 דקות)', ...] - לשלוש הראשונות מצורף כמה דקות נשארו"""
+    out = []
+    for v in values:
+        t = _hhmm(v)
+        if not t:
+            continue
+        e = _eta(v, base) if len(out) < n_eta else ""
+        out.append(t + (" (%s)" % e if e else ""))
+    return out
 
 
 def _tnorm(s):
@@ -1526,7 +1753,7 @@ def _rides_text(route, now):
         "start_time_to": (now + datetime.timedelta(hours=10)).isoformat(),
         "order_by": "start_time asc", "limit": 8})
     rides.sort(key=lambda r: str(r.get("start_time", "")))
-    times = [t for t in (_hhmm(r.get("start_time")) for r in rides) if t][:6]
+    times = _fmt_times([r.get("start_time") for r in rides], now)[:6]
     a, b = _route_ends(route.get("route_long_name"))
     head = "קו %s של %s, מ%s ל%s" % (route.get("route_short_name", ""), route.get("agency_name", ""), a, b)
     if times:
@@ -1563,7 +1790,7 @@ def transit_by_stop(code, line="", to=""):
                       "order_by": "arrival_time asc", "limit": limit}
             if line:
                 params["gtfs_route__route_short_name"] = line
-            rows = stride_get("/gtfs_ride_stops/list", params, timeout=12)
+            rows = stride_get("/gtfs_ride_stops/list", params, timeout=9)
             if len(rows) >= 4:
                 break
         if rows:
@@ -1581,7 +1808,9 @@ def transit_by_stop(code, line="", to=""):
             picked, note = match, " (רק קווים שנוסעים ל%s)" % to
         else:
             note = " (לא נמצא קו מהתחנה הזו שהיעד הסופי שלו הוא %s, הנה כל הקווים)" % to
-    first_time = _hhmm(picked[0].get("arrival_time"))
+    base_shift = now - datetime.timedelta(days=shift)
+    first_time = _fmt_times([picked[0].get("arrival_time")], base_shift)
+    first_time = first_time[0] if first_time else ""
     out = ["תחנה מספר %s: %s, %s" % (code, first.get("gtfs_stop__name", ""), first.get("gtfs_stop__city", "")),
            "השעה עכשיו: %s. האוטובוס הבא/הראשון מהתחנה: %s." % (now.strftime("%H:%M"), first_time),
            "האוטובוסים הקרובים בתחנה לפי לוח הזמנים הרשמי%s:" % note]
@@ -1592,8 +1821,9 @@ def transit_by_stop(code, line="", to=""):
             continue
         seen.add(rid)
         _, dest = _route_ends(r.get("gtfs_route__route_long_name"))
+        tt = _fmt_times([r.get("arrival_time")], base_shift, 1)
         out.append("- קו %s (%s) לכיוון %s: בשעה %s" % (r.get("gtfs_route__route_short_name", ""), r.get("gtfs_route__agency_name", ""),
-                                                      dest, _hhmm(r.get("arrival_time"))))
+                                                      dest, tt[0] if tt else _hhmm(r.get("arrival_time"))))
         if len(out) >= 18:
             break
     if shift:
@@ -1646,7 +1876,7 @@ def transit_by_line(line, frm="", to=""):
             if first_by_ride:
                 items = list(first_by_ride.values())[:6]
                 out.append("- הקו עובר ב%s (בתחנה %s) בשעות: %s" % (
-                    frm, items[0].get("gtfs_stop__name", ""), ", ".join(_hhmm(r.get("arrival_time")) for r in items)))
+                    frm, items[0].get("gtfs_stop__name", ""), ", ".join(_fmt_times([r.get("arrival_time") for r in items], base))))
         except Exception as e:
             print("transit mid-route error:", str(e)[:120])
     if len(out) <= 1:
@@ -2172,15 +2402,17 @@ def answer_with_search(assistant, history, transcript, search_line="", query="")
     if "תחבור" in search_line:
         spec = search_line.split(":", 1)[1].strip() if ":" in search_line else ""
         try:
-            tr = call_with_deadline(lambda: transit_lookup(spec, transcript), 14)
+            tr = call_with_deadline(lambda: transit_lookup(spec, transcript), 12)
         except Exception as e:
             print("transit step error:", str(e)[:120])
             tr = None
         if tr:
-            sys_t = base + (" קיבלת נתוני תחבורה ציבורית ממאגר משרד התחבורה: לוח הזמנים הרשמי של היום."
-                            " ענה לפי המידע הזה בלבד: מספר הקו, החברה, הכיוון והשעות. תן את שלוש או ארבע השעות הקרובות, לא יותר."
+            sys_t = base + (" קיבלת נתוני תחבורה ציבורית ממאגר משרד התחבורה: לוח הזמנים הרשמי של היום, עם \"בעוד כמה דקות\" שחושב לפי השעה עכשיו."
+                            " ענה לפי המידע הזה בלבד: מספר הקו, החברה, הכיוון והשעות."
+                            " פתח באוטובוס הקרוב ביותר ואמור בעוד כמה דקות הוא (למשל: קו ארבע מאות ושתיים יוצא בעוד שבע דקות, בשעה שלוש ושלושים וחמש),"
+                            " ואחריו עוד שעה או שתיים, לא יותר."
                             " אם יש כמה כיוונים או כמה קווים ולא ברור לאיזה המתקשר התכוון, אמור את העיקר ושאל בקצרה לאיזה כיוון."
-                            " ציין במילים ספורות שאלו זמנים לפי לוח הזמנים, ושייתכנו עיכובים. קצר ומתאים להקראה בטלפון.")
+                            " ציין במילים ספורות שאלו זמנים לפי לוח הזמנים הרשמי, ושייתכנו עיכובים. קצר ומתאים להקראה בטלפון.")
             ans = gemini(sys_t, list(history) + [{"role": "user", "parts": [{"text": "השאלה: %s\nהשעה עכשיו: %s\n\nנתוני תחבורה:\n%s" % (
                 transcript, il_now().strftime("%H:%M"), tr)}]}], prefer_strong=True)
             if ans:
@@ -2370,7 +2602,7 @@ def _chat_system_base(assistant, from_text=False):
         "תשובה: <התשובה שלך למשתמש. אם צריך חיפוש (כן / מזג אוויר / תחבורה / זמנים), כתוב כאן רק: מחפש>\n"
         "כללי הפעולה: menu אם ביקש לחזור לתפריט. end אם ביקש לסיים או להתנתק או אמר להתראות. "
         "voice אם ביקש להחליף קול. switch:מזהה אם ביקש לעבור לעוזר אחר מהרשימה: " + others + ". "
-        "xxxx xx xxxxxx xxx, xxxx xx xxx xxxx xx xxxx xx xx: xxxx xxxx xx xxxxxxx, xxxxxx, xxxxx xx. "
+        "warn אם המתקשר מבקש או מספר תוכן לא צנוע: מיני, גס או מגונה. "
         "במקרה של warn אל תענה על התוכן עצמו, ובשורת החיפוש כתוב: לא. "
         "אחרת none. כשהפעולה אינה none, כתוב בתשובה משפט קצר מתאים (למשל: בטח, מעביר אותך)."
     )
@@ -2415,6 +2647,11 @@ def finish_answer(assistant, history, raw, info=None, known=""):
         tp = parse_transit("", transcript)
         if tp["line"] or tp["stop"]:
             need_search = True    # שאלה על קו או תחנה - קודם מאגר התחבורה, גם אם הבינה סימנה חיפוש רגיל
+            search_line = "תחבורה: "
+    if assistant.get("id") == "transit" and transcript and action == "none" and "תחבור" not in search_line:
+        tp = parse_transit("", transcript)
+        if tp["line"] or tp["stop"] or (tp["from"] and tp["to"]):
+            need_search = True    # בעוזר התחבורה כל שאלה עם קו, תחנה או מסלול הולכת ישר למאגר
             search_line = "תחבורה: "
     if transcript and action == "none" and "תחבור" not in search_line and "זמנים" not in search_line and "מזג" not in search_line \
             and any(w in transcript for w in ZMANIM_WORDS):
@@ -2487,17 +2724,17 @@ def ask_ai_text(assistant, history, text, info=None):
     return finish_answer(assistant, history, raw, info, known=text)
 
 
-def ask_ai(assistant, history, file_name):
+def ask_ai(assistant, history, file_name, ext=None, hint=None):
     """מחזיר (תמלול, פעולה, תשובה). פעולה: none / menu / end / voice / warn / switch:id"""
     t0 = time.time()
     try:
-        audio = yemot_download(file_name + ".wav")
+        audio = fetch_recording(file_name, ext, hint)
     except Exception as e:
-        print("download error:", e)
+        print("recording %s was not found in yemot (ext=%s, hint=%s): %s" % (file_name, ext, hint, str(e)[:100]))
         return "", "none", "סליחה, לא הצלחתי לשמוע את ההקלטה. נסה שוב."
-    print("timing: download %.1fs" % (time.time() - t0))
+    print("timing: download %.1fs - %s" % (time.time() - t0, audio_info(audio)))
     if keep_days() == 0:
-        _bg(yemot_delete, file_name + ".wav")      # אחרת ההקלטה נשמרת כמה ימים, כדי שאפשר יהיה לשמוע אותה באתר
+        _bg(yemot_delete, file_name + ".wav", ext)      # אחרת ההקלטה נשמרת כמה ימים, כדי שאפשר יהיה לשמוע אותה באתר
     if is_silent(audio):
         print("recording is empty/silent - answering at once without AI")
         return "", "none", T("not_heard")
@@ -2582,7 +2819,7 @@ def record(state, val_prefix, message, prefix=None):
     file_name = "ai_%s_%d" % (re.sub(r"[^0-9a-zA-Z]", "", state["call_id"])[-12:], state["n"])
     state["file"] = file_name
     read = build_read([message], mode="record", val_name=state["wait"], path="", file_name=file_name,
-                      no_confirm_menu="no", save_on_hangup="no", min_length="",
+                      no_confirm_menu="yes", save_on_hangup="no", min_length="",
                       max_length=int(SETTINGS.get("record_max", 25) or 25))
     if prefix:
         return build_combined_action([build_id_list_message([prefix]), read])
@@ -2601,7 +2838,7 @@ def wait_message(state):
     i = state.get("wait_i", 0)
     state["wait_i"] = i + 1
     state["n"] += 1
-    mf = music_file()
+    mf = music_file(state.get("ext"))
     if hold_mode():
         parts = [("text", phrases[i % len(phrases)])]     # ימות ממשיכים לנגן כשהשרת שוב מחזיק את הבקשה
         gap = 1
@@ -2623,9 +2860,9 @@ def goodbye(call_id, name, state=None):
     return build_combined_action([build_id_list_message([part]), build_go_to_folder("hangup")])
 
 
-def ai_worker(pending, state, assistant, history, file_name, call_id, voice_idx):
+def ai_worker(pending, state, assistant, history, file_name, call_id, voice_idx, ext=None, hint=None):
     try:
-        transcript, action, answer = ask_ai(assistant, history, file_name)
+        transcript, action, answer = ask_ai(assistant, history, file_name, ext, hint)
         if action == "warn":
             n = add_warning(state.get("phone", ""))
             answer = clean_for_tts(T("warning", n=n))
@@ -2636,7 +2873,7 @@ def ai_worker(pending, state, assistant, history, file_name, call_id, voice_idx)
         if keep_days() and transcript:
             pending["rec"] = file_name          # ההקלטה נשמרת כמה ימים - אפשר לשמוע אותה באתר
         elif keep_days():
-            _bg(yemot_delete, file_name + ".wav")
+            _bg(yemot_delete, file_name + ".wav", ext)
         tts = None
         if state.get("kill"):
             action = "none"                     # השיחה נותקה על ידי המנהל - לא מייצרים קול
@@ -2649,7 +2886,7 @@ def ai_worker(pending, state, assistant, history, file_name, call_id, voice_idx)
                     if voice_ok(vl[v % len(vl)]):
                         break
                     v = (v + 1) % len(vl)
-            tts = speak_file(answer, v, call_id)
+            tts = speak_file(answer, v, call_id, ext)
         pending["result"] = (transcript, action, answer, tts)
     except Exception as e:
         print("worker error:", e)
@@ -2703,10 +2940,19 @@ def yemot():
                                         build_go_to_folder("hangup")]))
 
 
+def direct_assistant(state):
+    """אם השיחה הגיעה מהשלוחה הייעודית לתחבורה (TRANSIT_EXT) - נכנסים ישר לעוזר התחבורה, בלי תפריט"""
+    if TRANSIT_EXT and state.get("ext") == TRANSIT_EXT:
+        for a in ASSISTANTS:
+            if a.get("id") == "transit" and a.get("on", True):
+                return a
+    return None
+
+
 def yemot_inner():
     params = request.values.to_dict()
     call_id = params.get("ApiCallId")
-    print("YEMOT REQ:", call_id, params.get("ApiPhone"), list(params.keys()))
+    print("YEMOT REQ:", call_id, params.get("ApiPhone"), "ext=%s" % params.get("ApiExtension"), list(params.keys()))
     if not call_id:
         return R("ok")
     if params.get("hangup") == "yes":
@@ -2717,6 +2963,7 @@ def yemot_inner():
         return R("noop")
 
     phone = params.get("ApiPhone", "unknown")
+    ext = note_ext(params.get("ApiExtension"))     # השלוחה שממנה התקבלה השיחה - לשם מועלים קבצי הקול ושם נשמרות ההקלטות
 
     with _lock:
         state = calls.get(call_id)
@@ -2724,11 +2971,12 @@ def yemot_inner():
         if new_call:
             state = {"stage": "start", "n": 0, "wait": None, "assistant": None, "history": [], "call_id": call_id,
                      "file": None, "pending": None, "wait_i": 0, "phone": phone, "started": time.time(),
-                     "voice": voices.get(phone, 0), "last_q": "", "tts_file": None, "played": []}
+                     "voice": voices.get(phone, 0), "last_q": "", "tts_file": None, "played": [], "ext": ext}
             calls[call_id] = state
             CALLS.append({"time": now_str(), "phone": phone, "name": names.get(phone, ""), "call": call_id})
             del CALLS[:-LOG_MAX]
         state["last"] = time.time()
+        state["ext"] = ext
     if new_call:
         save_log()
         if is_blocked(phone):
@@ -2779,6 +3027,10 @@ def yemot_inner():
             save_names()
         parts = [p for p in [SETTINGS.get("announcement", "").strip(), note] if p]
         ann = ". ".join(parts) if parts else None
+        direct = direct_assistant(state)
+        if name and direct:
+            state["assistant"], state["history"] = direct["id"], []
+            return R(listen(state, (ann + ". " if ann else "") + T("enter", assistant=direct["name"], name=name), first=True))
         if name:
             return R(menu(state, name, prefix=ann))
         state["stage"] = "ask_name"
@@ -2788,7 +3040,7 @@ def yemot_inner():
     if state["stage"] == "ask_name":
         if not has_value:
             return R(record(state, "name", ("text", T("ask_name_again"))))
-        name = transcribe_name(state["file"])
+        name = transcribe_name(state["file"], state.get("ext"), rec_hint(value))
         if not name:
             state["name_tries"] = state.get("name_tries", 0) + 1
             if state["name_tries"] < 3:     # לא הובן - מבקשים שוב (עד פעמיים)
@@ -2796,6 +3048,10 @@ def yemot_inner():
             return R(menu(state, "אורח"))   # עדיין לא הובן - ממשיכים בלי לשמור, ובשיחה הבאה נשאל שוב
         names[phone] = name
         save_names()
+        direct = direct_assistant(state)
+        if direct:
+            state["assistant"], state["history"] = direct["id"], []
+            return R(listen(state, T("name_saved", name=name) + ". " + T("enter", assistant=direct["name"], name=name), first=True))
         return R(menu(state, name, prefix=T("name_saved", name=name)))
 
     name = name or "אורח"
@@ -2824,10 +3080,11 @@ def yemot_inner():
             pending = {"done": False, "result": None, "started": time.time(), "event": threading.Event()}
             state["pending"] = pending
             state["wait_i"] = 0
-            _bg(ai_worker, pending, state, assistant, list(state["history"]), state["file"], call_id, state["voice"])
+            _bg(ai_worker, pending, state, assistant, list(state["history"]), state["file"], call_id, state["voice"],
+                state.get("ext"), rec_hint(value))
             if hold_mode():
                 pending["event"].wait(HOLD_WAIT)   # ימות מנגנים מוזיקה בהמתנה, ונעצרים ברגע שהתשובה חוזרת
-            elif not music_on():
+            elif not music_on(state.get("ext")):
                 pending["event"].wait(5)      # עם מנגינה - לא מחכים בכלל: המנגינה מתחילה מיד אחרי הסולמית
 
         if state.get("kill"):
@@ -2842,7 +3099,7 @@ def yemot_inner():
                 state["pending"] = None
                 return R(listen(state, T("too_long")))
             if state["wait_i"] > 0:
-                pending["event"].wait(HOLD_WAIT if hold_mode() else (1.5 if music_on() else 4))   # עם מנגינה - המנגינה ממלאת את זמן ההמתנה
+                pending["event"].wait(HOLD_WAIT if hold_mode() else (1.0 if music_on(state.get("ext")) else 4))   # עם מנגינה - המנגינה ממלאת את זמן ההמתנה
             if not pending["done"]:
                 return R(wait_message(state))
 
@@ -3422,11 +3679,12 @@ def api_diag():
     st = music_style()
     if st in WAIT_FILES:
         name = WAIT_FILES[st]
-        MUSIC_READY[name] = music_exists(name)
-        got = music_file()
-        out["wait_music"] = {"ok": bool(got), "answer": got or ""}
-        if not MUSIC_READY[name]:
-            out["wait_music"]["error"] = "הקובץ %s.wav לא נמצא בשלוחה%s" % (name, ", מנגן טראנס במקומו" if got else "")
+        for e_ in list(KNOWN_EXTS):
+            MUSIC_READY[e_ + "/" + name] = music_exists(name, e_)
+        got = music_file(EXT)
+        out["wait_music"] = {"ok": bool(got), "answer": "%s (שלוחות: %s)" % (got or "", ", ".join(KNOWN_EXTS))}
+        if not MUSIC_READY.get(EXT + "/" + name):
+            out["wait_music"]["error"] = "הקובץ %s.wav לא נמצא בשלוחה %s%s" % (name, EXT, ", מנגן טראנס במקומו" if got else "")
     out["model_status"] = {m: ("לא קיים" if MODEL_STATUS.get(m, {}).get("dead") else ("מכסה" if not model_ok(m) else "ok")) for m in MODELS}
     return J(out)
 
