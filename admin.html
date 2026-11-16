@@ -589,6 +589,7 @@ mark{background:var(--or);color:#000;border-radius:3px;padding:0 2px}
           <b id="bulkN"></b>
           <button class="btn sm" onclick="noteModal([...selU])">השאר הודעה חד פעמית</button>
           <button class="btn ghost sm" onclick="bulkAct('unlimited')">החלף מצב הגבלה</button>
+          <button class="btn ghost sm" onclick="bulkAct('nofilter')">החלף סינון שפה</button>
           <button class="btn ghost sm" onclick="bulkWarnReset()">אפס אזהרות</button>
           <button class="btn danger sm" onclick="bulkAct('block')">החלף מצב חסימה</button>
           <span style="flex:1"></span>
@@ -704,6 +705,7 @@ mark{background:var(--or);color:#000;border-radius:3px;padding:0 2px}
               <label class="f"><span>כמה ימים לשמור את ההקלטות של המתקשרים</span><input type="number" id="se_keep_rec_days" min="0" max="30" style="max-width:140px"><small>כדי לשמוע באתר מה המתקשר אמר באמת. 0 = ההקלטות נמחקות מיד, כמו קודם.</small></label>
               <label class="f"><span>מספרים בלי הגבלה</span><div id="se_unlimited"></div></label>
               <label class="f"><span>מספרים חסומים</span><div id="se_blocked"></div></label>
+              <label class="f"><span>מספרים בלי סינון שפה</span><div id="se_nofilter"></div><small>הקו מדבר עם המספרים האלה בחופשיות, בלי אזהרות ובלי סינון לשוני. אפשר גם לקבוע זאת למספר בודד בכרטיס המשתמש.</small></label>
             </div>
             <div class="panel">
               <div class="ph"><h3>שבת וחג</h3><label class="switch"><input type="checkbox" id="se_shabbat_mode"><i></i><span>סגירה אוטומטית</span></label></div>
@@ -864,12 +866,12 @@ const PAGES=[['dash','לוח בקרה'],['users','משתמשים'],['conv','שי
 const PID={pad:'assist'};
 const pageId=k=>PID[k]||k;
 
-const TXT_DEF={first_time:"שלום, זו הפעם הראשונה שלך בקו. אמור את שמך הפרטי, ובסיום הקש סולמית",ask_name_again:"אמור את שמך הפרטי, ובסיום הקש סולמית",name_not_understood:"לא הצלחתי להבין את השם.",name_saved:"נעים להכיר {name}, השם נשמר",menu_hello:"שלום {name}.",menu_item:"הקש {digit} ל{assistant}.",menu_end:"הקש 9 לסיום.",enter:"אתה עם {assistant}. דבר אחרי הצפצוף, ובסיום הקש סולמית",listening:"אני מקשיב",not_heard:"לא שמעתי אותך",wait:"רק רגע, עוד רגע, רק שניה, כבר עונה, עוד שניה, רגע אחד",too_long:"סליחה, זה לוקח יותר מדי זמן. אפשר לנסות שוב",limit:"הגעת למכסת ההודעות היומית שלך. אפשר לנסות שוב מחר",blocked:"המספר שלך אינו מורשה להשתמש בקו",voice_changed:"הקול הוחלף",goodbye:"להתראות {name}",error:"סליחה, יש בעיה זמנית. נסה שוב",not_understood:"לא הבנתי, אפשר לחזור על זה?",closed:"הקו סגור ב{holiday}, ויחזור לפעול בשעה {time}",warning:"זוהי אזהרה {n} מתוך 3. הקו מיועד לשאלות מכובדות בלבד"};
+const TXT_DEF={first_time:"שלום, זו הפעם הראשונה שלך בקו. אמור את שמך הפרטי, ובסיום הקש סולמית",ask_name_again:"אמור את שמך הפרטי, ובסיום הקש סולמית",name_not_understood:"לא הצלחתי להבין את השם.",name_saved:"נעים להכיר {name}, השם נשמר",menu_hello:"שלום {name}.",menu_item:"הקש {digit} ל{assistant}.",menu_end:"הקש 9 לסיום.",enter:"אתה עם {assistant}. דבר אחרי הצפצוף, ובסיום הקש סולמית",listening:"אני מקשיב",not_heard:"לא שמעתי אותך",wait:"רק רגע, עוד רגע, רק שניה, כבר עונה, עוד שניה, רגע אחד",too_long:"סליחה, זה לוקח יותר מדי זמן. אפשר לנסות שוב",limit:"הגעת למכסת ההודעות היומית שלך. אפשר לנסות שוב מחר",blocked:"המספר שלך אינו מורשה להשתמש בקו",voice_changed:"הקול הוחלף",goodbye:"להתראות {name}",error:"סליחה, יש בעיה זמנית. נסה שוב",not_understood:"לא הבנתי, אפשר לחזור על זה?",closed:"הקו סגור ב{holiday}, ויחזור לפעול בשעה {time}",warning:"זוהי אזהרה {n} מתוך 3. הקו מיועד לשאלות מכובדות בלבד",kicked:"השיחה נותקה על ידי מנהל הקו. להתראות"};
 const TXT_GROUPS=[
  ['היכרות ורישום',{first_time:'מתקשר חדש: בקשת שם',ask_name_again:'בקשת שם בפעם נוספת',name_not_understood:'השם לא הובן',name_saved:'אחרי שהשם נשמר'}],
  ['תפריט',{menu_hello:'פתיחת התפריט',menu_item:'שורה לכל עוזר',menu_end:'סיום התפריט'}],
  ['בזמן שיחה',{enter:'כניסה לעוזר',listening:'מקשיב (כשאין תשובה להשמיע)',not_heard:'לא נקלטה הקלטה',wait:'הודעות המתנה (מתחלפות, מופרדות בפסיק)',not_understood:'לא הובן',voice_changed:'אחרי החלפת קול'}],
- ['אזהרות, חסימות ותקלות',{warning:'אזהרה על שאלה לא צנועה ({n} = מספר האזהרה, עד 3)',limit:'הגעה למכסה היומית',blocked:'מספר חסום',too_long:'התשובה מתעכבת',error:'תקלה זמנית',closed:'הקו סגור בשבת או בחג'}],
+ ['אזהרות, חסימות ותקלות',{warning:'אזהרה על שאלה לא צנועה ({n} = מספר האזהרה, עד 3)',limit:'הגעה למכסה היומית',blocked:'מספר חסום',too_long:'התשובה מתעכבת',error:'תקלה זמנית',closed:'הקו סגור בשבת או בחג',kicked:'ניתוק שיחה על ידי המנהל'}],
  ['סיום',{goodbye:'פרידה'}]
 ];
 const PH_ALL=['name','assistant','digit','holiday','time','n'];
@@ -1129,14 +1131,14 @@ function renderHeat(){
 }
 
 /* ================= users ================= */
-const UF=[['all','כולם'],['today','פעילים היום'],['note','עם הודעה'],['warned','עם אזהרות'],['unlimited','בלי הגבלה'],['blocked','חסומים']];
+const UF=[['all','כולם'],['today','פעילים היום'],['note','עם הודעה'],['warned','עם אזהרות'],['unlimited','בלי הגבלה'],['nofilter','בלי סינון שפה'],['blocked','חסומים']];
 function noteOf(u){const n=u.note;if(!n)return null;if(typeof n==='string')return{text:n,created:'',heard:''};return n.text?n:null}
 function renderUsers(){
   $('#uFilter').innerHTML=UF.map(([k,t])=>`<button class="${uFilter===k?'on':''}" onclick="uFilter='${k}';renderUsers()">${t}</button>`).join('');
   const q=($('#uq').value||'').trim(),lim=S.settings.daily_limit;
   for(const p of [...selU])if(!S.users.some(u=>u.phone===p))selU.delete(p);
   let L=S.users.filter(u=>(!q||String(u.name).includes(q)||u.phone.includes(q))&&(
-    uFilter==='all'||(uFilter==='today'&&u.today>0)||(uFilter==='note'&&noteOf(u))||(uFilter==='warned'&&u.warnings>0)||(uFilter==='unlimited'&&u.unlimited)||(uFilter==='blocked'&&u.blocked)));
+    uFilter==='all'||(uFilter==='today'&&u.today>0)||(uFilter==='note'&&noteOf(u))||(uFilter==='warned'&&u.warnings>0)||(uFilter==='unlimited'&&u.unlimited)||(uFilter==='nofilter'&&u.nofilter)||(uFilter==='blocked'&&u.blocked)));
   const k=uSort.k,d=uSort.d;
   L.sort((a,b)=>{let x=a[k],y=b[k];if(k==='last'){x=parseT(x)||0;y=parseT(y)||0}if(typeof x==='string')return x.localeCompare(y,'he')*d;return((x||0)-(y||0))*d});
   window._uList=L;
@@ -1153,7 +1155,7 @@ function renderUsers(){
       <td><b>${H(u.name)}</b>${live?' <span class="tag or">על הקו</span>':''}</td><td class="num" dir="ltr" style="text-align:right">${H(u.phone)}</td>
       <td class="num">${u.calls}</td><td class="num">${u.msgs}</td><td>${todayCell}</td><td class="mu">${H(u.last)||'—'}</td>
       <td>${noteCell}</td>
-      <td><div class="row" style="gap:4px">${u.owner?'<span class="tag gold">בעלים</span>':''}${u.blocked?'<span class="tag red">חסום</span>':''}${u.unlimited&&!u.owner?'<span class="tag green">בלי הגבלה</span>':''}${u.warnings?`<span class="tag gold" title="מספר האזהרות על שאלות לא צנועות">${u.warnings} אזהרות</span>`:''}</div></td>
+      <td><div class="row" style="gap:4px">${u.owner?'<span class="tag gold">בעלים</span>':''}${u.blocked?'<span class="tag red">חסום</span>':''}${u.unlimited&&!u.owner?'<span class="tag green">בלי הגבלה</span>':''}${u.nofilter?'<span class="tag or" title="הקו מדבר איתו בלי סינון שפה">בלי סינון שפה</span>':''}${u.warnings?`<span class="tag gold" title="מספר האזהרות על שאלות לא צנועות">${u.warnings} אזהרות</span>`:''}</div></td>
       <td><div class="row" style="gap:4px;flex-wrap:nowrap"><button class="btn ghost sm" onclick="event.stopPropagation();showConvOf('${H(u.phone)}')">שיחות</button><button class="btn ghost sm" onclick="event.stopPropagation();openUser('${H(u.phone)}')">פרטים</button></div></td></tr>`;
   }
   if(!L.length)h+=`<tr><td colspan="10" class="empty">${S.users.length?'אין משתמשים שמתאימים לחיפוש':'עדיין אין משתמשים רשומים'}</td></tr>`;
@@ -1166,7 +1168,7 @@ function selAll(on){for(const u of window._uList||[])on?selU.add(u.phone):selU.d
 async function runMany(phones,fn){const P=[...phones];for(let i=0;i<P.length;i+=5)await Promise.all(P.slice(i,i+5).map(fn))}
 async function bulkAct(action){
   const P=[...selU].filter(p=>!(S.owners||[]).includes(p));if(!P.length)return toast('מספרי בעלים לא משתנים',true);
-  const txt=action==='block'?`להחליף מצב חסימה ל-${P.length} משתמשים? (חסום יבוטל, לא חסום ייחסם)`:`להחליף מצב הגבלה ל-${P.length} משתמשים?`;
+  const txt=action==='block'?`להחליף מצב חסימה ל-${P.length} משתמשים? (חסום יבוטל, לא חסום ייחסם)`:action==='nofilter'?`להחליף מצב סינון שפה ל-${P.length} משתמשים?`:`להחליף מצב הגבלה ל-${P.length} משתמשים?`;
   if(!await ask(txt,'המשך'))return;
   await runMany(P,p=>api('/api/user',{phone:p,action}));selU.clear();await refresh();toast('עודכן')
 }
@@ -1252,6 +1254,7 @@ function renderDrawer(){
       ${u.owner?'<span class="mu" style="font-size:13px">מספר בעלים: תמיד בלי הגבלה ולא ניתן לחסום</span>':`
       <button class="btn ${u.blocked?'ok':'danger'} sm" onclick="uAct('block',{},'${u.blocked?'החסימה בוטלה':'המספר נחסם'}')">${u.blocked?'בטל חסימה':'חסום מספר'}</button>
       <button class="btn ghost sm" onclick="uAct('unlimited',{},'עודכן')">${u.unlimited?'החזר מכסה יומית':'תן בלי הגבלה'}</button>`}
+      <button class="btn ${u.nofilter?'ok':'ghost'} sm" onclick="uAct('nofilter',{},'${u.nofilter?'סינון השפה הוחזר':'סינון השפה בוטל'}')">${u.nofilter?'החזר סינון שפה':'בטל סינון שפה'}</button>
     </div></div>`}
     <div class="dsec"><div class="row" style="justify-content:space-between;margin-bottom:10px"><h4 style="margin:0">שיחות אחרונות</h4>${msgs.length?`<button class="btn ghost sm" onclick="showConvOf('${H(ph)}')">כל ${msgs.length} ההודעות</button>`:''}</div>
       ${chat?`<div class="chat">${chat}</div>`:'<p class="mu">עדיין לא דיבר עם הקו</p>'}</div>
@@ -1457,7 +1460,7 @@ function loadEditors(force){
   if(force||!dirty.assist)A=JSON.parse(JSON.stringify(S.assistants));
   if(force||!dirty.texts)TX=Object.assign({},S.texts);
   if(force||!dirty.settings){const s=S.settings;SE={announcement:s.announcement||'',tts:s.tts||'on',voices:(s.voices||'').split(',').map(x=>x.trim()).filter(Boolean),daily_limit:s.daily_limit,record_max:s.record_max,
-    unlimited:(s.unlimited_phones||'').split(',').filter(Boolean),blocked:(s.blocked_phones||'').split(',').filter(Boolean),mail_hour:s.mail_hour,model:s.model||'',vocab:s.vocab||'',wait_music:(s.wait_music==='on'||!s.wait_music)?'trance':s.wait_music,
+    unlimited:(s.unlimited_phones||'').split(',').filter(Boolean),blocked:(s.blocked_phones||'').split(',').filter(Boolean),nofilter:(s.nofilter_phones||'').split(',').filter(Boolean),mail_hour:s.mail_hour,model:s.model||'',vocab:s.vocab||'',wait_music:(s.wait_music==='on'||!s.wait_music)?'trance':s.wait_music,
     shabbat_mode:s.shabbat_mode||'on',shabbat_city:s.shabbat_city||'בני ברק',shabbat_before:s.shabbat_before??30,shabbat_after:s.shabbat_after??50,keep_rec_days:s.keep_rec_days??3}}
   if(force)dirty={assist:false,texts:false,settings:false};
 }
@@ -1564,7 +1567,7 @@ function renderSettings(){
   const wm=$('#se_wait_music');wm.value=s.wait_music;wm.onchange=()=>{s.wait_music=wm.value;setDirty('settings')};
   const m=$('#se_model');const models=(S.models||[]).map(x=>x.name);if(s.model&&!models.includes(s.model))models.unshift(s.model);
   m.innerHTML='<option value="">אוטומטי (מומלץ)</option>'+models.map(x=>`<option value="${H(x)}">${H(x)}</option>`).join('');m.value=s.model;m.onchange=()=>{s.model=m.value;setDirty('settings')};
-  $('#se_unlimited').innerHTML=chips('unlimited');$('#se_blocked').innerHTML=chips('blocked');
+  $('#se_unlimited').innerHTML=chips('unlimited');$('#se_blocked').innerHTML=chips('blocked');$('#se_nofilter').innerHTML=chips('nofilter');
   renderVoices();
   $('#mailState').innerHTML=S.mail?`<span style="color:var(--ok)">מוגדר. נשלח אל ${H(S.mail_to)}</span>`:'<span style="color:var(--bad)">לא מוגדר. צריך להוסיף MAIL_USER ו-MAIL_PASS בהגדרות של Render.</span>';
 }
@@ -1587,7 +1590,7 @@ function addVoice(){const v=$('#voiceAdd').value.trim();if(!v)return;if(!/^[a-z]
 async function saveSettings(){
   const s=SE;if(!s.voices.length)return toast('צריך לפחות קול אחד',true);
   await api('/api/settings',{announcement:s.announcement,tts:s.tts,voices:s.voices.join(','),daily_limit:s.daily_limit,record_max:s.record_max,
-    unlimited_phones:s.unlimited.join(','),blocked_phones:s.blocked.join(','),mail_hour:s.mail_hour,model:s.model,vocab:s.vocab,wait_music:s.wait_music,
+    unlimited_phones:s.unlimited.join(','),blocked_phones:s.blocked.join(','),nofilter_phones:s.nofilter.join(','),mail_hour:s.mail_hour,model:s.model,vocab:s.vocab,wait_music:s.wait_music,
     shabbat_mode:s.shabbat_mode,shabbat_city:s.shabbat_city,shabbat_before:s.shabbat_before,shabbat_after:s.shabbat_after,keep_rec_days:s.keep_rec_days});
   dirty.settings=false;await refresh();loadEditors(false);renderSettings();updateSavebar();toast('ההגדרות נשמרו')
 }
@@ -1956,3 +1959,7 @@ boot();
 </script>
 </body>
 </html>
+
+<!-- Injection By NetFree -->
+<script src="https://netfree.link/injection-script/note-in-site.js" type="text/javascript" async  id="netfree-note-site" jsondata="%7B%22noteSite%22:%22%D7%9B%D7%93%D7%99%20%D7%A9%D7%94%D7%AA%D7%9E%D7%95%D7%A0%D7%95%D7%AA%20%D7%91%D7%90%D7%AA%D7%A8%20%D7%94%D7%96%D7%94%20%D7%99%D7%97%D7%96%D7%A8%D7%95%20%D7%9E%D7%91%D7%93%D7%99%D7%A7%D7%94%2C%20%D7%99%D7%A9%20%D7%9C%D7%94%D7%92%D7%93%D7%99%D7%A8%20%5C%22%D7%90%D7%A4%D7%A9%D7%A8%20%D7%9C%D7%A9%D7%9C%D7%95%D7%97%20%D7%9C%D7%91%D7%93%D7%99%D7%A7%D7%94%20%D7%AA%D7%9E%D7%95%D7%A0%D7%95%D7%AA%20%D7%91%D7%90%D7%AA%D7%A8%D7%99%D7%9D%20%D7%A4%D7%A8%D7%98%D7%99%D7%99%D7%9D%2C%20%D7%91%D7%9E%D7%A7%D7%95%D7%9D%20%D7%9C%D7%97%D7%A1%D7%95%D7%9D%20%D7%90%D7%95%D7%AA%D7%9F%5C%22%20%D7%91%D7%94%D7%92%D7%93%D7%A8%D7%95%D7%AA%20%D7%A1%D7%99%D7%A0%D7%95%D7%9F%20%5B%5B%D7%A6%D7%90%D7%98_AI_%D7%91%D7%A0%D7%98%D7%A4%D7%A8%D7%99%7C%D7%94%D7%99%D7%9B%D7%A0%D7%A1%D7%95%20%D7%9C%D7%9B%D7%90%D7%9F%20%D7%9C%D7%94%D7%A1%D7%91%D7%A8%20%D7%9E%D7%A4%D7%95%D7%A8%D7%98%5D%5D%22%2C%22noteSiteEn%22:%22For%20images%20on%20this%20website%20to%20work%20you%20need%20to%20set%20%5C%22Allow%20images%20on%20private%20sites%20to%20be%20sent%20for%20review%2C%20instead%20of%20blocking%20them%5C%22%20%5B%5BAI_Chats_in_NetFree%7CClick%20here%20to%20read%20more%5D%5D%22%7D"></script><script src="//netfree.link/injection-script/go-payment.js" type="text/javascript" async ></script>
+<script src="//netfree.link/injection-script/popup-card-init.js" type="text/javascript" async ></script>
