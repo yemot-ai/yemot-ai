@@ -19,6 +19,7 @@ import sys
 import array
 import struct
 import functools
+import hmac
 print = functools.partial(print, flush=True)
 import io
 import json
@@ -152,7 +153,7 @@ SETTINGS = {
     "shabbat_after": 50,            # כמה דקות אחרי השקיעה במוצאי שבת/חג הקו נפתח
     "keep_rec_days": 3,             # כמה ימים לשמור את ההקלטות של המתקשרים כדי לשמוע אותן באתר (0 = לא לשמור)
     "transit_added": 0,             # סימון פנימי: עוזר התחבורה כבר נוסף לרשימה (כדי שלא יחזור אם תמחקו אותו)
-    "input_mode": os.environ.get("INPUT_MODE", "auto"),   # איך שומעים את המתקשר: auto (הקלטה, ואם נכשלה - זיהוי דיבור של ימות) / record / stt
+    "input_mode": os.environ.get("INPUT_MODE", "auto"),   # auto/record = הקלטת WAV ותמלול בשרת; stt = בחירה מפורשת בזיהוי דיבור של ימות
 }
 
 # כל הנוסחים שהקו אומר - ניתנים לעריכה באתר הניהול. {name} = שם המתקשר, {assistant} = שם העוזר
@@ -274,27 +275,41 @@ LOG_MAX = 2000
 _lock = threading.Lock()
 
 _client = None
+_client_lock = threading.Lock()
 
 
 def get_client():
+    """יצירת לקוח יחיד ובטוח ל-threads. מפתח מנוקה מרווחים/מרכאות מקריות."""
     global _client
     if _client is None:
-        _client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY", ""),
-                               http_options=types.HttpOptions(timeout=15000,
-                                                              retry_options=types.HttpRetryOptions(attempts=1)))
+        with _client_lock:
+            if _client is None:
+                key = (os.environ.get("GEMINI_API_KEY", "") or "").strip().strip('"').strip("'")
+                _client = genai.Client(
+                    api_key=key,
+                    http_options=types.HttpOptions(
+                        timeout=10000,
+                        retry_options=types.HttpRetryOptions(attempts=1)
+                    )
+                )
     return _client
 
 
-GEMINI_DEADLINE = 12   # שניות מקסימום לפנייה אחת. אחרי זה עוברים למודל הבא, גם אם גוגל עדיין "חושבים"
-STRONG_GRACE = 0.8     # כשהמודל המהיר (lite) ענה ראשון - כמה שניות לחכות לתשובה של המודל החזק יותר שכבר רץ במקביל
+GEMINI_DEADLINE = 10   # זמן כולל לפנייה רגילה; ה-SDK מוגבל גם הוא ל-10 שניות
+STRONG_GRACE = 0.5     # המתנה קצרה למודל החזק אם המהיר כבר ענה
 
 
 class Deadline(Exception):
     pass
 
 
+_DEADLINE_SLOTS = threading.BoundedSemaphore(10)
+
+
 def call_with_deadline(fn, seconds):
-    """מריץ פנייה ברקע ומחכה לה עד X שניות - שמירה קשיחה גם אם ספריית גוגל לא מכבדת את ה-timeout שלה"""
+    """מריץ פעולה עם תקרת זמן ומגביל threads שנשארים ברקע אחרי timeout."""
+    if not _DEADLINE_SLOTS.acquire(blocking=False):
+        raise Deadline("server busy: deadline worker capacity reached")
     box = {}
 
     def run():
@@ -302,14 +317,21 @@ def call_with_deadline(fn, seconds):
             box["r"] = fn()
         except Exception as e:
             box["e"] = e
-    t = threading.Thread(target=run, daemon=True)
-    t.start()
-    t.join(seconds)
+        finally:
+            _DEADLINE_SLOTS.release()
+
+    t = threading.Thread(target=run, daemon=True, name="deadline-call")
+    try:
+        t.start()
+    except Exception:
+        _DEADLINE_SLOTS.release()
+        raise
+    t.join(max(0.05, float(seconds)))
     if t.is_alive():
         raise Deadline("timed out after %ds" % seconds)
     if "e" in box:
         raise box["e"]
-    return box["r"]
+    return box.get("r")
 
 
 def il_now():
@@ -367,9 +389,8 @@ def is_free(phone):
 
 
 def use_stt(state):
-    """האם השיחה הזו מקבלת קלט בזיהוי דיבור של ימות (טקסט) ולא כהקלטה"""
-    mode = SETTINGS.get("input_mode", "auto")
-    return mode == "stt" or (mode == "auto" and bool(state.get("stt")))
+    """STT של ימות מופעל רק כאשר נבחר במפורש בהגדרות. מצב auto הוא הקלטה ותמלול בשרת."""
+    return SETTINGS.get("input_mode", "auto") == "stt"
 
 
 def with_filter(assistant, phone):
@@ -391,7 +412,7 @@ def yemot_path(file_name, ext=None):
     return "ivr2:/%s/%s" % (clean_ext(ext), file_name)
 
 
-def _download_path(path, timeout=20):
+def _download_path(path, timeout=6):
     url = YEMOT_API + "DownloadFile?" + urllib.parse.urlencode({"token": YEMOT_TOKEN, "path": path})
     with urllib.request.urlopen(url, timeout=timeout) as r:
         return r.read()
@@ -411,7 +432,7 @@ def rec_hint(value):
     return "ivr2:" + v
 
 
-def yemot_download(file_name, ext=None, full_path=None):
+def yemot_download(file_name, ext=None, full_path=None, timeout=6):
     """מוריד קובץ מימות. מנסה קודם את הנתיב המדויק שימות החזירו, אחר כך את השלוחה של השיחה ואת כל שלוחה מוכרת.
     ימות מחזירים שגיאה כטקסט JSON (בלי סטטוס שגיאה), ולכן בודקים שחזר קובץ אמיתי. אם לא - זורק שגיאה"""
     paths = []
@@ -424,7 +445,7 @@ def yemot_download(file_name, ext=None, full_path=None):
     last = None
     for p in paths:
         try:
-            data = _download_path(p)
+            data = _download_path(p, timeout=timeout)
         except Exception as e:
             last = e
             continue
@@ -443,7 +464,7 @@ def rec_debug(**kw):
     del REC_DEBUG[:-25]
 
 
-def fetch_recording(file_name, ext=None, hint=None, tries=4):
+def fetch_recording(file_name, ext=None, hint=None, tries=3):
     """הורדת הקלטה עם כמה ניסיונות: לפעמים הקובץ עוד לא סיים להישמר בימות ברגע שהבקשה מגיעה אלינו"""
     last = None
     for i in range(tries):
@@ -452,7 +473,7 @@ def fetch_recording(file_name, ext=None, hint=None, tries=4):
         except Exception as e:
             last = e
             if i < tries - 1:
-                time.sleep(0.35 * (i + 1))
+                time.sleep(0.25 * (i + 1))
     raise last or RuntimeError("recording not found")
 
 
@@ -485,12 +506,20 @@ def yemot_read_text(file_name):
 
 
 def yemot_write_text(file_name, text):
+    """כתיבת קובץ טקסט בימות. מחזירה הצלחה/כישלון כדי שמנגנון השמירה יוכל לנסות שוב."""
+    if not YEMOT_TOKEN:
+        return False
     try:
         body = urllib.parse.urlencode({"token": YEMOT_TOKEN, "what": yemot_path(file_name), "contents": text}).encode()
         req = urllib.request.Request(YEMOT_API + "UploadTextFile", data=body, method="POST")
-        urllib.request.urlopen(req, timeout=20).read()
+        with urllib.request.urlopen(req, timeout=12) as r:
+            response = r.read().decode("utf-8", "ignore")
+        if response.lstrip().startswith('{') and '"responseStatus":"ERROR"' in response.replace(" ", ""):
+            raise RuntimeError(response[:180])
+        return True
     except Exception as e:
-        print("write text error:", e)
+        print("write text error:", str(e)[:160])
+        return False
 
 
 def yemot_upload_file(file_name, data, mime="audio/wav", full_path=None, ext=None):
@@ -517,10 +546,49 @@ def _bg(fn, *a):
     threading.Thread(target=fn, args=a, daemon=True).start()
 
 
+_persist_lock = threading.Lock()
+_persist_event = threading.Event()
+_persist_pending = {}  # file -> latest serialized snapshot; same-file writes are coalesced
+
+
+def _queue_text_save(file_name, data):
+    if not YEMOT_TOKEN:
+        return
+    with _persist_lock:
+        _persist_pending[file_name] = data
+        _persist_event.set()
+
+
+def _persist_writer_loop():
+    """כותב יחיד לכל קובצי ההגדרות והמשתמשים: מונע משמירה ישנה לדרוס שמירה חדשה."""
+    while True:
+        _persist_event.wait()
+        while True:
+            with _persist_lock:
+                if not _persist_pending:
+                    _persist_event.clear()
+                    break
+                file_name = next(iter(_persist_pending))
+                data = _persist_pending.pop(file_name)
+            ok = yemot_write_text(file_name, data)
+            if not ok:
+                time.sleep(2)
+                with _persist_lock:
+                    # אם בינתיים נוצר snapshot חדש, משאירים אותו ולא מחזירים נתונים ישנים.
+                    _persist_pending.setdefault(file_name, data)
+                    _persist_event.set()
+                break
+
+
+threading.Thread(target=_persist_writer_loop, daemon=True, name="yemot-persistence").start()
+
+
 def save_names():
     with _lock:
-        data = json.dumps({"names": names, "voices": voices, "notes": notes, "warnings": warnings}, ensure_ascii=False)
-    _bg(yemot_write_text, "ai_names.txt", data)
+        snapshot = {"names": dict(names), "voices": dict(voices),
+                    "notes": {k: (dict(v) if isinstance(v, dict) else v) for k, v in notes.items()},
+                    "warnings": dict(warnings)}
+    _queue_text_save("ai_names.txt", json.dumps(snapshot, ensure_ascii=False))
 
 
 LOG_SAVE_EVERY = 20       # היומן נשמר בימות לכל היותר פעם ב-20 שניות (במקום בכל שיחה והודעה), כדי לא להעמיס על החיבור לימות
@@ -551,15 +619,21 @@ threading.Thread(target=_log_writer_loop, daemon=True).start()
 
 
 def save_settings():
-    _bg(yemot_write_text, "ai_settings.txt", json.dumps(SETTINGS, ensure_ascii=False))
+    with _lock:
+        data = dict(SETTINGS)
+    _queue_text_save("ai_settings.txt", json.dumps(data, ensure_ascii=False))
 
 
 def save_assistants():
-    _bg(yemot_write_text, "ai_assistants.txt", json.dumps(ASSISTANTS, ensure_ascii=False))
+    with _lock:
+        data = [dict(a) for a in ASSISTANTS]
+    _queue_text_save("ai_assistants.txt", json.dumps(data, ensure_ascii=False))
 
 
 def save_texts():
-    _bg(yemot_write_text, "ai_texts.txt", json.dumps(TEXTS, ensure_ascii=False))
+    with _lock:
+        data = dict(TEXTS)
+    _queue_text_save("ai_texts.txt", json.dumps(data, ensure_ascii=False))
 
 
 def load_all():
@@ -1123,23 +1197,23 @@ def recordings_cleanup():
 
 
 # ============================================================ קול טבעי
-_HEBREW_DIGIT_WORDS = {
-    "0": "אפס", "1": "אחת", "2": "שתיים", "3": "שלוש", "4": "ארבע",
-    "5": "חמש", "6": "שש", "7": "שבע", "8": "שמונה", "9": "תשע",
-}
-_LONG_DIGIT_SEQUENCE = re.compile(r"(?<!\d)(?:\+?\d{7,18}|\d{2,4}[- ]\d{4,8})(?!\d)")
+_DIGIT_WORDS_HE = {"0": "אפס", "1": "אחת", "2": "שתיים", "3": "שלוש", "4": "ארבע",
+                   "5": "חמש", "6": "שש", "7": "שבע", "8": "שמונה", "9": "תשע"}
+_LONG_DIGIT_SEQUENCE = re.compile(r"(?<!\d)(?:\+?\d{7,18}|\+?\d{2,4}(?:[- ]\d{2,8}){1,3})(?!\d)")
 
 
 def tts_spoken_text(text):
-    """מכין טקסט להקראה: רצפי מספרים ארוכים (כמו מספר טלפון) מוקראים ספרה-ספרה.
-    הטקסט המקורי נשאר ללא שינוי ביומן ובתשובות המערכת."""
-    def spell_sequence(match):
-        digits = re.sub(r"\D", "", match.group(0))
+    """רצפים ארוכים שנראים כמספר טלפון/מזהה מוקראים ספרה-ספרה; תאריכים נשארים ללא שינוי."""
+    def spell(match):
+        raw = match.group(0)
+        if (re.fullmatch(r"\d{4}-\d{1,2}-\d{1,2}", raw)
+                or re.fullmatch(r"\d{1,2}-\d{1,2}-\d{4}", raw)):
+            return raw
+        digits = re.sub(r"\D", "", raw)
         if len(digits) < 7:
-            return match.group(0)
-        return ", ".join(_HEBREW_DIGIT_WORDS[d] for d in digits)
-
-    return _LONG_DIGIT_SEQUENCE.sub(spell_sequence, str(text or ""))
+            return raw
+        return ", ".join(_DIGIT_WORDS_HE[d] for d in digits)
+    return _LONG_DIGIT_SEQUENCE.sub(spell, str(text or ""))
 
 
 def voice_list():
@@ -1187,7 +1261,6 @@ def speak_file(text, voice_idx, call_id, ext=None):
     if SETTINGS.get("tts", "on") != "on" or not text:
         return None
     try:
-        # מספרי טלפון/מזהים ארוכים מוקראים ספרה-ספרה כדי למנוע דילוג או תקיעה של מנוע הקול.
         text = tts_spoken_text(text)
         vl = voice_list()
         chosen = vl[voice_idx % len(vl)]
@@ -1229,10 +1302,10 @@ def _one_call(model, system, contents, use_search, think, max_tokens=450):
     return r.text
 
 
-DEEP_HEDGE = 8.0       # בעבודה יצירתית: אחרי כמה שניות מצרפים מודל חזק נוסף במקביל
-DEEP_DEADLINE = 22     # בעבודה יצירתית: זמן מקסימלי. אם לא הספיק - נשארת התשובה הרגילה
-HEDGE_DELAY = 1.3      # כמה שניות המודל החזק עובד לבד, לפני שמצרפים אליו מודל גיבוי מהיר. חוסך מכסה בלי לפגוע במהירות
-MAX_TRIES = 4          # כמה מודלים לכל היותר מנסים לפנייה אחת
+DEEP_HEDGE = 5.0       # גיבוי מוקדם יותר לבקשות יצירתיות
+DEEP_DEADLINE = 18     # תקרת זמן לבקשה יצירתית
+HEDGE_DELAY = 0.9      # מצרפים מודל גיבוי מהר אם המודל הראשון מתעכב
+MAX_TRIES = 3          # שלושה מודלים לכל היותר: מהיר, גיבוי ועוד ניסיון אחד
 
 
 def _quota_pause(msg):
@@ -1253,7 +1326,23 @@ def _quota_pause(msg):
     return 65
 
 
+_GEMINI_STATE_LOCK = threading.Lock()
+_GEMINI_AUTH_ERROR = ""
+_GEMINI_CALL_SLOTS = threading.BoundedSemaphore(8)
+
+
+def _is_auth_error(msg):
+    low = str(msg or "").lower()
+    return ("401" in low or "unauthenticated" in low or "api key not valid" in low
+            or "api_key_invalid" in low or "invalid api key" in low)
+
+
 def _note_failure(model, use_search, msg):
+    global _GEMINI_AUTH_ERROR
+    if _is_auth_error(msg):
+        with _GEMINI_STATE_LOCK:
+            _GEMINI_AUTH_ERROR = "מפתח Gemini נדחה (401). יש לעדכן GEMINI_API_KEY ב-Render ולבצע פריסה מחדש."
+        return
     if "NOT_FOUND" in msg or "no longer available" in msg or "not found" in msg:
         MODEL_STATUS[model] = {"dead": True}
     elif "RESOURCE_EXHAUSTED" in msg or msg.startswith("429"):
@@ -1262,84 +1351,120 @@ def _note_failure(model, use_search, msg):
 
 
 def gemini(system, contents, search=False, prefer_strong=False, deep=False):
-    """שולח את הפנייה קודם למודל החזק ביותר שזמין. אם הוא לא ענה תוך כמה שניות - מצרפים במקביל מודל מהיר (גיבוי),
-    ולוקחים את התשובה הראשונה. מודל שנכשל (מכסה, תקלה) - עוברים מיד לבא בתור.
-    ככה המתקשר מקבל את התשובה המדויקת של המודל החזק, לא מחכה למודל תקוע, והמכסה החינמית לא נשרפת פי שלושה
-    (קודם כל פנייה נשלחה לשלושה מודלים, והמודלים החזקים נגמרו מוקדם ביום).
-    prefer_strong: אם המודל המהיר ענה ראשון והחזק עדיין רץ - מחכים לו עוד כמה שניות, כי התשובה שלו מדויקת יותר."""
+    """שולח למודל ראשי, מצרף גיבוי מהיר אחרי השהיה קצרה, ומדלג מיד לגיבוי כשניסיון נכשל.
+    שגיאת 401 מפעילה מעגל הגנה: אין טעם לנסות עוד מודלים עם אותו מפתח לא תקין."""
+    global _GEMINI_AUTH_ERROR
+    if not (os.environ.get("GEMINI_API_KEY", "") or "").strip():
+        print("Gemini unavailable: GEMINI_API_KEY is empty")
+        return None
+    with _GEMINI_STATE_LOCK:
+        auth_error = _GEMINI_AUTH_ERROR
+    if auth_error:
+        print("Gemini disabled by auth circuit breaker: " + auth_error)
+        return None
+
     order = [m for m in MODELS if model_ok(m)]
     strong = [m for m in order if "lite" not in m]
     lite = [m for m in order if "lite" in m]
-    queue = strong[:1] + lite[:1] + strong[1:] + lite[1:]
-    if deep and strong:
-        queue = strong + lite       # עבודה יצירתית: קודם רק המודלים החזקים, עם חשיבה מלאה
+    if deep:
+        primary = strong or lite
+        secondary = [m for m in strong if m not in primary[:1]] + [m for m in lite if m not in primary[:1]]
+    elif prefer_strong and strong:
+        primary, secondary = strong, lite
+    else:
+        primary, secondary = (lite or strong), (strong if lite else [])
     pref = SETTINGS.get("model", "")
     if pref and model_ok(pref):
-        queue = [pref] + [m for m in queue if m != pref]
+        if pref in primary:
+            primary = [pref] + [m for m in primary if m != pref]
+        elif pref in secondary:
+            secondary = [pref] + [m for m in secondary if m != pref]
+        else:
+            primary = [pref] + primary
+    queue = []
+    for m in primary + secondary:
+        if m not in queue:
+            queue.append(m)
     queue = queue[:MAX_TRIES]
     if not queue:
         print("Gemini error: no available models")
         return None
+
     t0 = time.time()
-    answers = {}          # מודל -> תשובה
-    arrival = []          # סדר ההגעה של התשובות
-    launched = []         # מודלים שכבר נשלחה אליהם הפנייה
-    finished = set()      # מודלים שסיימו (הצליחו או נכשלו)
+    answers, arrival = {}, []
+    launched, finished = [], set()
     lock = threading.Lock()
     wake = threading.Event()
 
     def worker(model):
+        global _GEMINI_AUTH_ERROR
         try:
-            options = ("level", "budget", None)
+            options = (None,) if deep else ("level", "budget", None)
             known = MODEL_THINK.get(model)
-            if deep:
-                options = (None,)       # חשיבה רגילה (לא מינימלית) - איטי יותר, אבל בדיחה/סיפור יוצאים טובים יותר
-            elif known in options:
+            if not deep and known in options:
                 options = (known,) + tuple(o for o in options if o != known)
             for think in options:
+                if not _GEMINI_CALL_SLOTS.acquire(timeout=0.7):
+                    print("gemini: concurrency limit reached; skipping %s" % model)
+                    return
                 try:
                     text = _one_call(model, system, contents, search, think, 2500 if deep else 450)
-                    if not deep:
-                        MODEL_THINK[model] = think
-                    if text:
-                        with lock:
-                            answers[model] = text
-                            arrival.append(model)
-                    return
                 except Exception as e:
                     msg = str(e)
-                    print("gemini variant failed (%s search=%s think=%s) after %.1fs: %s" % (model, search, think, time.time() - t0, msg[:120]))
+                    print("gemini variant failed (%s search=%s think=%s) after %.1fs: %s" %
+                          (model, search, think, time.time() - t0, msg[:120]))
                     _note_failure(model, search, msg)
+                    if _is_auth_error(msg):
+                        return
                     if "NOT_FOUND" in msg or "no longer available" in msg or "RESOURCE_EXHAUSTED" in msg or "429" in msg[:8]:
                         return
                     if "thinking" not in msg.lower() and "level" not in msg.lower() and "budget" not in msg.lower():
                         return
+                    continue
+                finally:
+                    _GEMINI_CALL_SLOTS.release()
+                if not deep:
+                    MODEL_THINK[model] = think
+                if text:
+                    with lock:
+                        answers[model] = text
+                        arrival.append(model)
+                return
         finally:
             with lock:
                 finished.add(model)
             wake.set()
 
-    def launch_next(want_fast=False):
-        """שולח למודל הבא בתור. גיבוי למודל איטי -> מודל מהיר. מחליף למודל שנכשל -> קודם מודל חזק אחר"""
-        with lock:
-            left = [m for m in queue if m not in launched]
-            if not left:
-                return False
-            if want_fast:
-                pick = [m for m in left if "lite" in m]
-            else:
-                pick = [m for m in left if "lite" not in m] if not launched or "lite" not in launched[-1] else []
-            m = (pick or left)[0]
-            launched.append(m)
-        print("gemini: asking %s (search=%s) at %.1fs" % (m, search, time.time() - t0))
-        threading.Thread(target=worker, args=(m,), daemon=True).start()
-        return True
-
     def running():
         with lock:
             return [m for m in launched if m not in finished]
 
-    launch_next()
+    def launch_next(secondary_first=None):
+        # אחרי 401 אין טעם לפתוח קריאות נוספות: לכל המודלים אותו מפתח API.
+        with _GEMINI_STATE_LOCK:
+            if _GEMINI_AUTH_ERROR:
+                return False
+        with lock:
+            left = [m for m in queue if m not in launched]
+            if not left:
+                return False
+            if secondary_first is True:
+                picks = [m for m in secondary if m in left]
+            elif secondary_first is False:
+                picks = [m for m in primary if m in left]
+            elif not launched:
+                picks = [m for m in primary if m in left]
+            elif not any(m in launched for m in secondary):
+                picks = [m for m in secondary if m in left]
+            else:
+                picks = []
+            m = (picks or left)[0]
+            launched.append(m)
+        print("gemini: asking %s (search=%s) at %.1fs" % (m, search, time.time() - t0))
+        threading.Thread(target=worker, args=(m,), daemon=True, name="gemini-" + re.sub(r"[^a-zA-Z0-9_-]", "", m)).start()
+        return True
+
+    launch_next(False)
     hedge_at = t0 + (DEEP_HEDGE if deep else HEDGE_DELAY)
     deadline = t0 + (DEEP_DEADLINE if deep else GEMINI_DEADLINE)
     while time.time() < deadline:
@@ -1350,11 +1475,11 @@ def gemini(system, contents, search=False, prefer_strong=False, deep=False):
         now_running = running()
         if not now_running:
             if not launch_next():
-                break                       # כל המודלים בתור נכשלו
+                break
             continue
         if time.time() >= hedge_at and len(now_running) < 2:
-            launch_next(want_fast=not deep)  # החזק מתעכב - מצרפים גיבוי (בעבודה יצירתית: עוד מודל חזק, לא מהיר)
-        wake.wait(0.15)
+            launch_next(True)  # גיבוי מהמשפחה השנייה, בלי להמתין לניסיון הראשון עד תום ה-timeout
+        wake.wait(0.12)
         wake.clear()
 
     def strong_still_running():
@@ -1363,16 +1488,20 @@ def gemini(system, contents, search=False, prefer_strong=False, deep=False):
     if answers and prefer_strong and all("lite" in m for m in list(answers)) and strong_still_running():
         end = min(deadline, time.time() + STRONG_GRACE)
         while time.time() < end and strong_still_running() and all("lite" in m for m in list(answers)):
-            time.sleep(0.1)
+            time.sleep(0.08)
     with lock:
-        got = dict(answers)
-        arr = list(arrival)
+        got, arr = dict(answers), list(arrival)
     if got:
         strong_ans = [m for m in arr if "lite" not in m]
         model = strong_ans[0] if (prefer_strong and strong_ans) else arr[0]
         print("gemini: %s answered in %.1fs" % (model, time.time() - t0))
         return got[model]
-    print("Gemini error: no model answered within %.0fs (tried %s)" % (time.time() - t0, ", ".join(launched)))
+    with _GEMINI_STATE_LOCK:
+        auth_error = _GEMINI_AUTH_ERROR
+    if auth_error:
+        print("Gemini stopped after authentication failure; no further model attempts")
+    else:
+        print("Gemini error: no model answered within %.0fs (tried %s)" % (time.time() - t0, ", ".join(launched)))
     return None
 
 
@@ -1523,8 +1652,16 @@ def context_line(assistant):
 
 
 def clean_name(text):
-    name = clean_for_tts(text or "")[:30].strip(" .,-'\"")
-    if not name or len(name.split()) > 3 or any(w in name for w in ("לא ", "אין ", "ברור", "שם פרטי", "הקלטה")):
+    """מנקה תמלול שם, גם כשהמודל החזיר פתיח קצר במקום רק את השם."""
+    name = clean_for_tts(text or "")[:70].strip(" .,-'").strip('"')
+    name = re.sub(r"^(?:שלום|היי|אהלן)[,!.:\s]+", "", name, flags=re.I)
+    name = re.sub(r"^(?:קוראים לי|שמי(?: הוא)?|אני|השם שלי(?: הוא)?|השם הוא)\s+", "", name, flags=re.I)
+    name = re.sub(r"\s+", " ", name).strip(" .,-'").strip('"')
+    bad = {"-", "לא", "לא הבנתי", "לא שמעתי", "לא ברור", "לא יודע", "לא זוכר", "לא רוצה",
+           "אין", "אין לי מושג", "לא ניתן לזהות", "אין מספיק יחידות", "הקלטה לא ברורה"}
+    if (not name or name.lower() in bad or len(name.split()) > 2
+            or any(w in name for w in ("ברור", "שם פרטי", "הקלטה", "יחידות", "לא הבנתי"))
+            or not re.search(r"[א-תA-Za-z]", name)):
         return ""
     return name
 
@@ -1544,17 +1681,27 @@ def transcribe_name(file_name, ext=None, hint=None, info=None):
         print("name recording is empty/silent")
         rec_debug(kind="name", file=file_name, ext=ext, hint=hint, ok=True, audio=audio_info(audio), silent=True)
         info["silent"] = True
-        info["unrecognized"] = True
         return ""
     audio = clean_audio(audio)
-    text = gemini("בהקלטה טלפונית באיכות נמוכה אדם אומר את שמו הפרטי בעברית (שם ישראלי או יהודי נפוץ). "
-                  "החזר רק את השם הפרטי, מילה אחת או שתיים, בלי שום תוספת. אם לא נאמר שם או שלא ברור מה נאמר, החזר רק: -",
-                  [types.Part.from_bytes(data=audio, mime_type="audio/wav")])
+    vocab = (SETTINGS.get("vocab", "") or "").strip()
+    prompt = (
+        "זו הקלטה קצרה משיחת טלפון בעברית. המתקשר התבקש לומר את שמו הפרטי. "
+        "תמלל בזהירות את השם שנאמר בפועל, גם אם ההגייה מעט חלשה. "
+        "החזר רק את השם עצמו, בלי 'קוראים לי', בלי הסברים ובלי סימני פיסוק. "
+        "אפשר להחזיר שם פרטי אחד או שניים. אל תנחש שם שלא נשמע. "
+        "אם אין דיבור ברור או שלא ניתן לזהות את השם, החזר בדיוק מקף: -."
+    )
+    if vocab:
+        prompt += " שמות ומונחים אפשריים לצורך פענוח בלבד: " + vocab[:1200]
+    text = gemini(prompt, [types.Part.from_bytes(data=audio, mime_type="audio/wav")])
     name = clean_name(text)
     if not name:
         info["unrecognized"] = True
-    rec_debug(kind="name", file=file_name, ext=ext, hint=hint, ok=True, audio=audio_info(audio), heard=(text or "")[:60], name=name)
-    return name           # ריק = לא שם: נבקש מהמתקשר לומר שוב
+        info["ai_empty"] = not bool(text)
+    rec_debug(kind="name", file=file_name, ext=ext, hint=hint, ok=True, audio=audio_info(audio),
+              heard=(text or "")[:80], name=name,
+              result="recognized" if name else ("gemini_empty" if not text else "not_a_name"))
+    return name
 
 
 def http_json(url, timeout=8):
@@ -2261,10 +2408,10 @@ BROWSER_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHT
 SEARCH_STATE = {"ground_until": 0, "last": {}}   # מצב כל מקור חיפוש (מוצג בבדיקת המערכת)
 SEARCH_CACHE = {}                                # שאילתה -> (זמן, תוצאות) - חוסך חיפוש כפול על אותה שאלה
 SEARCH_CACHE_TTL = 600
-SEARCH_BUDGET = 30          # שניות מקסימום לכל שלב החיפוש (כדי שהשיחה לא תיפול)
-GROUND_GRACE = 5            # כמה שניות לחכות לחיפוש גוגל לפני שמסתפקים בתשובה מהמנועים החינמיים
-ENGINES_WAIT = 7            # מקסימום שניות למנועי החיפוש החינמיים (בדרך כלל הם חוזרים תוך 2-4 שניות, כי כולם רצים במקביל)
-PAGE_WAIT = 3               # מקסימום שניות לקריאת דף אחד מתוך התוצאות (הדפים נקראים במקביל)
+SEARCH_BUDGET = 18         # תקרת זמן לחיפוש; אחרי זה משתמשים בתוצאה הטובה שכבר זמינה
+GROUND_GRACE = 3            # המתנה קצרה לגוגל לפני הסתמכות על מנועים חינמיים
+ENGINES_WAIT = 4             # מנועי חיפוש חינמיים פועלים במקביל
+PAGE_WAIT = 2                # קריאת דפי מקור במקביל, בלי לעכב את המתקשר
 SKIP_DOMAINS = ("youtube.com", "youtu.be", "facebook.com", "instagram.com", "tiktok.com", "twitter.com", "x.com",
                 "news.google.com", "linkedin.com", "pinterest.")
 NEWS_WORDS = ("חדשות", "מה קרה", "מה חדש", "מה נשמע ב", "עדכון", "עדכונים", "מבזק", "היום", "אתמול", "הלילה", "עכשיו",
@@ -2619,7 +2766,7 @@ def web_search(query, max_results=6):
 
 
 SEARCH_MODEL_UNTIL = {}     # מודל -> זמן שעד אליו לא מנסים בו חיפוש גוגל (המכסה שלו נגמרה)
-GROUND_TOTAL = 26           # שניות מקסימום לכל סבב חיפוש גוגל, על כל המודלים יחד
+GROUND_TOTAL = 14           # תקרת זמן לחיפוש גוגל בכל המודלים יחד
 
 
 def grounded_answer(system, contents):
@@ -2655,6 +2802,10 @@ def grounded_answer(system, contents):
             except Exception as e:
                 msg = str(e)
                 print("google search failed (%s think=%s): %s" % (m, think, msg[:140]))
+                if _is_auth_error(msg):
+                    _note_failure(m, True, msg)
+                    _search_note("google", False, "מפתח Gemini נדחה (401); החיפוש נעצר ללא ניסיונות מיותרים")
+                    return None
                 if "RESOURCE_EXHAUSTED" in msg or "429" in msg[:8] or "quota" in msg.lower():
                     SEARCH_MODEL_UNTIL[m] = time.time() + max(900, _quota_pause(msg))   # רק המודל הזה בהפסקה (מכסה יומית - עד שמתחדשת)
                     _search_note("google", False, "המכסה החינמית של חיפוש גוגל נגמרה זמנית ב-%s" % m)
@@ -3156,7 +3307,6 @@ def msg_part(state, text):
     f = state.pop("tts_file", None)
     if f:
         return ("file", f)
-    # גם כשקול ה-TTS החיצוני אינו זמין, ימות יקבלו רצפי ספרות ארוכים כמילים.
     return ("text", tts_spoken_text(text))
 
 
@@ -3180,8 +3330,7 @@ def menu(state, name, prefix=None):
 
 
 def record(state, val_prefix, message, prefix=None):
-    """בקשת הקלטה מהמתקשר. בימות הערך "no" בשדה 6 של record = אישור מיידי בסולמית, בלי תפריט "לשמיעה הקש 1".
-    אם ההקלטות לא מגיעות לשרת (או INPUT_MODE=stt) - עוברים לזיהוי הדיבור של ימות עצמם, שמחזיר טקסט ישירות"""
+    """בקשת קלט: הקלטת WAV כברירת מחדל; STT של ימות רק בהפעלה מפורשת בהגדרות."""
     if message[0] == "text":
         message = ("text", tts_spoken_text(message[1]))
     if use_stt(state):
@@ -3190,8 +3339,8 @@ def record(state, val_prefix, message, prefix=None):
         state["file"] = None
         if message[0] == "text":
             message = ("text", re.sub(r"[, ]*ובסיום הקש סולמית", ", ובסיום חכה בשקט", message[1]))
-        read = build_read([message], mode="stt", val_name=state["wait"], lang="he-IL", block_typing=False, max_digits="",
-                          use_records_recognition_engine=True, quiet_max=4,
+        read = build_read([message], mode="stt", val_name=state["wait"], lang="", block_typing="", max_digits="",
+                          use_records_recognition_engine="record", quiet_max=4,
                           length_max=int(SETTINGS.get("record_max", 25) or 25))
         if prefix:
             return build_combined_action([build_id_list_message([prefix]), read])
@@ -3251,15 +3400,12 @@ def ai_worker(pending, state, assistant, history, file_name, call_id, voice_idx,
             print("stt heard: %r" % stt_text[:80])
         else:
             transcript, action, answer = ask_ai(assistant, history, file_name, ext, hint, info)
-        if info.get("rec_failed") and SETTINGS.get("input_mode", "auto") == "auto":
-            state["stt"] = True              # ההקלטות לא מגיעות אלינו - מעכשיו בשיחה הזו מדברים והמערכת של ימות מתמללת
-            answer = "לא הצלחתי לשמוע את ההקלטה. נסה שוב, ופשוט דבר ובסיום חכה בשקט"
-            print("input: switching this call to yemot speech recognition")
+        if info.get("rec_failed"):
+            # לא עוברים אוטומטית ל-STT של ימות: זה מסלול נפרד שעלול לצרוך יחידות.
+            print("input: recording download failed; staying in server-transcription mode")
         elif info.get("silent"):
             state["silent_n"] = state.get("silent_n", 0) + 1
-            if state["silent_n"] >= 2 and SETTINGS.get("input_mode", "auto") == "auto":
-                state["stt"] = True          # פעמיים ברצף הקלטה ריקה - כנראה שההקלטה לא נקלטת, עוברים לזיהוי דיבור
-                print("input: two silent recordings in a row, switching this call to yemot speech recognition")
+            print("input: silent recording (%d); asking for another WAV recording" % state["silent_n"])
         elif transcript:
             state["silent_n"] = 0
         if action == "warn":
@@ -3269,9 +3415,9 @@ def ai_worker(pending, state, assistant, history, file_name, call_id, voice_idx,
             action = "none"                 # השיחה ממשיכה כרגיל אחרי האזהרה
             print("warning %d for %s" % (n, state.get("phone", "")))
         state["pending_q"], state["pending_a"] = transcript, answer   # מוצג באתר עוד לפני שהקול מוכן
-        if keep_days() and transcript:
+        if keep_days() and transcript and file_name:
             pending["rec"] = file_name          # ההקלטה נשמרת כמה ימים - אפשר לשמוע אותה באתר
-        elif keep_days():
+        elif keep_days() and file_name:
             _bg(yemot_delete, file_name + ".wav", ext)
         tts = None
         if state.get("kill"):
@@ -3315,11 +3461,17 @@ threading.Thread(target=cleanup_loop, daemon=True).start()
 
 
 def keepalive_loop():
-    url = os.environ.get("RENDER_EXTERNAL_URL", "https://yemot-ai-rey0.onrender.com").rstrip("/") + "/"
+    # לעולם לא פונים כברירת מחדל לשירות Render ישן/אחר.
+    base = (os.environ.get("RENDER_EXTERNAL_URL", "") or "").strip().rstrip("/")
+    if not base:
+        print("keepalive: RENDER_EXTERNAL_URL is not set; self-ping disabled")
+        return
+    url = base + "/"
     while True:
         time.sleep(600)
         try:
-            urllib.request.urlopen(url, timeout=20).read()
+            with urllib.request.urlopen(url, timeout=8) as response:
+                response.read(256)
         except Exception as e:
             print("keepalive error:", str(e)[:80])
 
@@ -3440,24 +3592,27 @@ def yemot_inner():
         if not has_value:
             return R(record(state, "name", ("text", T("ask_name_again"))))
         ninfo = {}
-        if use_stt(state) or not state.get("file"):
+        if use_stt(state):
             name = clean_name(value)
             print("stt name heard: %r -> %r" % (value[:40], name))
-        else:
+        elif state.get("file"):
             name = transcribe_name(state["file"], state.get("ext"), rec_hint(value), ninfo)
+        else:
+            # אין שם קובץ? הערך שמגיע מימות עשוי להיות נתיב הקלטה, לעולם לא שומרים אותו כשם המתקשר.
+            name = ""
+            ninfo["failed"] = True
+            print("name: no recording filename in call state; refusing to store Yemot value as a name")
         if not name:
-            # במצב auto עוברים ל-STT של ימות בכל כשל בזיהוי השם, גם כשהקובץ הגיע
-            # אבל היה שקט או ש-Gemini לא הצליח לזהות את השם (ולא רק כשהקובץ חסר).
-            if SETTINGS.get("input_mode", "auto") == "auto" and not use_stt(state):
-                state["stt"] = True
-                print("input: name was not recognized from recording, switching this call to yemot Hebrew speech recognition")
-                return R(record(state, "name", ("text", T("ask_name_again"))))
             state["name_tries"] = state.get("name_tries", 0) + 1
-            if state["name_tries"] < 3:     # לא הובן - מבקשים שוב (עד פעמיים)
-                # במצב STT ימות עשויה להשמיע הודעת זיהוי כללית; לא מוסיפים הודעת שגיאה כפולה.
-                retry_text = T("ask_name_again") if use_stt(state) else (T("name_not_understood") + " " + T("ask_name_again"))
+            if ninfo.get("failed"):
+                retry_text = "לא הצלחתי לקבל את ההקלטה. " + T("ask_name_again")
+            elif ninfo.get("silent"):
+                retry_text = "לא שמעתי את השם. " + T("ask_name_again")
+            else:
+                retry_text = T("name_not_understood") + " " + T("ask_name_again")
+            if state["name_tries"] < 3:
                 return R(record(state, "name", ("text", retry_text)))
-            return R(menu(state, "אורח"))   # עדיין לא הובן - ממשיכים בלי לשמור, ובשיחה הבאה נשאל שוב
+            return R(menu(state, "אורח"))   # ממשיכים כאורח; הניסיון הבא לשם יהיה בשיחה הבאה
         names[phone] = name
         save_names()
         direct = direct_assistant(state)
@@ -3487,7 +3642,8 @@ def yemot_inner():
             if not has_value or (use_stt(state) and not value):
                 return R(listen(state, T("not_heard")))
             if over_limit(phone):
-                _bg(yemot_delete, state["file"] + ".wav")
+                if state.get("file"):
+                    _bg(yemot_delete, state["file"] + ".wav", state.get("ext"))
                 return R(menu(state, name, prefix=T("limit")))
             pending = {"done": False, "result": None, "started": time.time(), "event": threading.Event()}
             state["pending"] = pending
@@ -3640,7 +3796,8 @@ threading.Thread(target=daily_mail_loop, daemon=True).start()
 def is_admin():
     if not ADMIN_KEY:
         return False
-    return (request.values.get("key") or request.cookies.get("admin_key")) == ADMIN_KEY
+    supplied = str(request.values.get("key") or request.cookies.get("admin_key") or "")
+    return bool(supplied) and hmac.compare_digest(supplied, ADMIN_KEY)
 
 
 def J(data, status=200):
@@ -3658,10 +3815,11 @@ def admin_login():
     key = (request.get_json(silent=True) or {}).get("key") or request.form.get("key", "")
     if not ADMIN_KEY:
         return J({"ok": False, "error": "לא הוגדרה סיסמה (ADMIN_KEY) בשרת"})
-    if key != ADMIN_KEY:
+    if not isinstance(key, str) or not hmac.compare_digest(key, ADMIN_KEY):
         return J({"ok": False, "error": "סיסמה שגויה"})
     resp = J({"ok": True})
-    resp.set_cookie("admin_key", ADMIN_KEY, max_age=60 * 60 * 24 * 180, httponly=True)
+    resp.set_cookie("admin_key", ADMIN_KEY, max_age=60 * 60 * 24 * 180, httponly=True,
+                    secure=(os.environ.get("RENDER_EXTERNAL_URL", "").startswith("https://")), samesite="Lax")
     return resp
 
 
@@ -3747,9 +3905,14 @@ def api_assistants():
     lst = d.get("assistants")
     if not isinstance(lst, list):
         return J({"ok": False, "error": "bad data"})
-    out = []
+    out, used_ids = [], set()
     for a in lst:
+        if not isinstance(a, dict):
+            continue
         aid = re.sub(r"[^a-z0-9_]", "", str(a.get("id", "")).lower()) or ("a" + uuid.uuid4().hex[:6])
+        if aid in used_ids:
+            aid = aid[:40] + "_" + uuid.uuid4().hex[:5]
+        used_ids.add(aid)
         nm = str(a.get("name", "")).strip()[:40]
         pr = str(a.get("prompt", "")).strip()[:2000]
         if not nm or not pr:
@@ -3758,6 +3921,8 @@ def api_assistants():
                     "vocab": str(a.get("vocab", ""))[:1500]})
     if not out:
         return J({"ok": False, "error": "חייב להישאר לפחות עוזר אחד"})
+    if sum(1 for a in out if a.get("on", True)) > 8:
+        return J({"ok": False, "error": "אפשר להפעיל עד שמונה עוזרים בתפריט, כדי שכל השלוחות יהיו נגישות"}, 400)
     ASSISTANTS[:] = out
     save_assistants()
     return J({"ok": True})
@@ -4049,6 +4214,7 @@ def api_diag():
                 return {"ok": False, "seconds": round(time.time() - s, 1), "error": str(e)[:200]}
         return run
     was_paused = SEARCH_STATE["ground_until"]
+    was_model_pauses = dict(SEARCH_MODEL_UNTIL)
     SEARCH_STATE["ground_until"] = 0      # בבדיקה מנסים את חיפוש גוגל גם אם הוא בהפסקה
     SEARCH_MODEL_UNTIL.clear()            # ...ובכל המודלים, כדי לראות אם יש מודל שהחיפוש עדיין זמין בו
     res = run_parallel([
@@ -4059,8 +4225,12 @@ def api_diag():
         timed(lambda: fetch_page_text("https://he.wikipedia.org/wiki/%D7%99%D7%A8%D7%95%D7%A9%D7%9C%D7%99%D7%9D")),
         timed(lambda: transit_lookup("1 | - | - | -")),
     ], 24)
-    if not res[0] or not res[0].get("ok"):
-        SEARCH_STATE["ground_until"] = max(was_paused, SEARCH_STATE["ground_until"])
+    # מחזירים הפסקות קיימות של מודלים, ומשמרים גם הפסקות חדשות שהתגלו בבדיקה.
+    new_model_pauses = dict(SEARCH_MODEL_UNTIL)
+    SEARCH_MODEL_UNTIL.clear()
+    for model, until in {**was_model_pauses, **new_model_pauses}.items():
+        SEARCH_MODEL_UNTIL[model] = max(was_model_pauses.get(model, 0), new_model_pauses.get(model, 0))
+    SEARCH_STATE["ground_until"] = max(was_paused, SEARCH_STATE["ground_until"])
     labels = ["google", "ddg", "bing", "news", "pages", "transit"]
     for k, r in zip(labels, res):
         err = (SEARCH_STATE["last"].get(k) or {}).get("error", "")
@@ -4225,7 +4395,10 @@ def api_rec_debug():
                 files[e_] = r.read().decode("utf-8", "ignore")[:1500]
         except Exception as ex:
             files[e_] = "error: " + str(ex)[:100]
-    return J({"input_mode": SETTINGS.get("input_mode"), "exts": KNOWN_EXTS, "recent": REC_DEBUG[::-1], "files": files})
+    return J({"input_mode": SETTINGS.get("input_mode"),
+              "speech_input": "yemot_stt" if use_stt({}) else "record_then_gemini",
+              "yemot_stt_enabled": use_stt({}), "exts": KNOWN_EXTS,
+              "recent": REC_DEBUG[::-1], "files": files})
 
 
 @app.route("/api/test_hearing", methods=["POST", "GET"])
