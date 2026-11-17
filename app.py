@@ -152,6 +152,7 @@ SETTINGS = {
     "shabbat_after": 50,            # כמה דקות אחרי השקיעה במוצאי שבת/חג הקו נפתח
     "keep_rec_days": 3,             # כמה ימים לשמור את ההקלטות של המתקשרים כדי לשמוע אותן באתר (0 = לא לשמור)
     "transit_added": 0,             # סימון פנימי: עוזר התחבורה כבר נוסף לרשימה (כדי שלא יחזור אם תמחקו אותו)
+    "input_mode": os.environ.get("INPUT_MODE", "auto"),   # איך שומעים את המתקשר: auto (הקלטה, ואם נכשלה - זיהוי דיבור של ימות) / record / stt
 }
 
 # כל הנוסחים שהקו אומר - ניתנים לעריכה באתר הניהול. {name} = שם המתקשר, {assistant} = שם העוזר
@@ -234,15 +235,33 @@ ASSISTANTS = [
                "אל תצטט מילים של שירים - אפשר לתאר על מה השיר ומי כתב והלחין."},
 ]
 
+_OLD_TRANSIT_PROMPTS = (
+    "אתה עוזר לתחבורה ציבורית בישראל, כמו אפליקציית תחבורה: מתי האוטובוס הבא, אילו קווים נוסעים ממקום למקום, מה מגיע לתחנה. "
+    "כל שאלה כאן היא על תחבורה ציבורית, גם אם לא נאמרה המילה אוטובוס. "
+    "אם חסר פרט שבלעדיו אי אפשר לענות (מספר קו, מאיפה, לאן או מספר תחנה), שאל עליו במשפט קצר אחד. "
+    "בתשובה: קודם בעוד כמה דקות מגיע או יוצא האוטובוס הקרוב, ואחר כך הבאים אחריו.",
+)
+TRANSIT_HINT = "אמור איפה אתה נמצא, רחוב ועיר או מספר תחנה, ולאן אתה רוצה להגיע"
 TRANSIT_ASSISTANT = {
     "id": "transit", "name": "העוזר לתחבורה ציבורית", "on": True, "keywords": "תחבורה, אוטובוס, אוטובוסים, קווים",
     "vocab": "בני ברק, ירושלים, תל אביב, אלעד, בית שמש, מודיעין עילית, ביתר עילית, פתח תקווה, רמת גן, אשדוד, חיפה, צפת, טבריה, "
-             "תחנה מרכזית, קו, תחנה, אגד, דן, אקסטרה, אלקטרה אפיקים, מטרופולין, קווים",
-    "prompt": "אתה עוזר לתחבורה ציבורית בישראל, כמו אפליקציית תחבורה: מתי האוטובוס הבא, אילו קווים נוסעים ממקום למקום, מה מגיע לתחנה. "
-              "כל שאלה כאן היא על תחבורה ציבורית, גם אם לא נאמרה המילה אוטובוס. "
-              "אם חסר פרט שבלעדיו אי אפשר לענות (מספר קו, מאיפה, לאן או מספר תחנה), שאל עליו במשפט קצר אחד. "
-              "בתשובה: קודם בעוד כמה דקות מגיע או יוצא האוטובוס הקרוב, ואחר כך הבאים אחריו.",
+             "תחנה מרכזית, קו, תחנה, אגד, דן, אקסטרה, אלקטרה אפיקים, מטרופולין, רחוב, שדרות, כיכר, צומת, רבי עקיבא, ז'בוטינסקי, "
+             "הרצל, בן יהודה, יפו, קינג ג'ורג', שבטי ישראל",
+    "prompt": "אתה עוזר לתחבורה ציבורית בישראל, כמו אפליקציית תחבורה. אתה עוזר למי שאומר איפה הוא נמצא (רחוב, שכונה, מוסד, תחנה או מספר תחנה) "
+              "ולאן הוא רוצה להגיע: מה המסלול, אילו קווים לקחת, איפה לעלות, בעוד כמה דקות הקו יוצא, איפה לרדת והאם יש החלפה. "
+              "וגם מתי מגיע קו מסוים או מה מגיע לתחנה. כל שאלה כאן היא על תחבורה ציבורית, גם בלי המילה אוטובוס. "
+              "בשאלה על הגעה ממקום למקום, על קו או על תחנה - בשורת החיפוש כתוב תמיד תחבורה: עם הפרטים, ולעולם אל תענה בלי חיפוש. "
+              "אם חסר המוצא או היעד, שאל במשפט קצר אחד, והזכר שכדאי לומר גם את שם העיר. "
+              "אחרי שנתת מסלול אפשר להציע לחפש מסלול אחר.",
 }
+
+
+def enter_text(a, name):
+    t = T("enter", assistant=a["name"], name=name)
+    if a.get("id") == "transit":
+        t += ". " + TRANSIT_HINT
+    return t
+
 
 names = {}        # טלפון -> שם
 voices = {}       # טלפון -> מספר קול מועדף
@@ -310,7 +329,7 @@ def clean_for_tts(text):
     text = re.sub(r"[*_#`>\[\]]", "", text or "")
     text = text.replace("\n", ", ")
     text = re.sub(r"\s+", " ", text).strip()
-    return text[:700]
+    return text[:850]
 
 
 def csv_list(s):
@@ -345,6 +364,12 @@ def assistant_by_id(aid):
 def is_free(phone):
     """האם המספר מוחרג מסינון השפה"""
     return phone in csv_list(SETTINGS.get("nofilter_phones", ""))
+
+
+def use_stt(state):
+    """האם השיחה הזו מקבלת קלט בזיהוי דיבור של ימות (טקסט) ולא כהקלטה"""
+    mode = SETTINGS.get("input_mode", "auto")
+    return mode == "stt" or (mode == "auto" and bool(state.get("stt")))
 
 
 def with_filter(assistant, phone):
@@ -407,6 +432,15 @@ def yemot_download(file_name, ext=None, full_path=None):
             return data
         last = RuntimeError("file not found at " + p)
     raise last or RuntimeError("download failed")
+
+
+REC_DEBUG = []     # הקלטות אחרונות: מה ימות החזירו, מה הורד, מה הובן - לבדיקה בכתובת /api/rec_debug
+
+
+def rec_debug(**kw):
+    kw["time"] = now_str()
+    REC_DEBUG.append(kw)
+    del REC_DEBUG[:-25]
 
 
 def fetch_recording(file_name, ext=None, hint=None, tries=4):
@@ -604,6 +638,13 @@ load_all()
 def ensure_transit_assistant():
     """מוסיף את עוזר התחבורה (שלוחה 8 בתפריט) לרשימה, פעם אחת. אם מחקתם אותו באתר הניהול - הוא לא יחזור"""
     try:
+        for a_ in ASSISTANTS:
+            if a_.get("id") == "transit" and a_.get("prompt") in _OLD_TRANSIT_PROMPTS:
+                a_["prompt"] = TRANSIT_ASSISTANT["prompt"]          # שדרוג העוזר הישן למתכנן המסלולים (רק אם לא שיניתם אותו בעצמכם)
+                a_["vocab"] = TRANSIT_ASSISTANT["vocab"]
+                if YEMOT_TOKEN:
+                    save_assistants()
+                print("assistants: upgraded the public transit assistant")
         if SETTINGS.get("transit_added") or any(a.get("id") == "transit" for a in ASSISTANTS):
             return
         ASSISTANTS.append(dict(TRANSIT_ASSISTANT))
@@ -1460,25 +1501,36 @@ def context_line(assistant):
     return line
 
 
-def transcribe_name(file_name, ext=None, hint=None):
+def clean_name(text):
+    name = clean_for_tts(text or "")[:30].strip(" .,-'\"")
+    if not name or len(name.split()) > 3 or any(w in name for w in ("לא ", "אין ", "ברור", "שם פרטי", "הקלטה")):
+        return ""
+    return name
+
+
+def transcribe_name(file_name, ext=None, hint=None, info=None):
+    info = info if info is not None else {}
     try:
         audio = fetch_recording(file_name, ext, hint)
     except Exception as e:
         print("name: recording %s was not found in yemot (ext=%s, hint=%s): %s" % (file_name, ext, hint, str(e)[:100]))
+        rec_debug(kind="name", file=file_name, ext=ext, hint=hint, ok=False, error=str(e)[:150])
+        info["failed"] = True
         return ""
     print("name recording: " + audio_info(audio))
     _bg(yemot_delete, file_name + ".wav", ext)
     if is_silent(audio):
         print("name recording is empty/silent")
+        rec_debug(kind="name", file=file_name, ext=ext, hint=hint, ok=True, audio=audio_info(audio), silent=True)
+        info["silent"] = True
         return ""
     audio = clean_audio(audio)
     text = gemini("בהקלטה טלפונית באיכות נמוכה אדם אומר את שמו הפרטי בעברית (שם ישראלי או יהודי נפוץ). "
                   "החזר רק את השם הפרטי, מילה אחת או שתיים, בלי שום תוספת. אם לא נאמר שם או שלא ברור מה נאמר, החזר רק: -",
                   [types.Part.from_bytes(data=audio, mime_type="audio/wav")])
-    name = clean_for_tts(text or "")[:30].strip(" .,-'\"")
-    if not name or len(name.split()) > 3 or any(w in name for w in ("לא ", "אין ", "ברור", "שם פרטי", "הקלטה")):
-        return ""             # לא שם - נבקש מהמתקשר לומר שוב
-    return name
+    name = clean_name(text)
+    rec_debug(kind="name", file=file_name, ext=ext, hint=hint, ok=True, audio=audio_info(audio), heard=(text or "")[:60], name=name)
+    return name           # ריק = לא שם: נבקש מהמתקשר לומר שוב
 
 
 def http_json(url, timeout=8):
@@ -1910,6 +1962,229 @@ def transit_by_places(frm, to):
     return "\n".join(out)
 
 
+
+# ---- מתכנן מסלולים: "אני ברחוב X ורוצה להגיע לרחוב Y" -> אילו קווים, איפה עולים, בעוד כמה דקות, איפה יורדים, החלפות
+# המקומות מתאתרים עם OpenStreetMap (Nominatim), והמסלול מחושב עם Transitous (מנוע MOTIS פתוח שעובד על לוחות הזמנים הרשמיים
+# של משרד התחבורה). שניהם חינמיים וללא מפתח. הלוח הוא לוח הזמנים, לא מיקום האוטובוס בזמן אמת.
+MOTIS_API = "https://api.transitous.org"
+NOMINATIM_API = "https://nominatim.openstreetmap.org"
+GEO_CACHE = {}
+ROUTE_WORDS = ("להגיע", "מגיע", "מגיעים", "לנסוע", "נוסע", "נוסעים", "מסלול", "איך מגיעים", "איך אני מגיע", "אני בתחנה",
+               "אני ברחוב", "אני נמצא", "אני עומד", "רוצה ל", "מעוניין ל", "צריך ל", "ללכת", "איך אפשר")
+
+
+def _contact():
+    return os.environ.get("RENDER_EXTERNAL_URL") or MAIL_USER or "https://yemot-ai-line.onrender.com"
+
+
+def _ua():
+    return "YemotAILine/1.0 (+%s)" % _contact()
+
+
+def _json_get(url, timeout=8):
+    req = urllib.request.Request(url, headers={"User-Agent": _ua(), "Accept": "application/json", "Accept-Language": "he"})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return json.loads(r.read().decode("utf-8", "ignore"))
+
+
+def _hebrew_cities():
+    return {_tnorm(k) for k in CITIES if re.search(r"[א-ת]", k)}
+
+
+def _is_specific(place):
+    """האם המקום הוא לא סתם עיר (רחוב, שכונה, תחנה, מוסד...) - אז צריך מסלול מדויק ולא רשימת קווים בין ערים"""
+    return _tnorm(place) not in _hebrew_cities()
+
+
+def _has_city(text):
+    t = _tnorm(text)
+    return any(c and c in t for c in _hebrew_cities())
+
+
+def _strip_street_word(s):
+    return re.sub(r"^(?:ברחוב|רחוב|בשדרות|שדרות|בשד'|שד'|בכיכר|כיכר|ב|ל|אל|מ)\s+", "", (s or "").strip())
+
+
+def geocode_address(text, near=None):
+    """(קו רוחב, קו אורך, שם להקראה) או None. near=(lat, lon) נותן עדיפות לתוצאות קרובות"""
+    key = ((text or "").strip().lower(), tuple(round(x, 2) for x in near) if near else None)
+    if key in GEO_CACHE:
+        return GEO_CACHE[key]
+    res = None
+    q = (text or "").strip()
+    if not q:
+        return None
+    try:
+        p = {"q": q + ", ישראל", "format": "jsonv2", "limit": 3, "countrycodes": "il", "accept-language": "he"}
+        if near:
+            p["viewbox"] = "%.4f,%.4f,%.4f,%.4f" % (near[1] - 0.25, near[0] + 0.25, near[1] + 0.25, near[0] - 0.25)
+            p["bounded"] = 0
+        arr = _json_get(NOMINATIM_API + "/search?" + urllib.parse.urlencode(p), timeout=7)
+        if arr:
+            r = arr[0]
+            label = ", ".join(x.strip() for x in (r.get("display_name") or q).split(",")[:2])
+            res = (float(r["lat"]), float(r["lon"]), label)
+    except Exception as e:
+        print("geocode (nominatim) error:", str(e)[:100])
+    if not res:
+        try:
+            p = {"text": q, "language": "he"}
+            if near:
+                p["place"] = "%.5f,%.5f" % near
+            arr = _json_get(MOTIS_API + "/api/v1/geocode?" + urllib.parse.urlencode(p), timeout=7)
+            if isinstance(arr, list) and arr:
+                r = arr[0]
+                res = (float(r["lat"]), float(r["lon"]), str(r.get("name") or q))
+        except Exception as e:
+            print("geocode (motis) error:", str(e)[:100])
+    if res:
+        GEO_CACHE[key] = res
+        if len(GEO_CACHE) > 500:
+            GEO_CACHE.clear()
+    return res
+
+
+def stop_coords(code):
+    """מיקום תחנה לפי המספר שעל השלט (5 ספרות): (lat, lon, שם) או None"""
+    try:
+        now = _il_aware()
+        for days in TRANSIT_SHIFTS:
+            d = (now - datetime.timedelta(days=days)).strftime("%Y-%m-%d")
+            rows = stride_get("/gtfs_stops/list", {"code": code, "date_from": d, "date_to": d, "limit": 3}, timeout=8)
+            if rows and rows[0].get("lat") is not None and rows[0].get("lon") is not None:
+                r = rows[0]
+                return (float(r["lat"]), float(r["lon"]), "תחנה %s, %s, %s" % (code, r.get("name", ""), r.get("city", "")))
+    except Exception as e:
+        print("stop coords error:", str(e)[:100])
+    return None
+
+
+def _to_dt(v):
+    """זמן מ-MOTIS (טקסט ISO או מספר) -> שעון ישראל"""
+    if v in (None, ""):
+        return None
+    try:
+        if isinstance(v, (int, float)):
+            d = datetime.datetime.fromtimestamp(v / 1000.0 if v > 1e11 else v, datetime.timezone.utc)
+        else:
+            d = datetime.datetime.fromisoformat(str(v).replace("Z", "+00:00"))
+            if d.tzinfo is None:
+                d = d.replace(tzinfo=datetime.timezone.utc)
+        return d.astimezone(ZoneInfo("Asia/Jerusalem"))
+    except Exception:
+        return None
+
+
+MODE_HE = {"BUS": "אוטובוס", "COACH": "אוטובוס", "RAIL": "רכבת", "REGIONAL_RAIL": "רכבת", "HIGHSPEED_RAIL": "רכבת", "LONG_DISTANCE": "רכבת",
+           "NIGHT_RAIL": "רכבת", "SUBWAY": "רכבת קלה או מטרו", "TRAM": "רכבת קלה", "FERRY": "מעבורת", "FUNICULAR": "פוניקולר",
+           "CABLE_CAR": "רכבל", "GONDOLA": "רכבל", "SUBURBAN": "רכבת", "METRO": "מטרו", "TRANSIT": "תחבורה ציבורית"}
+
+
+def _leg_time(leg, key):
+    place = leg.get("from" if key == "start" else "to") or {}
+    v = (place.get("departure") if key == "start" else place.get("arrival")) or leg.get("startTime" if key == "start" else "endTime")
+    return _to_dt(v) or _to_dt(leg.get("startTime" if key == "start" else "endTime"))
+
+
+def format_itineraries(data, now, limit=3):
+    its = (data or {}).get("itineraries") or []
+    lines = []
+    for i, it in enumerate(its[:limit], 1):
+        legs = it.get("legs") or []
+        st, en = _to_dt(it.get("startTime")), _to_dt(it.get("endTime"))
+        transit = [l for l in legs if (l.get("mode") or "WALK") not in ("WALK", "BIKE", "CAR", "RENTAL", "FLEX")]
+        dur = int(round((it.get("duration") or ((en - st).total_seconds() if st and en else 0)) / 60.0)) if (it.get("duration") or (st and en)) else 0
+        head = "אפשרות %d: " % i
+        if not transit:
+            walk_min = int(round(sum((l.get("duration") or 0) for l in legs) / 60.0)) or dur
+            lines.append(head + "ללכת ברגל בלבד, כ-%d דקות." % walk_min)
+            continue
+        first = transit[0]
+        board = _leg_time(first, "start")
+        eta = _eta(board.isoformat(), now) if board else ""
+        head += "יוצאים לדרך בשעה %s" % (st.strftime("%H:%M") if st else "?")
+        if st:
+            e2 = _eta(st.isoformat(), now)
+            head += " (%s)" % e2 if e2 else ""
+        head += ", מגיעים בשעה %s, סך הכל %d דקות, " % (en.strftime("%H:%M") if en else "?", dur)
+        head += "בלי החלפות." if len(transit) == 1 else ("החלפה אחת." if len(transit) == 2 else "%d החלפות." % (len(transit) - 1))
+        lines.append(head)
+        for leg in legs:
+            mode = leg.get("mode") or "WALK"
+            a, b = leg.get("from") or {}, leg.get("to") or {}
+            if mode in ("WALK", "BIKE", "CAR", "RENTAL", "FLEX"):
+                mins = int(round((leg.get("duration") or 0) / 60.0))
+                if mins >= 1:
+                    lines.append("  - הליכה כ-%d דקות%s." % (mins, (" עד " + (b.get("name") or "")) if b.get("name") and b.get("name") not in ("END", "destination") else ""))
+                continue
+            name = (leg.get("routeShortName") or leg.get("displayName") or "").strip()
+            kind = MODE_HE.get(mode, "קו")
+            who = ("קו %s" % name) if (name and kind == "אוטובוס") else (("%s %s" % (kind, name)) if name else kind)
+            agency = leg.get("agencyName") or ""
+            t_on, t_off = _leg_time(leg, "start"), _leg_time(leg, "end")
+            on_eta = _eta(t_on.isoformat(), now) if t_on else ""
+            stops = len(leg.get("intermediateStops") or [])
+            seg = "  - %s%s" % (who, (" של " + agency) if agency else "")
+            if leg.get("headsign"):
+                seg += " לכיוון %s" % leg["headsign"]
+            seg += ": עולים בתחנה %s בשעה %s%s" % (a.get("name", ""), t_on.strftime("%H:%M") if t_on else "?", (" (%s)" % on_eta) if on_eta else "")
+            seg += ", יורדים בתחנה %s בשעה %s" % (b.get("name", ""), t_off.strftime("%H:%M") if t_off else "?")
+            if stops:
+                seg += " (%d תחנות)" % (stops + 1)
+            if leg.get("realTime"):
+                seg += " [זמן אמת]"
+            lines.append(seg + ".")
+    return "\n".join(lines)
+
+
+def motis_plan(src, dst, when, n=3):
+    p = {"fromPlace": "%.6f,%.6f" % (src[0], src[1]), "toPlace": "%.6f,%.6f" % (dst[0], dst[1]), "time": when.isoformat(),
+         "arriveBy": "false", "numItineraries": n, "maxTransfers": 3, "detailedTransfers": "false",
+         "maxPreTransitTime": 1500, "maxPostTransitTime": 1500}
+    return _json_get(MOTIS_API + "/api/v5/plan?" + urllib.parse.urlencode(p), timeout=14)
+
+
+def transit_route(p):
+    """מסלול מנקודה לנקודה. p: מילון מ-parse_transit (stop = מספר תחנה, from/to = רחוב/מקום/עיר)"""
+    now = _il_aware()
+    default_city = SETTINGS.get("shabbat_city") or "בני ברק"
+    city_geo = place_of("")
+    near = (city_geo[1], city_geo[2])
+    frm_txt, to_txt = _strip_street_word(p.get("from", "")), _strip_street_word(p.get("to", ""))
+    if not to_txt or not (frm_txt or p.get("stop")):
+        return None
+
+    def with_city(t, other=""):
+        if _has_city(t) or "," in t:
+            return t
+        c = default_city
+        for k in sorted({k for k in CITIES if re.search(r"[א-ת]", k)}, key=len, reverse=True):
+            if other and _tnorm(k) in _tnorm(other):
+                c = k
+                break
+        return "%s, %s" % (t, c)
+
+    def get_src():
+        if p.get("stop"):
+            return stop_coords(p["stop"])
+        return geocode_address(with_city(frm_txt), near)
+    res = run_parallel([get_src, lambda: geocode_address(with_city(to_txt, frm_txt), near)], 10)
+    src, dst = res[0], res[1]
+    if not src:
+        return ("לא הצלחתי לאתר את נקודת המוצא (%s). בקש מהמתקשר לומר שוב את שם הרחוב ואת שם העיר, או את מספר התחנה."
+                % (("תחנה " + p["stop"]) if p.get("stop") else frm_txt))
+    if not dst:
+        return "לא הצלחתי לאתר את היעד (%s). בקש מהמתקשר לומר שוב את שם הרחוב ואת שם העיר." % to_txt
+    t0 = time.time()
+    data = motis_plan(src, dst, now)
+    print("timing: motis plan %.1fs" % (time.time() - t0))
+    body = format_itineraries(data, now)
+    head = "מסלול מ%s אל %s. השעה עכשיו: %s. לפי לוח הזמנים הרשמי (לא מיקום האוטובוס בזמן אמת)." % (src[2], dst[2], now.strftime("%H:%M"))
+    if not body:
+        return head + " לא נמצא מסלול בתחבורה ציבורית בשעה הקרובה בין שני המקומות."
+    return head + "\n" + body
+
+
 def transit_lookup(spec, transcript=""):
     """מחזיר טקסט עם נתוני תחבורה ציבורית, או None אם אין מספיק פרטים / לא נמצא"""
     p = parse_transit(spec, transcript)
@@ -1920,12 +2195,24 @@ def transit_lookup(spec, transcript=""):
     t0 = time.time()
     res = None
     try:
-        if p["stop"]:
-            res = transit_by_stop(p["stop"], p["line"], p["to"])
+        route_first = (p["stop"] and p["to"] and not p["line"]) or \
+                      (p["from"] and p["to"] and not p["line"] and (_is_specific(p["from"]) or _is_specific(p["to"])))
+        if route_first:
+            try:
+                res = transit_route(p)         # "אני בתחנה/ברחוב X ורוצה להגיע ל-Y"
+            except Exception as e:
+                print("transit route error:", str(e)[:150])
+        if not res and p["stop"]:
+            res = transit_by_stop(p["stop"], p["line"], p["to"] if not route_first else "")
         if not res and p["line"]:
             res = transit_by_line(p["line"], p["from"], p["to"])
         if not res and p["from"] and p["to"]:
             res = transit_by_places(p["from"], p["to"])
+            if not res and not route_first:
+                try:
+                    res = transit_route(p)
+                except Exception as e:
+                    print("transit route error:", str(e)[:150])
         _search_note("transit", bool(res), "" if res else "לא נמצא במאגר: %s" % key)
     except Exception as e:
         _search_note("transit", False, e)
@@ -2402,7 +2689,7 @@ def answer_with_search(assistant, history, transcript, search_line="", query="")
     if "תחבור" in search_line:
         spec = search_line.split(":", 1)[1].strip() if ":" in search_line else ""
         try:
-            tr = call_with_deadline(lambda: transit_lookup(spec, transcript), 12)
+            tr = call_with_deadline(lambda: transit_lookup(spec, transcript), 20)
         except Exception as e:
             print("transit step error:", str(e)[:120])
             tr = None
@@ -2412,6 +2699,9 @@ def answer_with_search(assistant, history, transcript, search_line="", query="")
                             " פתח באוטובוס הקרוב ביותר ואמור בעוד כמה דקות הוא (למשל: קו ארבע מאות ושתיים יוצא בעוד שבע דקות, בשעה שלוש ושלושים וחמש),"
                             " ואחריו עוד שעה או שתיים, לא יותר."
                             " אם יש כמה כיוונים או כמה קווים ולא ברור לאיזה המתקשר התכוון, אמור את העיקר ושאל בקצרה לאיזה כיוון."
+                            " אם קיבלת מסלול (אפשרות 1, אפשרות 2...): תאר קודם את האפשרות הטובה ביותר, בסדר הנסיעה: מאיפה הולכים ולאיזו תחנה, איזה קו לקחת ולאיזה כיוון,"
+                            " בעוד כמה דקות הוא יוצא, איפה יורדים, האם יש החלפה, ובאיזו שעה מגיעים. הצע אפשרות שנייה בקצרה רק אם היא באמת שונה."
+                            " את מספרי הקווים הקרא כמילים. לסיום אפשר לשאול אם לחפש מסלול אחר."
                             " ציין במילים ספורות שאלו זמנים לפי לוח הזמנים הרשמי, ושייתכנו עיכובים. קצר ומתאים להקראה בטלפון.")
             ans = gemini(sys_t, list(history) + [{"role": "user", "parts": [{"text": "השאלה: %s\nהשעה עכשיו: %s\n\nנתוני תחבורה:\n%s" % (
                 transcript, il_now().strftime("%H:%M"), tr)}]}], prefer_strong=True)
@@ -2578,10 +2868,17 @@ CHAT_INTRO_TEXT = (
 )
 
 
-def _chat_system_base(assistant, from_text=False):
+CHAT_INTRO_STT = (
+        " תקבל את מה שהמשתמש אמר עכשיו בטלפון, כטקסט שתומלל אוטומטית על ידי מערכת זיהוי דיבור. בתמלול יש לפעמים טעויות,"
+        " מילים שגויות או חסרות. השתמש בהקשר של השיחה ובתחום של העוזר כדי להבין למה התכוון, ואם משהו באמת לא ברור - בקש שיחזור."
+        " סדר העבודה: קודם הבן מה בדיוק נשאל, ורק אז ענה - על זה ולא על משהו אחר. בשורת התמלול כתוב את הטקסט המתוקן."
+)
+
+
+def _chat_system_base(assistant, from_text=False, stt=False):
     """ההנחיות לבינה בשיחה - אותן הנחיות בדיוק לטלפון ולבדיקה מאתר הניהול. רק הפתיחה שונה (הקלטה / טקסט)"""
     others = "; ".join("%s = %s (מילים: %s)" % (a["id"], a["name"], a.get("keywords", "")) for _, a in active_assistants() if a["id"] != assistant["id"])
-    return assistant["prompt"] + rules_for(assistant) + context_line(assistant) + (CHAT_INTRO_TEXT if from_text else CHAT_INTRO_AUDIO) + (
+    return assistant["prompt"] + rules_for(assistant) + context_line(assistant) + (CHAT_INTRO_STT if stt else (CHAT_INTRO_TEXT if from_text else CHAT_INTRO_AUDIO)) + (
         " ענה בדיוק בפורמט הבא, ארבע שורות:\n"
         "תמלול: <תמלול מדויק של ההקלטה>\n"
         "פעולה: <אחת מהאפשרויות: none | menu | end | voice | warn | switch:מזהה>\n"
@@ -2590,7 +2887,9 @@ def _chat_system_base(assistant, from_text=False):
         " זמנים = כל שאלה על זמני היום: שקיעה, זריחה, נץ, סוף זמן קריאת שמע ותפילה, חצות, מנחה, פלג המנחה, צאת הכוכבים,"
         " הדלקת נרות, כניסת ויציאת שבת או חג. למשל: זמנים: ירושלים | מחר. אם לא נאמרה עיר כתוב: זמנים: - | היום."
         " תחבורה = כל שאלה על אוטובוסים: מתי יוצא קו, מתי מגיע, אילו קווים נוסעים ממקום למקום, מה מגיע לתחנה."
-        " כתוב ארבעה חלקים מופרדים בקו |, שמות ערים בעברית כמו שכותבים אותם, ובמקום פרט שלא נאמר כתוב -."
+        " כתוב ארבעה חלקים מופרדים בקו |: מספר קו | מוצא | יעד | מספר תחנה, ובמקום פרט שלא נאמר כתוב -."
+        " מוצא ויעד יכולים להיות עיר, או רחוב ועיר, שכונה, מוסד או מקום, בעברית כמו שנאמרו (למשל: רבי עקיבא בני ברק)."
+        " אם אמר שהוא נמצא בתחנה עם מספר - המספר בשדה התחנה, והיעד בשדה היעד. שאלות הגעה ממקום למקום הן תמיד תחבורה."
         " מספר תחנה הוא המספר של 5 ספרות שכתוב על שלט התחנה. דוגמאות: תחבורה: 402 | בני ברק | ירושלים | -"
         " או: תחבורה: - | - | - | 21345 או: תחבורה: - | אלעד | בני ברק | -."
         " כן = כשהתשובה דורשת חיפוש באינטרנט: המשתמש ביקש לחפש או לבדוק, או שצריך מידע עדכני - מחירים, חדשות, רכבות,"
@@ -2608,11 +2907,37 @@ def _chat_system_base(assistant, from_text=False):
     )
 
 
-def chat_system(assistant, from_text=False):
-    s = _chat_system_base(assistant, from_text)
+def chat_system(assistant, from_text=False, stt=False):
+    s = _chat_system_base(assistant, from_text, stt)
     if assistant.get("free"):
         s += " הפעולה warn אסורה עבור המתקשר הזה: לעולם אל תבחר בה ואל תזהיר אותו, וענה על מה שנשאל כרגיל, בחופשיות."
     return s
+
+
+def extract_route(transcript, history=None):
+    """מחלץ מוצא ויעד מהמשפט כשהבינה לא מילאה אותם. מחזיר 'קו | מוצא | יעד | תחנה' או None"""
+    try:
+        ctx = ""
+        for h in (history or [])[-4:]:
+            try:
+                ctx += "%s: %s\n" % ("המתקשר" if h.get("role") == "user" else "העוזר", h["parts"][0]["text"])
+            except Exception:
+                pass
+        sys_e = ("מתוך מה שאמר המתקשר, חלץ פרטי נסיעה בתחבורה ציבורית. החזר JSON בלבד, בלי הסברים, במבנה: "
+                 '{"line": "", "from": "", "to": "", "stop": ""}. '
+                 "line = מספר קו אם נאמר. from = מקום המוצא (רחוב ועיר, שכונה, מוסד), בלי המילים 'אני ב'. to = היעד. "
+                 "stop = מספר תחנה של 5 ספרות אם נאמר (כשהמתקשר אומר שהוא בתחנה עם מספר). שדה שלא נאמר - מחרוזת ריקה. "
+                 "אם הפרטים חסרים בשיחה הנוכחית, השלם אותם מההקשר הקודם.")
+        raw = gemini(sys_e, [{"role": "user", "parts": [{"text": (ctx + "המתקשר אמר עכשיו: " + transcript)}]}])
+        m = re.search(r"\{.*\}", raw or "", re.S)
+        d = json.loads(m.group(0)) if m else {}
+        line, frm, to, stop = (str(d.get(k) or "").strip() for k in ("line", "from", "to", "stop"))
+        if not (line or stop or (frm and to)):
+            return None
+        return " | ".join(x or "-" for x in (line, frm, to, stop))
+    except Exception as e:
+        print("extract route error:", str(e)[:120])
+        return None
 
 
 def finish_answer(assistant, history, raw, info=None, known=""):
@@ -2648,11 +2973,18 @@ def finish_answer(assistant, history, raw, info=None, known=""):
         if tp["line"] or tp["stop"]:
             need_search = True    # שאלה על קו או תחנה - קודם מאגר התחבורה, גם אם הבינה סימנה חיפוש רגיל
             search_line = "תחבורה: "
-    if assistant.get("id") == "transit" and transcript and action == "none" and "תחבור" not in search_line:
-        tp = parse_transit("", transcript)
-        if tp["line"] or tp["stop"] or (tp["from"] and tp["to"]):
-            need_search = True    # בעוזר התחבורה כל שאלה עם קו, תחנה או מסלול הולכת ישר למאגר
-            search_line = "תחבורה: "
+    if assistant.get("id") == "transit" and transcript and action == "none":
+        spec_given = ("תחבור" in search_line) and any(c not in " -|" for c in search_line.split(":", 1)[-1])
+        if not spec_given:
+            tp = parse_transit("", transcript)
+            if tp["line"] or tp["stop"] or (tp["from"] and tp["to"]):
+                need_search = True    # בעוזר התחבורה כל שאלה עם קו, תחנה או מסלול הולכת ישר למאגר
+                search_line = "תחבורה: "
+            elif any(w in transcript for w in ROUTE_WORDS) or "תחנה" in transcript:
+                spec2 = extract_route(transcript, history)
+                if spec2:
+                    need_search = True
+                    search_line = "תחבורה: " + spec2
     if transcript and action == "none" and "תחבור" not in search_line and "זמנים" not in search_line and "מזג" not in search_line \
             and any(w in transcript for w in ZMANIM_WORDS):
         need_search = True        # שאלה על זמני היום - עונים מחישוב מדויק, לא מהזיכרון של הבינה
@@ -2715,28 +3047,34 @@ def search_kind(search_line):
     return "חיפוש באינטרנט"
 
 
-def ask_ai_text(assistant, history, text, info=None):
-    """בדיקה מאתר הניהול: אותה בינה, אותן הנחיות ואותו חיפוש כמו בטלפון - רק שהשאלה מגיעה כטקסט ולא כהקלטה"""
+def ask_ai_text(assistant, history, text, info=None, stt=False):
+    """בדיקה מאתר הניהול (או קלט מזיהוי הדיבור של ימות): אותה בינה, אותן הנחיות ואותו חיפוש כמו בהקלטה"""
     contents = list(history) + [{"role": "user", "parts": [{"text": text}]}]
-    raw = gemini(chat_system(assistant, from_text=True), contents, prefer_strong=True)
+    raw = gemini(chat_system(assistant, from_text=True, stt=stt), contents, prefer_strong=True)
     if not raw:
         return text, "none", T("error")
     return finish_answer(assistant, history, raw, info, known=text)
 
 
-def ask_ai(assistant, history, file_name, ext=None, hint=None):
-    """מחזיר (תמלול, פעולה, תשובה). פעולה: none / menu / end / voice / warn / switch:id"""
+def ask_ai(assistant, history, file_name, ext=None, hint=None, info=None):
+    """מחזיר (תמלול, פעולה, תשובה). פעולה: none / menu / end / voice / warn / switch:id.
+    info (מילון): rec_failed = ההקלטה לא נמצאה בימות, silent = ההקלטה ריקה"""
+    info = info if info is not None else {}
     t0 = time.time()
     try:
         audio = fetch_recording(file_name, ext, hint)
     except Exception as e:
         print("recording %s was not found in yemot (ext=%s, hint=%s): %s" % (file_name, ext, hint, str(e)[:100]))
+        rec_debug(kind="chat", file=file_name, ext=ext, hint=hint, ok=False, error=str(e)[:150])
+        info["rec_failed"] = True
         return "", "none", "סליחה, לא הצלחתי לשמוע את ההקלטה. נסה שוב."
     print("timing: download %.1fs - %s" % (time.time() - t0, audio_info(audio)))
     if keep_days() == 0:
         _bg(yemot_delete, file_name + ".wav", ext)      # אחרת ההקלטה נשמרת כמה ימים, כדי שאפשר יהיה לשמוע אותה באתר
     if is_silent(audio):
         print("recording is empty/silent - answering at once without AI")
+        rec_debug(kind="chat", file=file_name, ext=ext, hint=hint, ok=True, audio=audio_info(audio), silent=True)
+        info["silent"] = True
         return "", "none", T("not_heard")
     t0 = time.time()
     audio = clean_audio(audio)     # סינון רעשים והגברה - ה-AI שומע הרבה יותר טוב ומבין נכון את השאלה
@@ -2751,8 +3089,11 @@ def ask_ai(assistant, history, file_name, ext=None, hint=None):
     raw = gemini(system, contents, prefer_strong=True)
     print("timing: gemini(audio) %.1fs" % (time.time() - t0))
     if not raw:
+        rec_debug(kind="chat", file=file_name, ext=ext, hint=hint, ok=True, audio=audio_info(audio), heard="(Gemini לא ענה)")
         return "", "none", T("error")
-    return finish_answer(assistant, history, raw)
+    out = finish_answer(assistant, history, raw)
+    rec_debug(kind="chat", file=file_name, ext=ext, hint=hint, ok=True, audio=audio_info(audio), heard=(out[0] or "")[:80])
+    return out
 
 
 # ============================================================ מכסה / חסימה
@@ -2814,12 +3155,26 @@ def menu(state, name, prefix=None):
 
 
 def record(state, val_prefix, message, prefix=None):
+    """בקשת הקלטה מהמתקשר. בימות הערך "no" בשדה 6 של record = אישור מיידי בסולמית, בלי תפריט "לשמיעה הקש 1".
+    אם ההקלטות לא מגיעות לשרת (או INPUT_MODE=stt) - עוברים לזיהוי הדיבור של ימות עצמם, שמחזיר טקסט ישירות"""
+    if use_stt(state):
+        state["n"] += 1
+        state["wait"] = "%s_%d" % (val_prefix, state["n"])
+        state["file"] = None
+        if message[0] == "text":
+            message = ("text", re.sub(r"[, ]*ובסיום הקש סולמית", ", ובסיום חכה בשקט", message[1]))
+        read = build_read([message], mode="stt", val_name=state["wait"], lang="", block_typing="", max_digits="",
+                          use_records_recognition_engine="record", quiet_max=4,
+                          length_max=int(SETTINGS.get("record_max", 25) or 25))
+        if prefix:
+            return build_combined_action([build_id_list_message([prefix]), read])
+        return read
     state["n"] += 1
     state["wait"] = "%s_%d" % (val_prefix, state["n"])
     file_name = "ai_%s_%d" % (re.sub(r"[^0-9a-zA-Z]", "", state["call_id"])[-12:], state["n"])
     state["file"] = file_name
     read = build_read([message], mode="record", val_name=state["wait"], path="", file_name=file_name,
-                      no_confirm_menu="yes", save_on_hangup="no", min_length="",
+                      no_confirm_menu="no", save_on_hangup="no", min_length="",
                       max_length=int(SETTINGS.get("record_max", 25) or 25))
     if prefix:
         return build_combined_action([build_id_list_message([prefix]), read])
@@ -2860,9 +3215,26 @@ def goodbye(call_id, name, state=None):
     return build_combined_action([build_id_list_message([part]), build_go_to_folder("hangup")])
 
 
-def ai_worker(pending, state, assistant, history, file_name, call_id, voice_idx, ext=None, hint=None):
+def ai_worker(pending, state, assistant, history, file_name, call_id, voice_idx, ext=None, hint=None, stt_text=None):
     try:
-        transcript, action, answer = ask_ai(assistant, history, file_name, ext, hint)
+        info = {}
+        if stt_text is not None:
+            # קלט מזיהוי הדיבור של ימות: כבר טקסט, אין הקלטה להוריד
+            transcript, action, answer = ask_ai_text(assistant, history, stt_text, {}, stt=True)
+            print("stt heard: %r" % stt_text[:80])
+        else:
+            transcript, action, answer = ask_ai(assistant, history, file_name, ext, hint, info)
+        if info.get("rec_failed") and SETTINGS.get("input_mode", "auto") == "auto":
+            state["stt"] = True              # ההקלטות לא מגיעות אלינו - מעכשיו בשיחה הזו מדברים והמערכת של ימות מתמללת
+            answer = "לא הצלחתי לשמוע את ההקלטה. נסה שוב, ופשוט דבר ובסיום חכה בשקט"
+            print("input: switching this call to yemot speech recognition")
+        elif info.get("silent"):
+            state["silent_n"] = state.get("silent_n", 0) + 1
+            if state["silent_n"] >= 2 and SETTINGS.get("input_mode", "auto") == "auto":
+                state["stt"] = True          # פעמיים ברצף הקלטה ריקה - כנראה שההקלטה לא נקלטת, עוברים לזיהוי דיבור
+                print("input: two silent recordings in a row, switching this call to yemot speech recognition")
+        elif transcript:
+            state["silent_n"] = 0
         if action == "warn":
             n = add_warning(state.get("phone", ""))
             answer = clean_for_tts(T("warning", n=n))
@@ -3030,7 +3402,7 @@ def yemot_inner():
         direct = direct_assistant(state)
         if name and direct:
             state["assistant"], state["history"] = direct["id"], []
-            return R(listen(state, (ann + ". " if ann else "") + T("enter", assistant=direct["name"], name=name), first=True))
+            return R(listen(state, (ann + ". " if ann else "") + enter_text(direct, name), first=True))
         if name:
             return R(menu(state, name, prefix=ann))
         state["stage"] = "ask_name"
@@ -3040,7 +3412,15 @@ def yemot_inner():
     if state["stage"] == "ask_name":
         if not has_value:
             return R(record(state, "name", ("text", T("ask_name_again"))))
-        name = transcribe_name(state["file"], state.get("ext"), rec_hint(value))
+        ninfo = {}
+        if use_stt(state) or not state.get("file"):
+            name = clean_name(value)
+            print("stt name heard: %r -> %r" % (value[:40], name))
+        else:
+            name = transcribe_name(state["file"], state.get("ext"), rec_hint(value), ninfo)
+            if ninfo.get("failed") and SETTINGS.get("input_mode", "auto") == "auto":
+                state["stt"] = True      # ההקלטה לא נמצאה - שואלים שוב את השם בזיהוי הדיבור של ימות
+                print("input: name recording not found, switching this call to yemot speech recognition")
         if not name:
             state["name_tries"] = state.get("name_tries", 0) + 1
             if state["name_tries"] < 3:     # לא הובן - מבקשים שוב (עד פעמיים)
@@ -3051,7 +3431,7 @@ def yemot_inner():
         direct = direct_assistant(state)
         if direct:
             state["assistant"], state["history"] = direct["id"], []
-            return R(listen(state, T("name_saved", name=name) + ". " + T("enter", assistant=direct["name"], name=name), first=True))
+            return R(listen(state, T("name_saved", name=name) + ". " + enter_text(direct, name), first=True))
         return R(menu(state, name, prefix=T("name_saved", name=name)))
 
     name = name or "אורח"
@@ -3064,7 +3444,7 @@ def yemot_inner():
             if value == digit:
                 state["assistant"] = a["id"]
                 state["history"] = []
-                return R(listen(state, T("enter", assistant=a["name"], name=name), first=True))
+                return R(listen(state, enter_text(a, name), first=True))
         return R(menu(state, name))
 
     # ---- שיחה
@@ -3072,7 +3452,7 @@ def yemot_inner():
         assistant = with_filter(assistant_by_id(state["assistant"]), phone)
         pending = state.get("pending")
         if pending is None:
-            if not has_value:
+            if not has_value or (use_stt(state) and not value):
                 return R(listen(state, T("not_heard")))
             if over_limit(phone):
                 _bg(yemot_delete, state["file"] + ".wav")
@@ -3081,7 +3461,7 @@ def yemot_inner():
             state["pending"] = pending
             state["wait_i"] = 0
             _bg(ai_worker, pending, state, assistant, list(state["history"]), state["file"], call_id, state["voice"],
-                state.get("ext"), rec_hint(value))
+                state.get("ext"), rec_hint(value), value if use_stt(state) else None)
             if hold_mode():
                 pending["event"].wait(HOLD_WAIT)   # ימות מנגנים מוזיקה בהמתנה, ונעצרים ברגע שהתשובה חוזרת
             elif not music_on(state.get("ext")):
@@ -3400,6 +3780,8 @@ def api_settings():
         SETTINGS["shabbat_after"] = num("shabbat_after", 0, 180, 50)
     if "keep_rec_days" in d:
         SETTINGS["keep_rec_days"] = num("keep_rec_days", 0, 30, 3)
+    if "input_mode" in d:
+        SETTINGS["input_mode"] = str(d.get("input_mode")) if str(d.get("input_mode")) in ("auto", "record", "stt") else "auto"
     _shabbat_cache["t"] = 0
     save_settings()
     return J({"ok": True})
@@ -3795,6 +4177,52 @@ def api_rec():
         except Exception as e:
             print("rec convert error:", str(e)[:100])
     return Response(data, mimetype="audio/wav", headers={"Cache-Control": "private, max-age=3600"})
+
+
+@app.route("/api/rec_debug")
+def api_rec_debug():
+    """מה קרה עם ההקלטות האחרונות: האם ימות החזירו נתיב, האם הקובץ נמצא, מה נשמע בו ומה הובן. בנוסף - רשימת קבצים בשלוחות"""
+    g = api_guard()
+    if g:
+        return g
+    files = {}
+    for e_ in list(KNOWN_EXTS):
+        try:
+            url = YEMOT_API + "GetIVR2Dir?" + urllib.parse.urlencode({"token": YEMOT_TOKEN, "path": "ivr2:/" + e_})
+            with urllib.request.urlopen(url, timeout=10) as r:
+                files[e_] = r.read().decode("utf-8", "ignore")[:1500]
+        except Exception as ex:
+            files[e_] = "error: " + str(ex)[:100]
+    return J({"input_mode": SETTINGS.get("input_mode"), "exts": KNOWN_EXTS, "recent": REC_DEBUG[::-1], "files": files})
+
+
+@app.route("/api/test_hearing", methods=["POST", "GET"])
+def api_test_hearing():
+    """בדיקת שמיעה מקצה לקצה, בלי ימות: השרת מדבר "שלום קוראים לי דוד" בקול טבעי, מעביר את זה בדיוק באותו מסלול
+    שעוברת הקלטה מהטלפון (כותרת פגומה כמו של ימות, הגברה, Gemini) ומחזיר מה הוא הבין"""
+    g = api_guard()
+    if g:
+        return g
+    out = {}
+    t0 = time.time()
+    try:
+        wav = call_with_deadline(lambda: make_tts("שלום, קוראים לי דוד", voice_list()[0]), 15)
+    except Exception as e:
+        return J({"ok": False, "step": "tts", "error": str(e)[:200]})
+    if not wav:
+        return J({"ok": False, "step": "tts", "error": "הקול הטבעי לא זמין בשרת"})
+    broken = bytearray(wav)
+    if len(broken) > 44:
+        broken[40:44] = struct.pack("<I", 0)      # מחקה כותרת שלא עודכנה בסיום ההקלטה
+    broken = bytes(broken)
+    out["audio"] = audio_info(broken)
+    out["silent"] = is_silent(broken)
+    cleaned = clean_audio(broken)
+    out["cleaned"] = audio_info(cleaned)
+    text = gemini("בהקלטה טלפונית אדם אומר משפט בעברית. תמלל אותו בדיוק, בלי שום תוספת.",
+                  [types.Part.from_bytes(data=cleaned, mime_type="audio/wav")])
+    out.update(ok=bool(text), heard=(text or "")[:120], seconds=round(time.time() - t0, 1))
+    return J(out)
 
 
 @app.route("/api/test_zmanim")
