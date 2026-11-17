@@ -1123,6 +1123,25 @@ def recordings_cleanup():
 
 
 # ============================================================ קול טבעי
+_HEBREW_DIGIT_WORDS = {
+    "0": "אפס", "1": "אחת", "2": "שתיים", "3": "שלוש", "4": "ארבע",
+    "5": "חמש", "6": "שש", "7": "שבע", "8": "שמונה", "9": "תשע",
+}
+_LONG_DIGIT_SEQUENCE = re.compile(r"(?<!\d)(?:\+?\d{7,18}|\d{2,4}[- ]\d{4,8})(?!\d)")
+
+
+def tts_spoken_text(text):
+    """מכין טקסט להקראה: רצפי מספרים ארוכים (כמו מספר טלפון) מוקראים ספרה-ספרה.
+    הטקסט המקורי נשאר ללא שינוי ביומן ובתשובות המערכת."""
+    def spell_sequence(match):
+        digits = re.sub(r"\D", "", match.group(0))
+        if len(digits) < 7:
+            return match.group(0)
+        return ", ".join(_HEBREW_DIGIT_WORDS[d] for d in digits)
+
+    return _LONG_DIGIT_SEQUENCE.sub(spell_sequence, str(text or ""))
+
+
 def voice_list():
     return csv_list(SETTINGS.get("voices", "")) or csv_list(DEFAULT_VOICES)
 
@@ -1168,6 +1187,8 @@ def speak_file(text, voice_idx, call_id, ext=None):
     if SETTINGS.get("tts", "on") != "on" or not text:
         return None
     try:
+        # מספרי טלפון/מזהים ארוכים מוקראים ספרה-ספרה כדי למנוע דילוג או תקיעה של מנוע הקול.
+        text = tts_spoken_text(text)
         vl = voice_list()
         chosen = vl[voice_idx % len(vl)]
         candidates = [chosen] + [v for v in vl if v != chosen and "he-IL" in v] + [v for v in vl if v != chosen and "he-IL" not in v]
@@ -1523,12 +1544,15 @@ def transcribe_name(file_name, ext=None, hint=None, info=None):
         print("name recording is empty/silent")
         rec_debug(kind="name", file=file_name, ext=ext, hint=hint, ok=True, audio=audio_info(audio), silent=True)
         info["silent"] = True
+        info["unrecognized"] = True
         return ""
     audio = clean_audio(audio)
     text = gemini("בהקלטה טלפונית באיכות נמוכה אדם אומר את שמו הפרטי בעברית (שם ישראלי או יהודי נפוץ). "
                   "החזר רק את השם הפרטי, מילה אחת או שתיים, בלי שום תוספת. אם לא נאמר שם או שלא ברור מה נאמר, החזר רק: -",
                   [types.Part.from_bytes(data=audio, mime_type="audio/wav")])
     name = clean_name(text)
+    if not name:
+        info["unrecognized"] = True
     rec_debug(kind="name", file=file_name, ext=ext, hint=hint, ok=True, audio=audio_info(audio), heard=(text or "")[:60], name=name)
     return name           # ריק = לא שם: נבקש מהמתקשר לומר שוב
 
@@ -3132,7 +3156,8 @@ def msg_part(state, text):
     f = state.pop("tts_file", None)
     if f:
         return ("file", f)
-    return ("text", text)
+    # גם כשקול ה-TTS החיצוני אינו זמין, ימות יקבלו רצפי ספרות ארוכים כמילים.
+    return ("text", tts_spoken_text(text))
 
 
 def menu(state, name, prefix=None):
@@ -3157,14 +3182,16 @@ def menu(state, name, prefix=None):
 def record(state, val_prefix, message, prefix=None):
     """בקשת הקלטה מהמתקשר. בימות הערך "no" בשדה 6 של record = אישור מיידי בסולמית, בלי תפריט "לשמיעה הקש 1".
     אם ההקלטות לא מגיעות לשרת (או INPUT_MODE=stt) - עוברים לזיהוי הדיבור של ימות עצמם, שמחזיר טקסט ישירות"""
+    if message[0] == "text":
+        message = ("text", tts_spoken_text(message[1]))
     if use_stt(state):
         state["n"] += 1
         state["wait"] = "%s_%d" % (val_prefix, state["n"])
         state["file"] = None
         if message[0] == "text":
             message = ("text", re.sub(r"[, ]*ובסיום הקש סולמית", ", ובסיום חכה בשקט", message[1]))
-        read = build_read([message], mode="stt", val_name=state["wait"], lang="", block_typing="", max_digits="",
-                          use_records_recognition_engine="record", quiet_max=4,
+        read = build_read([message], mode="stt", val_name=state["wait"], lang="he-IL", block_typing=False, max_digits="",
+                          use_records_recognition_engine=True, quiet_max=4,
                           length_max=int(SETTINGS.get("record_max", 25) or 25))
         if prefix:
             return build_combined_action([build_id_list_message([prefix]), read])
@@ -3418,13 +3445,18 @@ def yemot_inner():
             print("stt name heard: %r -> %r" % (value[:40], name))
         else:
             name = transcribe_name(state["file"], state.get("ext"), rec_hint(value), ninfo)
-            if ninfo.get("failed") and SETTINGS.get("input_mode", "auto") == "auto":
-                state["stt"] = True      # ההקלטה לא נמצאה - שואלים שוב את השם בזיהוי הדיבור של ימות
-                print("input: name recording not found, switching this call to yemot speech recognition")
         if not name:
+            # במצב auto עוברים ל-STT של ימות בכל כשל בזיהוי השם, גם כשהקובץ הגיע
+            # אבל היה שקט או ש-Gemini לא הצליח לזהות את השם (ולא רק כשהקובץ חסר).
+            if SETTINGS.get("input_mode", "auto") == "auto" and not use_stt(state):
+                state["stt"] = True
+                print("input: name was not recognized from recording, switching this call to yemot Hebrew speech recognition")
+                return R(record(state, "name", ("text", T("ask_name_again"))))
             state["name_tries"] = state.get("name_tries", 0) + 1
             if state["name_tries"] < 3:     # לא הובן - מבקשים שוב (עד פעמיים)
-                return R(record(state, "name", ("text", T("name_not_understood") + " " + T("ask_name_again"))))
+                # במצב STT ימות עשויה להשמיע הודעת זיהוי כללית; לא מוסיפים הודעת שגיאה כפולה.
+                retry_text = T("ask_name_again") if use_stt(state) else (T("name_not_understood") + " " + T("ask_name_again"))
+                return R(record(state, "name", ("text", retry_text)))
             return R(menu(state, "אורח"))   # עדיין לא הובן - ממשיכים בלי לשמור, ובשיחה הבאה נשאל שוב
         names[phone] = name
         save_names()
