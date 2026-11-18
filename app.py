@@ -30,6 +30,7 @@ import base64
 import asyncio
 import smtplib
 import threading
+import concurrent.futures
 import datetime
 import subprocess
 import urllib.request
@@ -488,10 +489,10 @@ def yemot_delete(file_name, ext=None):
             print("delete error:", ex)
 
 
-def yemot_read_text(file_name):
+def yemot_read_text(file_name, timeout=8):
     try:
         url = YEMOT_API + "DownloadFile?" + urllib.parse.urlencode({"token": YEMOT_TOKEN, "path": yemot_path(file_name)})
-        with urllib.request.urlopen(url, timeout=20) as r:
+        with urllib.request.urlopen(url, timeout=timeout) as r:
             data = r.read().decode("utf-8", "ignore")
         if data.lstrip().startswith('{"responseStatus'):
             return None
@@ -506,19 +507,32 @@ def yemot_read_text(file_name):
 
 
 def yemot_write_text(file_name, text):
-    """כתיבת קובץ טקסט בימות. מחזירה הצלחה/כישלון כדי שמנגנון השמירה יוכל לנסות שוב."""
+    """כתיבת קובץ טקסט בימות. הצלחה מוחזרת רק לאחר בדיקת תשובת השרת."""
     if not YEMOT_TOKEN:
+        print("write text skipped: YEMOT_TOKEN is missing")
         return False
     try:
         body = urllib.parse.urlencode({"token": YEMOT_TOKEN, "what": yemot_path(file_name), "contents": text}).encode()
         req = urllib.request.Request(YEMOT_API + "UploadTextFile", data=body, method="POST")
-        with urllib.request.urlopen(req, timeout=12) as r:
-            response = r.read().decode("utf-8", "ignore")
-        if response.lstrip().startswith('{') and '"responseStatus":"ERROR"' in response.replace(" ", ""):
-            raise RuntimeError(response[:180])
+        with urllib.request.urlopen(req, timeout=15) as r:
+            response = r.read().decode("utf-8", "ignore").strip()
+        if not response:
+            raise RuntimeError("empty response from Yemot UploadTextFile")
+        if response.startswith("{"):
+            try:
+                payload = json.loads(response)
+            except Exception:
+                raise RuntimeError("invalid JSON response from Yemot: " + response[:160])
+            status = str(payload.get("responseStatus", "")).upper()
+            if status == "ERROR" or payload.get("success") is False:
+                raise RuntimeError("Yemot rejected save: " + response[:180])
+            if status and status not in ("OK", "SUCCESS"):
+                raise RuntimeError("unexpected Yemot save status: " + response[:180])
+        elif "OK" not in response.upper():
+            raise RuntimeError("unexpected Yemot save response: " + response[:160])
         return True
     except Exception as e:
-        print("write text error:", str(e)[:160])
+        print("write text error (%s): %s" % (file_name, str(e)[:160]))
         return False
 
 
@@ -591,7 +605,7 @@ def save_names():
     _queue_text_save("ai_names.txt", json.dumps(snapshot, ensure_ascii=False))
 
 
-LOG_SAVE_EVERY = 20       # היומן נשמר בימות לכל היותר פעם ב-20 שניות (במקום בכל שיחה והודעה), כדי לא להעמיס על החיבור לימות
+LOG_SAVE_EVERY = 6        # שמירה מאוגדת כל 6 שניות: איזון בין עומס לימות לבין אובדן נתונים בעת אתחול
 _log_dirty = threading.Event()
 
 
@@ -609,10 +623,11 @@ def _log_writer_loop():
             with _lock:
                 lines = [json.dumps({"t": "log", **l}, ensure_ascii=False) for l in LOG[-LOG_MAX:]]
                 lines += [json.dumps({"t": "call", **c}, ensure_ascii=False) for c in CALLS[-LOG_MAX:]]
-            yemot_write_text("ai_log.txt", "\n".join(lines))
+            if not yemot_write_text("ai_log.txt", "\n".join(lines)):
+                raise RuntimeError("Yemot did not confirm ai_log.txt save")
         except Exception as e:
             print("log save error:", e)
-            _log_dirty.set()                # ננסה שוב בסבב הבא
+            _log_dirty.set()                # ננסה שוב בסבב הבא; אין לזרוק את היומן בשקט
 
 
 threading.Thread(target=_log_writer_loop, daemon=True).start()
@@ -637,73 +652,88 @@ def save_texts():
 
 
 def load_all():
+    """טוען את חמשת קובצי הנתונים במקביל כדי שלא לעכב את עליית שרת ה-API."""
     if not YEMOT_TOKEN:
+        print("load skipped: YEMOT_TOKEN is missing")
         return
-    try:
-        t = yemot_read_text("ai_names.txt")
-        if t:
+    file_names = ("ai_names.txt", "ai_log.txt", "ai_settings.txt", "ai_assistants.txt", "ai_texts.txt")
+    loaded = {}
+    started = time.time()
+    # קריאות הרשת עצמאיות; טעינה מקבילית מורידה השהיית startup מסכום זמני ההמתנה למקסימום של קריאה אחת.
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5, thread_name_prefix="yemot-load") as pool:
+        futures = {pool.submit(yemot_read_text, name, 8): name for name in file_names}
+        for future in concurrent.futures.as_completed(futures, timeout=10):
+            name = futures[future]
+            try:
+                loaded[name] = future.result()
+            except Exception as e:
+                loaded[name] = None
+                print("load %s error: %s" % (name, str(e)[:120]))
+    # קובץ שמכיל נתונים לא תקינים לא עוצר טעינה של הקבצים האחרים.
+    t = loaded.get("ai_names.txt")
+    if t:
+        try:
             d = json.loads(t)
-            if "names" in d and isinstance(d["names"], dict):
+            if isinstance(d, dict) and "names" in d and isinstance(d["names"], dict):
                 names.update(d["names"])
                 voices.update({k: int(v) for k, v in d.get("voices", {}).items()})
                 notes.update(d.get("notes", {}))
                 warnings.update({k: int(v) for k, v in (d.get("warnings") or {}).items()})
-            else:
+            elif isinstance(d, dict):
                 names.update(d)
-    except Exception as e:
-        print("load names error:", e)
-    try:
-        t = yemot_read_text("ai_log.txt")
-        if t:
-            bad = 0
-            for line in t.splitlines():
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    d = json.loads(line)
-                    if not isinstance(d, dict):
-                        bad += 1
-                        continue
-                    kind = d.pop("t", "log")
-                    # רשומה בלי טלפון או בלי זמן היא פגומה - מדלגים עליה (מונע KeyError בהמשך)
-                    if not d.get("phone") or not d.get("time"):
-                        bad += 1
-                        continue
-                    (CALLS if kind == "call" else LOG).append(d)
-                except Exception:
+        except Exception as e:
+            print("load names error:", e)
+    t = loaded.get("ai_log.txt")
+    if t:
+        bad = 0
+        for line in t.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                d = json.loads(line)
+                if not isinstance(d, dict):
                     bad += 1
-            if bad:
-                print("log: skipped %d broken lines" % bad)
-    except Exception as e:
-        print("load log error:", e)
-    try:
-        t = yemot_read_text("ai_settings.txt")
-        if t:
+                    continue
+                kind = d.pop("t", "log")
+                if not d.get("phone") or not d.get("time"):
+                    bad += 1
+                    continue
+                (CALLS if kind == "call" else LOG).append(d)
+            except Exception:
+                bad += 1
+        if bad:
+            print("log: skipped %d broken lines" % bad)
+    t = loaded.get("ai_settings.txt")
+    if t:
+        try:
             d = json.loads(t)
-            for k in SETTINGS:
-                if k in d:
-                    SETTINGS[k] = type(SETTINGS[k])(d[k])
-    except Exception as e:
-        print("load settings error:", e)
-    try:
-        t = yemot_read_text("ai_assistants.txt")
-        if t:
+            if isinstance(d, dict):
+                for k in SETTINGS:
+                    if k in d:
+                        SETTINGS[k] = type(SETTINGS[k])(d[k])
+        except Exception as e:
+            print("load settings error:", e)
+    t = loaded.get("ai_assistants.txt")
+    if t:
+        try:
             d = json.loads(t)
             if isinstance(d, list) and d:
-                ASSISTANTS[:] = [a for a in d if a.get("id") and a.get("name")]
-    except Exception as e:
-        print("load assistants error:", e)
-    try:
-        t = yemot_read_text("ai_texts.txt")
-        if t:
+                ASSISTANTS[:] = [a for a in d if isinstance(a, dict) and a.get("id") and a.get("name")]
+        except Exception as e:
+            print("load assistants error:", e)
+    t = loaded.get("ai_texts.txt")
+    if t:
+        try:
             d = json.loads(t)
-            for k in TEXTS:
-                if d.get(k):
-                    TEXTS[k] = str(d[k])
-    except Exception as e:
-        print("load texts error:", e)
-    print("loaded: %d names, %d log, %d calls, %d assistants" % (len(names), len(LOG), len(CALLS), len(ASSISTANTS)))
+            if isinstance(d, dict):
+                for k in TEXTS:
+                    if d.get(k):
+                        TEXTS[k] = str(d[k])
+        except Exception as e:
+            print("load texts error:", e)
+    print("loaded: %d names, %d log, %d calls, %d assistants (%.1fs)" %
+          (len(names), len(LOG), len(CALLS), len(ASSISTANTS), time.time() - started))
 
 
 load_all()
@@ -3479,6 +3509,13 @@ def keepalive_loop():
 threading.Thread(target=keepalive_loop, daemon=True).start()
 
 
+# ============================================================ בדיקת זמינות ל-Render ולניטור
+@app.route("/healthz", methods=["GET", "HEAD"])
+def healthz():
+    # ללא מפתחות, טלפונים או נתוני משתמשים. מיועד לבדיקת זמינות בלבד.
+    return J({"ok": True, "service": "yemot-ai", "time": now_str()}, 200)
+
+
 # ============================================================ הקו
 @app.route("/", methods=["GET", "POST", "HEAD"])
 def yemot():
@@ -3793,11 +3830,43 @@ threading.Thread(target=daily_mail_loop, daemon=True).start()
 
 
 # ============================================================ אתר ניהול (API)
+ADMIN_SESSION_TTL = 60 * 60 * 24 * 7
+
+
+def _admin_session_token(issued=None):
+    """יוצר Cookie חתום וזמני, בלי לחשוף את ADMIN_KEY לדפדפן."""
+    stamp = str(int(issued if issued is not None else time.time()))
+    signature = hmac.new(ADMIN_KEY.encode("utf-8"), ("admin-session:" + stamp).encode("utf-8"), "sha256").hexdigest()
+    return stamp + "." + signature
+
+
 def is_admin():
+    """אימות באמצעות Cookie חתום בלבד; סיסמה ב-URL או בגוף בקשה אינה אמצעי התחברות."""
     if not ADMIN_KEY:
         return False
-    supplied = str(request.values.get("key") or request.cookies.get("admin_key") or "")
-    return bool(supplied) and hmac.compare_digest(supplied, ADMIN_KEY)
+    supplied = str(request.cookies.get("admin_key") or "")
+    try:
+        stamp, signature = supplied.split(".", 1)
+        issued = int(stamp)
+    except (ValueError, TypeError):
+        return False
+    now = int(time.time())
+    if issued > now + 60 or now - issued > ADMIN_SESSION_TTL:
+        return False
+    expected = _admin_session_token(issued).split(".", 1)[1]
+    return hmac.compare_digest(signature, expected)
+
+
+@app.after_request
+def admin_security_headers(resp):
+    """כותרות אבטחה בסיסיות לכל תשובות האפליקציה."""
+    resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+    resp.headers.setdefault("Referrer-Policy", "same-origin")
+    resp.headers.setdefault("X-Frame-Options", "DENY")
+    if request.path.startswith("/admin") or request.path.startswith("/api/"):
+        resp.headers["Cache-Control"] = "no-store, max-age=0"
+        resp.headers["Pragma"] = "no-cache"
+    return resp
 
 
 def J(data, status=200):
@@ -3818,15 +3887,18 @@ def admin_login():
     if not isinstance(key, str) or not hmac.compare_digest(key, ADMIN_KEY):
         return J({"ok": False, "error": "סיסמה שגויה"})
     resp = J({"ok": True})
-    resp.set_cookie("admin_key", ADMIN_KEY, max_age=60 * 60 * 24 * 180, httponly=True,
-                    secure=(os.environ.get("RENDER_EXTERNAL_URL", "").startswith("https://")), samesite="Lax")
+    resp.set_cookie("admin_key", _admin_session_token(), max_age=ADMIN_SESSION_TTL, httponly=True,
+                    secure=(request.is_secure or os.environ.get("RENDER_EXTERNAL_URL", "").startswith("https://")),
+                    samesite="Lax", path="/")
     return resp
 
 
 @app.route("/admin/logout")
 def admin_logout():
     resp = Response("", status=302, headers={"Location": "/admin"})
-    resp.set_cookie("admin_key", "", max_age=0)
+    resp.set_cookie("admin_key", "", max_age=0, httponly=True,
+                    secure=(request.is_secure or os.environ.get("RENDER_EXTERNAL_URL", "").startswith("https://")),
+                    samesite="Lax", path="/")
     return resp
 
 
