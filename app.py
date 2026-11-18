@@ -66,16 +66,17 @@ app = Flask(__name__)
 # רושם ל-Render Logs כל בקשה ותשובה בלי לשמור תוכן שיחה, מפתחות או מספרי טלפון מלאים.
 @app.before_request
 def _http_diag_begin():
+    """רישום מטא-נתונים בטוחים לכל בקשת HTTP, בכל נתיב."""
     try:
         g._diag_started = time.time()
         g._diag_id = uuid.uuid4().hex[:10]
-        if request.path not in ("/", "/healthz"):
-            return None
+
+        # request.values מאחד query/form; לא רושמים ערכים חופשיים או תוכן הקלטה.
         values = request.values
         phone = (values.get("ApiPhone") or "").strip()
         phone_masked = ("***" + phone[-4:]) if len(phone) >= 4 else ("present" if phone else "absent")
         call_id = (values.get("ApiCallId") or "").strip()
-        # אין רישום של ערכי הקלטות או תוכן פרמטרים חופשיים.
+
         safe = {
             "trace": g._diag_id,
             "event": "http_request",
@@ -85,8 +86,8 @@ def _http_diag_begin():
             "form_keys": sorted(request.form.keys()),
             "api_call_id_present": bool(call_id),
             "api_phone": phone_masked,
-            "api_extension": values.get("ApiExtension", "")[:40],
-            "hangup": values.get("hangup", "")[:10],
+            "api_extension": (values.get("ApiExtension") or "")[:40],
+            "hangup": (values.get("hangup") or "")[:10],
             "content_length": request.content_length or 0,
             "content_type": request.content_type or "",
             "user_agent": (request.user_agent.string or "")[:100],
@@ -99,19 +100,19 @@ def _http_diag_begin():
 
 @app.after_request
 def _http_diag_end(response):
+    """רישום קוד התגובה ומשך הטיפול לכל בקשת HTTP, בכל נתיב."""
     try:
-        if request.path in ("/", "/healthz"):
-            started = getattr(g, "_diag_started", time.time())
-            safe = {
-                "trace": getattr(g, "_diag_id", "unknown"),
-                "event": "http_response",
-                "method": request.method,
-                "path": request.path,
-                "status": response.status_code,
-                "response_bytes": response.calculate_content_length(),
-                "duration_ms": round((time.time() - started) * 1000),
-            }
-            print("HTTP_DIAG " + json.dumps(safe, ensure_ascii=False, separators=(",", ":")))
+        started = getattr(g, "_diag_started", time.time())
+        safe = {
+            "trace": getattr(g, "_diag_id", "unknown"),
+            "event": "http_response",
+            "method": request.method,
+            "path": request.path,
+            "status": response.status_code,
+            "response_bytes": response.calculate_content_length(),
+            "duration_ms": round((time.time() - started) * 1000),
+        }
+        print("HTTP_DIAG " + json.dumps(safe, ensure_ascii=False, separators=(",", ":")))
     except Exception as exc:
         print("HTTP_DIAG_END_ERROR:", type(exc).__name__, str(exc)[:160])
     return response
