@@ -9,7 +9,7 @@
 - ניתוק שיחה פעילה מאתר הניהול
 - שלוחה 8 בתפריט: העוזר לתחבורה ציבורית (בעוד כמה דקות מגיע האוטובוס, כמו באפליקציית תחבורה)
 """
-from flask import Flask, request, Response
+from flask import Flask, request, Response, g
 from yemot_flow.actions import build_id_list_message, build_read, build_go_to_folder, build_combined_action
 from google import genai
 from google.genai import types
@@ -61,6 +61,60 @@ except Exception as _e:
     HAVE_TTS = False
 
 app = Flask(__name__)
+
+# ============================================================ יומן אבחון HTTP / ימות
+# רושם ל-Render Logs כל בקשה ותשובה בלי לשמור תוכן שיחה, מפתחות או מספרי טלפון מלאים.
+@app.before_request
+def _http_diag_begin():
+    try:
+        g._diag_started = time.time()
+        g._diag_id = uuid.uuid4().hex[:10]
+        if request.path not in ("/", "/healthz"):
+            return None
+        values = request.values
+        phone = (values.get("ApiPhone") or "").strip()
+        phone_masked = ("***" + phone[-4:]) if len(phone) >= 4 else ("present" if phone else "absent")
+        call_id = (values.get("ApiCallId") or "").strip()
+        # אין רישום של ערכי הקלטות או תוכן פרמטרים חופשיים.
+        safe = {
+            "trace": g._diag_id,
+            "event": "http_request",
+            "method": request.method,
+            "path": request.path,
+            "query_keys": sorted(request.args.keys()),
+            "form_keys": sorted(request.form.keys()),
+            "api_call_id_present": bool(call_id),
+            "api_phone": phone_masked,
+            "api_extension": values.get("ApiExtension", "")[:40],
+            "hangup": values.get("hangup", "")[:10],
+            "content_length": request.content_length or 0,
+            "content_type": request.content_type or "",
+            "user_agent": (request.user_agent.string or "")[:100],
+        }
+        print("HTTP_DIAG " + json.dumps(safe, ensure_ascii=False, separators=(",", ":")))
+    except Exception as exc:
+        print("HTTP_DIAG_BEGIN_ERROR:", type(exc).__name__, str(exc)[:160])
+    return None
+
+
+@app.after_request
+def _http_diag_end(response):
+    try:
+        if request.path in ("/", "/healthz"):
+            started = getattr(g, "_diag_started", time.time())
+            safe = {
+                "trace": getattr(g, "_diag_id", "unknown"),
+                "event": "http_response",
+                "method": request.method,
+                "path": request.path,
+                "status": response.status_code,
+                "response_bytes": response.calculate_content_length(),
+                "duration_ms": round((time.time() - started) * 1000),
+            }
+            print("HTTP_DIAG " + json.dumps(safe, ensure_ascii=False, separators=(",", ":")))
+    except Exception as exc:
+        print("HTTP_DIAG_END_ERROR:", type(exc).__name__, str(exc)[:160])
+    return response
 
 # ============================================================ הגדרות
 YEMOT_TOKEN = os.environ.get("YEMOT_TOKEN", "")            # מספר המערכת:סיסמה
